@@ -10,6 +10,16 @@
 #include <random>
 double PI = 3.14159265358979323846;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
+typedef struct {
+	double x;
+	double y;
+	double z;
+	double pitch;
+	double yaw;
+	double roll;
+	double fov;
+} cam;
+cam camera = { 0,30,0,0,0,0,90 }; //x,y,z,pitch,yaw,roll,fov
 int randomInt(int min, int max) {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
@@ -122,7 +132,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	case WM_CREATE:
 		SetTimer(hwnd, 1, 15, NULL);
 		break;
-
+	case WM_TIMER: {
+		InvalidateRect(hwnd, NULL, TRUE);
+	}
 	case WM_PAINT: {
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
