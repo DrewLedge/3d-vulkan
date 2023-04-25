@@ -67,6 +67,10 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
 
 	return 0;
 }
+
+
+
+
 COLORREF getcolor(std::string color) {
 	if (color == "red") {
 		return RGB(255, 0, 0);
@@ -117,7 +121,72 @@ void line(HDC hdc, int x1, int y1, int x2, int y2, int thickness, const std::str
 	SelectObject(hdc, hOldPen);
 	DeleteObject(hPen);
 }
+struct Vector3 {
+	float x, y, z;
 
+	Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
+
+	Vector3 translate(float tx, float ty, float tz) const {
+		return Vector3(x + tx, y + ty, z + tz);
+	}
+	Vector3 add(const Vector3& other) const { //add two vectors
+		return Vector3(x + other.x, y + other.y, z + other.z);
+	}
+	Vector3 subtract(const Vector3& other) const {
+		return Vector3(x - other.x, y - other.y, z - other.z);
+	}
+	float dotproduct(const Vector3& other) const {
+		return x * other.x + y * other.y + z * other.z;
+	}
+	Vector3 scalarmult(float scalar) const { //multiplies a vector by a scalar
+		return Vector3(x * scalar, y * scalar, z * scalar);
+	}
+	Vector3 crossproduct(const Vector3& other) const { //cross product of two vectors
+		return Vector3(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
+	}
+	float length() const {
+		return sqrtf(x * x + y * y + z * z);
+	}
+	Vector3 normalize() const {
+		float len = length();
+		return Vector3(x / len, y / len, z / len);
+	}
+};
+
+struct Matrix4 {
+	float m[4][4];
+	Matrix4();
+	Matrix4 add(const Matrix4& other) const { //add two matrices together
+		Matrix4 result;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				result.m[i][j] = m[i][j] + other.m[i][j];
+			}
+		}
+		return result;
+	}
+	Matrix4 subtract(const Matrix4& other) const {
+		Matrix4 result;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; i++) {
+				result.m[i][j] = m[i][j] - other.m[i][j];
+			}
+		}
+		return result;
+	}
+	Matrix4 multiply(const Matrix4& other) const { //multiply two matrices together
+		Matrix4 result;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				result.m[i][j] = 0; //initialize to 0
+				for (int k = 0; k < 4; k++) {
+					result.m[i][j] += m[i][k] * other.m[k][j];
+				}
+			}
+		}
+		return result;
+	}
+};
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::vector<std::tuple<double, double>>polys;
 	static std::vector<std::tuple<double, double>>lineseg;
