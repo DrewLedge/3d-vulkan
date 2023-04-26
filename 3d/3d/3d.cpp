@@ -122,9 +122,9 @@ void line(HDC hdc, int x1, int y1, int x2, int y2, int thickness, const std::str
 	DeleteObject(hPen);
 }
 struct Vector3 {
-	float x, y, z;
+	float x, y, z, w;
 
-	Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
+	Vector3(float x, float y, float z, float w = 1.0f) : x(x), y(y), z(z), w(w) {}
 
 	Vector3 translate(float tx, float ty, float tz) const {
 		return Vector3(x + tx, y + ty, z + tz);
@@ -168,7 +168,7 @@ struct Matrix4 {
 	Matrix4 subtract(const Matrix4& other) const {
 		Matrix4 result;
 		for (int i = 0; i < 4; i++) {
-			for (int j = 0; j < 4; i++) {
+			for (int j = 0; j < 4; j++) {
 				result.m[i][j] = m[i][j] - other.m[i][j];
 			}
 		}
@@ -178,7 +178,7 @@ struct Matrix4 {
 		Matrix4 result;
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
-				result.m[i][j] = 0; //initialize to 0
+				result.m[i][j] = 0;
 				for (int k = 0; k < 4; k++) {
 					result.m[i][j] += m[i][k] * other.m[k][j];
 				}
@@ -186,6 +186,51 @@ struct Matrix4 {
 		}
 		return result;
 	}
+	static Matrix4 translate(float tx, float ty, float tz) {
+		Matrix4 result;
+		result.m[0][0] = 1.0f;
+		result.m[0][1] = 0.0f;
+		result.m[0][2] = 0.0f;
+		result.m[0][3] = tx;
+		result.m[1][0] = 0.0f;
+		result.m[1][1] = 1.0f;
+		result.m[1][2] = 0.0f;
+		result.m[1][3] = ty;
+		result.m[2][0] = 0.0f;
+		result.m[2][1] = 0.0f;
+		result.m[2][2] = 1.0f;
+		result.m[2][3] = tz;
+		result.m[3][0] = 0.0f;
+		result.m[3][1] = 0.0f;
+		result.m[3][2] = 0.0f;
+		result.m[3][3] = 1.0f;
+		return result;
+	}
+	Matrix4 transpose() const {
+		Matrix4 result;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				result.m[i][j] = m[j][i];
+			}
+		}
+		return result;
+	}
+
+
+
+	Vector3 vecmatrix(const Vector3& vec) const { //multiply a matrix by a vector and return a vector
+		float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3];
+		float y = m[1][0] * vec.x + m[1][1] * vec.y + m[1][2] * vec.z + m[1][3];
+		float z = m[2][0] * vec.x + m[2][1] * vec.y + m[2][2] * vec.z + m[2][3];
+		float w = m[3][0] * vec.x + m[3][1] * vec.y + m[3][2] * vec.z + m[3][3];
+		if (w != 1.0f && w != 0.0f) {
+			x /= w;
+			y /= w;
+			z /= w;
+		}
+		return Vector3(x, y, z);
+	}
+
 };
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::vector<std::tuple<double, double>>polys;
