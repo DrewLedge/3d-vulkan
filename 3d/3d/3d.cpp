@@ -122,10 +122,8 @@ void line(HDC hdc, int x1, int y1, int x2, int y2, int thickness, const std::str
 	DeleteObject(hPen);
 }
 struct Vector3 {
-	float x, y, z, w;
-
-	Vector3(float x, float y, float z, float w = 1.0f) : x(x), y(y), z(z), w(w) {}
-
+	float x, y, z;
+	Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
 	Vector3 translate(float tx, float ty, float tz) const {
 		return Vector3(x + tx, y + ty, z + tz);
 	}
@@ -155,7 +153,13 @@ struct Vector3 {
 
 struct Matrix4 {
 	float m[4][4];
-	Matrix4();
+	Matrix4() {
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				m[i][j] = (i == j) ? 1.0f : 0.0f;
+			}
+		}
+	}
 	Matrix4 add(const Matrix4& other) const { //add two matrices together
 		Matrix4 result;
 		for (int i = 0; i < 4; i++) {
@@ -188,22 +192,54 @@ struct Matrix4 {
 	}
 	static Matrix4 translate(float tx, float ty, float tz) {
 		Matrix4 result;
-		result.m[0][0] = 1.0f;
-		result.m[0][1] = 0.0f;
-		result.m[0][2] = 0.0f;
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				if (i == j) { //diagonal
+					result.m[i][j] = 1.0f;
+				}
+				else {
+					result.m[i][j] = 0.0f;
+				}
+			}
+		}
 		result.m[0][3] = tx;
-		result.m[1][0] = 0.0f;
-		result.m[1][1] = 1.0f;
-		result.m[1][2] = 0.0f;
 		result.m[1][3] = ty;
-		result.m[2][0] = 0.0f;
-		result.m[2][1] = 0.0f;
-		result.m[2][2] = 1.0f;
 		result.m[2][3] = tz;
-		result.m[3][0] = 0.0f;
-		result.m[3][1] = 0.0f;
-		result.m[3][2] = 0.0f;
+		return result;
+	}
+	static Matrix4 scale(float sx, float sy, float sz) {
+		Matrix4 result;
+		result.m[0][0] = sx;
+		result.m[1][1] = sy;
+		result.m[2][2] = sz;
 		result.m[3][3] = 1.0f;
+		return result;
+	}
+	static Matrix4 rotateX(float angle) {
+		Matrix4 result;
+		float radians = angle * (PI / 180.0f);
+		result.m[1][1] = cosf(radians);
+		result.m[1][2] = -sinf(radians);
+		result.m[2][1] = sinf(radians);
+		result.m[2][2] = cosf(radians);
+		return result;
+	}
+	static Matrix4 rotateY(float angle) {
+		Matrix4 result;
+		float radians = angle * (PI / 180.0f);
+		result.m[0][0] = cosf(radians);
+		result.m[0][2] = sinf(radians);
+		result.m[2][0] = -sinf(radians);
+		result.m[2][2] = cosf(radians);
+		return result;
+	}
+	static Matrix4 rotateZ(float angle) {
+		Matrix4 result;
+		float radians = angle * (PI / 180.0f);
+		result.m[0][0] = cosf(radians);
+		result.m[0][1] = -sinf(radians);
+		result.m[1][0] = sinf(radians);
+		result.m[1][1] = cosf(radians);
 		return result;
 	}
 	Matrix4 transpose() const {
@@ -215,11 +251,8 @@ struct Matrix4 {
 		}
 		return result;
 	}
-
-
-
-	Vector3 vecmatrix(const Vector3& vec) const { //multiply a matrix by a vector and return a vector
-		float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3];
+	Vector3 vecmatrix(const Vector3& vec) const {
+		float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector
 		float y = m[1][0] * vec.x + m[1][1] * vec.y + m[1][2] * vec.z + m[1][3];
 		float z = m[2][0] * vec.x + m[2][1] * vec.y + m[2][2] * vec.z + m[2][3];
 		float w = m[3][0] * vec.x + m[3][1] * vec.y + m[3][2] * vec.z + m[3][3];
@@ -230,7 +263,6 @@ struct Matrix4 {
 		}
 		return Vector3(x, y, z);
 	}
-
 };
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::vector<std::tuple<double, double>>polys;
