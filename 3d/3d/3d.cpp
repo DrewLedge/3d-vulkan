@@ -18,6 +18,8 @@ typedef struct {
 	double yaw;
 	double roll;
 	double fov;
+	double nearc; //near clipping plane
+	double farc; //far clipping plane
 } cam;
 cam camera = { 0,30,0,0,0,0,90 }; //x,y,z,pitch,yaw,roll,fov
 int randomInt(int min, int max) {
@@ -67,9 +69,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
 
 	return 0;
 }
-
-
-
 
 COLORREF getcolor(std::string color) {
 	if (color == "red") {
@@ -263,13 +262,21 @@ struct Matrix4 {
 		}
 		return Vector3(x, y, z);
 	}
+	static Matrix4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) { //perspective projection matrix
+		Matrix4 result;
+		float f = 1.0f / tanf(fov * 0.5f * (PI / 180.0f));
+		result.m[0][0] = f / aspect_ratio;
+		result.m[1][1] = f;
+		result.m[2][2] = (far_clip + near_clip) / (near_clip - far_clip);
+		result.m[2][3] = (2.0f * far_clip * near_clip) / (near_clip - far_clip);
+		result.m[3][2] = -1.0f;
+		result.m[3][3] = 0.0f;
+		return result;
+	}
+
 };
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
-	static std::vector<std::tuple<double, double>>polys;
-	static std::vector<std::tuple<double, double>>lineseg;
-	static std::tuple<int, int, int, int> mouse = { 0,0,0,0 };
-	static bool mousedown = false;
-	static bool on_ground = false;
+	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
 
 	switch (uMsg) {
 	case WM_DESTROY:
@@ -281,6 +288,49 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	case WM_TIMER: {
 		InvalidateRect(hwnd, NULL, TRUE);
 	}
+	case WM_MOUSEMOVE: {
+		std::get<0>(mouse) = LOWORD(lParam);
+		std::get<1>(mouse) = HIWORD(lParam);
+		break;
+	}
+	case WM_KEYDOWN: {
+		float rotation_angle = 5.0f;
+		float translation_amount = 1.0f;
+		switch (wParam) {
+		case VK_UP:
+			camera.pitch += rotation_angle;
+			break;
+		case VK_DOWN:
+			camera.pitch -= rotation_angle;
+			break;
+		case VK_LEFT:
+			camera.yaw -= rotation_angle;
+			break;
+		case VK_RIGHT:
+			camera.yaw += rotation_angle;
+			break;
+		case 'W':
+			camera. = z += translation_amount;
+			break;
+		case 'A':
+			camera. = x -= translation_amount;
+			break;
+		case 'S':
+			camera.z -= translation_amount;
+			break;
+		case 'D':
+			camera.x += translation_amount;
+			break;
+		case 'Q':
+			camera.roll += rotation_angle;
+			break;
+		case 'E':
+			camera.roll -= rotation_angle;
+			break;
+		}
+		break;
+	}
+
 	case WM_PAINT: {
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
