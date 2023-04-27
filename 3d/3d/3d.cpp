@@ -153,6 +153,10 @@ struct Vertex {
 	Vector3 position;
 	Vertex(float x, float y, float z) : position(x, y, z) {}
 };
+struct Vector2 {
+	float x, y;
+	Vector2(float x, float y) : x(x), y(y) {}
+};
 typedef struct Pyramid {
 	std::vector<Vertex> vertices;
 	std::vector<unsigned int> indices;
@@ -314,11 +318,15 @@ struct Matrix4 {
 		Matrix4 result = Matrix4::rotateX(camx).multiply(Matrix4::rotateY(camy)).multiply(Matrix4::rotateZ(camz)).multiply(Matrix4::translate(-camx, -camy, -camz));
 		return result;
 	}
-	Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) { //projects vector onto screen
+	static Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) {
 		Matrix4 result = world.multiply(view).multiply(projection);
 		return result.vecmatrix(vectoroni);
 	}
-
+	static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) {
+		float x = (vec3.x / vec3.z) * screenWidth / 2 + screenWidth / 2;
+		float y = (vec3.y / vec3.z) * screenHeight / 2 + screenHeight / 2;
+		return Vector2(x, y);
+	}
 	void printmatrix() const {
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
@@ -328,19 +336,28 @@ struct Matrix4 {
 		}
 	}
 };
-Pyramid pyramid1(300.0f, 300.0f, 300.0f);
-Matrix4 world = Matrix4::rotateX(90.0);
+std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
+	std::vector<Vector3> extractedVertices;
+	for (const Vertex& vertex : pyramid.vertices) {
+		extractedVertices.push_back(vertex.position);
+	}
+	return extractedVertices;
+}
+
+Pyramid pyramid1(800.0f, 800.0f, 800.0f);
+Matrix4 world;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
+	static std::vector<Vector2> projectedVertices;
 
 	switch (uMsg) {
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
 	case WM_CREATE:
-		SetTimer(hwnd, 1, 15, NULL);
+		SetTimer(hwnd, 1, 35, NULL);
 		break;
-	case WM_TIMER: {
+	case WM_TIMER: { //converting vertexes and projecting them to 2d screen
 		InvalidateRect(hwnd, NULL, TRUE);
 
 	}
@@ -386,7 +403,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case 'J': //for debugging
 			world.printmatrix();
 		}
-
+		projectedVertices.clear(); //clears projected vertices so that they don't stack up
+		std::vector<Vector3> extractedVertices = extract(pyramid1);
+		Matrix4 worldMatrix = Matrix4::worldmatrix(0, 0, 0, 0, 0, 0, 1, 1, 1);
+		Matrix4 viewMatrix = Matrix4::viewmatrix(camera.x, camera.y, camera.z)
+			.multiply(Matrix4::rotateX(camera.pitch))
+			.multiply(Matrix4::rotateY(camera.yaw))
+			.multiply(Matrix4::rotateZ(camera.roll));
+		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, 800.0f / 600.0f, 0.1, 1000);
+		for (const auto& vertex : extractedVertices) {
+			Vector2 projected = Matrix4::project2D(Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix), 500, 500);
+			projectedVertices.push_back(projected);
+			std::cout << projected.x << " " << projected.y << " " << std::endl;
+		}
 		break;
 	}
 	case WM_PAINT: {
@@ -394,17 +423,26 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		HDC hdc = BeginPaint(hwnd, &ps);
 		RECT rect;
 		GetClientRect(hwnd, &rect);
-		HDC memDC = CreateCompatibleDC(hdc); //Create a memory DC for double buffering
+		HDC memDC = CreateCompatibleDC(hdc); // Create a memory DC for double buffering
 		HBITMAP memBM = CreateCompatibleBitmap(hdc, rect.right, rect.bottom);
 		HGDIOBJ oldBM = SelectObject(memDC, memBM);
 		FillRect(memDC, &rect, (HBRUSH)(COLOR_WINDOW + 1));
+
+		if (projectedVertices.size() > 0) {
+			for (size_t i = 1; i < projectedVertices.size(); i++) {
+				line(memDC, projectedVertices[i - 1].x, projectedVertices[i - 1].y, projectedVertices[i].x, projectedVertices[i].y, 1, "black");
+			}
+			line(memDC, projectedVertices.back().x, projectedVertices.back().y, projectedVertices[0].x, projectedVertices[0].y, 1, "black");
+		}
+
 		BitBlt(hdc, 0, 0, rect.right, rect.bottom, memDC, 0, 0, SRCCOPY);
 		SelectObject(memDC, oldBM);
 		DeleteObject(memBM);
-		DeleteDC(memDC); //delete the memory DC
+		DeleteDC(memDC); // delete the memory DC
 		EndPaint(hwnd, &ps);
 		break;
 	}
+
 
 	default:
 		return DefWindowProc(hwnd, uMsg, wParam, lParam);
