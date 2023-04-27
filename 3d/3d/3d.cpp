@@ -149,7 +149,32 @@ struct Vector3 {
 		return Vector3(x / len, y / len, z / len);
 	}
 };
+struct Vertex {
+	Vector3 position;
+	Vertex(float x, float y, float z) : position(x, y, z) {}
+};
+typedef struct Pyramid {
+	std::vector<Vertex> vertices;
+	std::vector<unsigned int> indices;
+	Pyramid(float width, float depth, float height) {
+		vertices = {
+			Vertex(-width / 2.0f, 0.0f, -depth / 2.0f), // 0
+			Vertex(width / 2.0f, 0.0f, -depth / 2.0f),  // 1
+			Vertex(width / 2.0f, 0.0f, depth / 2.0f),   // 2
+			Vertex(-width / 2.0f, 0.0f, depth / 2.0f),  // 3
+			Vertex(0.0f, height, 0.0f) // 4
+		};
+		indices = {
+			0, 1, 2,
+			0, 2, 3,
 
+			0, 4, 1,
+			1, 4, 2,
+			2, 4, 3,
+			3, 4, 0
+		};
+	}
+};
 struct Matrix4 {
 	float m[4][4];
 	Matrix4() {
@@ -159,6 +184,14 @@ struct Matrix4 {
 			}
 		}
 	}
+	Matrix4(const Matrix4& other) {
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				m[i][j] = other.m[i][j];
+			}
+		}
+	}
+
 	Matrix4 add(const Matrix4& other) const { //add two matrices together
 		Matrix4 result;
 		for (int i = 0; i < 4; i++) {
@@ -273,8 +306,30 @@ struct Matrix4 {
 		result.m[3][3] = 0.0f;
 		return result;
 	}
+	static Matrix4 worldmatrix(float tx, float ty, float tz, float rx, float ry, float rz, float sx, float sy, float sz) { //t = translation, r = rotation, s = scale
+		Matrix4 result = Matrix4::translate(tx, ty, tz).multiply(Matrix4::rotateX(rx)).multiply(Matrix4::rotateY(ry)).multiply(Matrix4::rotateZ(rz)).multiply(Matrix4::scale(sx, sy, sz));
+		return result;
+	}
+	static Matrix4 viewmatrix(float camx, float camy, float camz) {
+		Matrix4 result = Matrix4::rotateX(camx).multiply(Matrix4::rotateY(camy)).multiply(Matrix4::rotateZ(camz)).multiply(Matrix4::translate(-camx, -camy, -camz));
+		return result;
+	}
+	Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) { //projects vector onto screen
+		Matrix4 result = world.multiply(view).multiply(projection);
+		return result.vecmatrix(vectoroni);
+	}
 
+	void printmatrix() const {
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				std::cout << m[i][j] << " ";
+			}
+			std::cout << std::endl;
+		}
+	}
 };
+Pyramid pyramid1(300.0f, 300.0f, 300.0f);
+Matrix4 world = Matrix4::rotateX(90.0);
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
 
@@ -287,6 +342,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		break;
 	case WM_TIMER: {
 		InvalidateRect(hwnd, NULL, TRUE);
+
 	}
 	case WM_MOUSEMOVE: {
 		std::get<0>(mouse) = LOWORD(lParam);
@@ -310,10 +366,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			camera.yaw += rotation_angle;
 			break;
 		case 'W':
-			camera. = z += translation_amount;
+			camera.z += translation_amount;
 			break;
 		case 'A':
-			camera. = x -= translation_amount;
+			camera.x -= translation_amount;
 			break;
 		case 'S':
 			camera.z -= translation_amount;
@@ -327,10 +383,12 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case 'E':
 			camera.roll -= rotation_angle;
 			break;
+		case 'J': //for debugging
+			world.printmatrix();
 		}
+
 		break;
 	}
-
 	case WM_PAINT: {
 		PAINTSTRUCT ps;
 		HDC hdc = BeginPaint(hwnd, &ps);
@@ -340,13 +398,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		HBITMAP memBM = CreateCompatibleBitmap(hdc, rect.right, rect.bottom);
 		HGDIOBJ oldBM = SelectObject(memDC, memBM);
 		FillRect(memDC, &rect, (HBRUSH)(COLOR_WINDOW + 1));
-		circle(memDC, 500, 500, 20, "red");
-		line(memDC, 1000, 100, 1400, 900, 60, "black");
 		BitBlt(hdc, 0, 0, rect.right, rect.bottom, memDC, 0, 0, SRCCOPY);
 		SelectObject(memDC, oldBM);
 		DeleteObject(memBM);
 		DeleteDC(memDC); //delete the memory DC
-
 		EndPaint(hwnd, &ps);
 		break;
 	}
