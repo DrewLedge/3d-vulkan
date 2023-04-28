@@ -18,10 +18,8 @@ typedef struct {
 	double yaw;
 	double roll;
 	double fov;
-	double nearc; //near clipping plane
-	double farc; //far clipping plane
 } cam;
-cam camera = { 0,30,0,0,0,0,90 }; //x,y,z,pitch,yaw,roll,fov
+cam camera = { 0,0,0,0,0,0, 300 }; //x,y,z,pitch,yaw,roll,fov
 int randomInt(int min, int max) {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
@@ -69,7 +67,6 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR pCmdLine, int nCmdShow
 
 	return 0;
 }
-
 COLORREF getcolor(std::string color) {
 	if (color == "red") {
 		return RGB(255, 0, 0);
@@ -159,7 +156,6 @@ struct Vector2 {
 };
 typedef struct Pyramid {
 	std::vector<Vertex> vertices;
-	std::vector<unsigned int> indices;
 	Pyramid(float width, float depth, float height) {
 		vertices = {
 			Vertex(-width / 2.0f, 0.0f, -depth / 2.0f), // 0
@@ -167,15 +163,6 @@ typedef struct Pyramid {
 			Vertex(width / 2.0f, 0.0f, depth / 2.0f),   // 2
 			Vertex(-width / 2.0f, 0.0f, depth / 2.0f),  // 3
 			Vertex(0.0f, height, 0.0f) // 4
-		};
-		indices = {
-			0, 1, 2,
-			0, 2, 3,
-
-			0, 4, 1,
-			1, 4, 2,
-			2, 4, 3,
-			3, 4, 0
 		};
 	}
 };
@@ -327,14 +314,6 @@ struct Matrix4 {
 		float y = (vec3.y / vec3.z) * screenHeight / 2 + screenHeight / 2;
 		return Vector2(x, y);
 	}
-	void printmatrix() const {
-		for (int i = 0; i < 4; i++) {
-			for (int j = 0; j < 4; j++) {
-				std::cout << m[i][j] << " ";
-			}
-			std::cout << std::endl;
-		}
-	}
 };
 std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
 	std::vector<Vector3> extractedVertices;
@@ -344,11 +323,12 @@ std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
 	return extractedVertices;
 }
 
-Pyramid pyramid1(800.0f, 800.0f, 800.0f);
+Pyramid pyramid1(100.0f, 100.0f, 100.0f);
 Matrix4 world;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
 	static std::vector<Vector2> projectedVertices;
+	static double screenx, screeny;
 
 	switch (uMsg) {
 	case WM_DESTROY:
@@ -359,7 +339,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		break;
 	case WM_TIMER: { //converting vertexes and projecting them to 2d screen
 		InvalidateRect(hwnd, NULL, TRUE);
-
+		break;
 	}
 	case WM_MOUSEMOVE: {
 		std::get<0>(mouse) = LOWORD(lParam);
@@ -410,9 +390,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			.multiply(Matrix4::rotateX(camera.pitch))
 			.multiply(Matrix4::rotateY(camera.yaw))
 			.multiply(Matrix4::rotateZ(camera.roll));
-		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, 800.0f / 600.0f, 0.1, 1000);
+		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, 800.0f / 600.0f, 0.1, 1000.0);
+		std::cout << "--------------------------" << std::endl;
 		for (const auto& vertex : extractedVertices) {
-			Vector2 projected = Matrix4::project2D(Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix), 500, 500);
+			Vector2 projected = Matrix4::project2D(Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix), screenx, screeny);
 			projectedVertices.push_back(projected);
 			std::cout << projected.x << " " << projected.y << " " << std::endl;
 		}
@@ -427,14 +408,14 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		HBITMAP memBM = CreateCompatibleBitmap(hdc, rect.right, rect.bottom);
 		HGDIOBJ oldBM = SelectObject(memDC, memBM);
 		FillRect(memDC, &rect, (HBRUSH)(COLOR_WINDOW + 1));
-
+		screenx = rect.right - 100;
+		screeny = rect.bottom - 100;
 		if (projectedVertices.size() > 0) {
 			for (size_t i = 1; i < projectedVertices.size(); i++) {
 				line(memDC, projectedVertices[i - 1].x, projectedVertices[i - 1].y, projectedVertices[i].x, projectedVertices[i].y, 1, "black");
 			}
 			line(memDC, projectedVertices.back().x, projectedVertices.back().y, projectedVertices[0].x, projectedVertices[0].y, 1, "black");
 		}
-
 		BitBlt(hdc, 0, 0, rect.right, rect.bottom, memDC, 0, 0, SRCCOPY);
 		SelectObject(memDC, oldBM);
 		DeleteObject(memBM);
