@@ -154,7 +154,7 @@ struct Vector2 {
 	float x, y;
 	Vector2(float x, float y) : x(x), y(y) {}
 };
-typedef struct Pyramid {
+typedef struct Pyramid { //needs work
 	std::vector<Vertex> vertices;
 	Pyramid(float width, float depth, float height) {
 		vertices = {
@@ -357,19 +357,34 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			.multiply(Matrix4::rotateX(camera.pitch))
 			.multiply(Matrix4::rotateY(camera.yaw))
 			.multiply(Matrix4::rotateZ(camera.roll));
-		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, screenx / screeny, 0.1, 30000000000.0);
+		std::cout << "--------------" << std::endl;
+		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, screenx / screeny, 0.1, 3000.0);
 		for (const auto& vertex : extractedVertices) {
 			Vector3 projectedVec3 = Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix);
 			Vector3 normalizedVec3 = Matrix4::norm(projectedVec3);
 			Vector2 projected = Matrix4::project2D(normalizedVec3, screenx, screeny);
 			projectedVertices.push_back(projected);
+			std::cout << projected.x << " " << projected.y << std::endl;
 		}
-
 		break;
 	}
 	case WM_MOUSEMOVE: {
-		std::get<0>(mouse) = LOWORD(lParam);
-		std::get<1>(mouse) = HIWORD(lParam);
+		double newMouseX = LOWORD(lParam);
+		double newMouseY = HIWORD(lParam);
+		double deltaX = std::get<0>(mouse) - newMouseX;
+		double deltaY = std::get<1>(mouse) - newMouseY;
+		std::get<0>(mouse) = newMouseX;
+		std::get<1>(mouse) = newMouseY;
+
+		float sensitivity = 0.0002f;
+		camera.yaw += deltaX * sensitivity;
+		camera.pitch -= deltaY * sensitivity;
+
+		RECT clientRect;
+		GetClientRect(hwnd, &clientRect);
+		std::get<0>(mouse) = clientRect.right / 2;
+		std::get<1>(mouse) = clientRect.bottom / 2;
+
 		break;
 	}
 	case WM_KEYDOWN: {
@@ -383,22 +398,22 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 			camera.pitch -= rotation_angle;
 			break;
 		case VK_LEFT:
-			camera.yaw -= rotation_angle;
+			camera.roll -= rotation_angle;
 			break;
 		case VK_RIGHT:
-			camera.yaw += rotation_angle;
+			camera.roll += rotation_angle;
 			break;
 		case 'W':
 			camera.z += translation_amount;
 			break;
 		case 'A':
-			camera.x -= translation_amount;
+			camera.x += translation_amount;
 			break;
 		case 'S':
 			camera.z -= translation_amount;
 			break;
 		case 'D':
-			camera.x += translation_amount;
+			camera.x -= translation_amount;
 			break;
 		case 'Q':
 			camera.roll += rotation_angle;
@@ -420,6 +435,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		FillRect(memDC, &rect, (HBRUSH)(COLOR_WINDOW + 1));
 		screenx = rect.right - 100;
 		screeny = rect.bottom - 100;
+		std::cout << "--------------" << std::endl;
 		if (projectedVertices.size() > 0) {
 			for (size_t i = 1; i < projectedVertices.size(); i++) {
 				line(memDC, projectedVertices[i - 1].x, projectedVertices[i - 1].y, projectedVertices[i].x, projectedVertices[i].y, 1, "black");
