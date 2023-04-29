@@ -19,7 +19,7 @@ typedef struct {
 	double roll;
 	double fov;
 } cam;
-cam camera = { 0,0,0,0,0,0, 300 }; //x,y,z,pitch,yaw,roll,fov
+cam camera = { 0,0,0,-72,-125,0, 300 }; //x,y,z,pitch,yaw,roll,fov
 int randomInt(int min, int max) {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());
@@ -117,6 +117,7 @@ void line(HDC hdc, int x1, int y1, int x2, int y2, int thickness, const std::str
 	SelectObject(hdc, hOldPen);
 	DeleteObject(hPen);
 }
+
 struct Vector3 {
 	float x, y, z;
 	Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
@@ -154,9 +155,9 @@ struct Vector2 {
 	float x, y;
 	Vector2(float x, float y) : x(x), y(y) {}
 };
-typedef struct Pyramid { //needs work
+typedef struct Triangle { //needs work
 	std::vector<Vertex> vertices;
-	Pyramid(float width, float depth, float height) {
+	Triangle(float width, float depth, float height) {
 		vertices = {
 			Vertex(-width / 2.0f, 0.0f, -depth / 2.0f), // 0
 			Vertex(width / 2.0f, 0.0f, -depth / 2.0f),  // 1
@@ -326,7 +327,7 @@ struct Matrix4 {
 	}
 
 };
-std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
+std::vector<Vector3> extract(const Triangle& pyramid) { //only works for pyramids
 	std::vector<Vector3> extractedVertices;
 	for (const Vertex& vertex : pyramid.vertices) {
 		extractedVertices.push_back(vertex.position);
@@ -334,40 +335,52 @@ std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
 	return extractedVertices;
 }
 
-Pyramid pyramid1(1000.0f, 1000.0f, 1000.0f);
+Triangle pyramid1(1000.0f, 1000.0f, 1000.0f);
+Triangle pyramid2(1000.0f, 500.0f, 500.0f);
 Matrix4 world;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
 	static std::vector<Vector2> projectedVertices;
 	static double screenx, screeny;
+	std::vector<Triangle>pyramid_shapes;
 
+	pyramid_shapes.push_back(pyramid1);
+	pyramid_shapes.push_back(pyramid2);
 	switch (uMsg) {
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
 	case WM_CREATE:
-		SetTimer(hwnd, 1, 35, NULL);
+		SetTimer(hwnd, 1, 1, NULL);
 		break;
 	case WM_TIMER: {
 		InvalidateRect(hwnd, NULL, TRUE);
 		projectedVertices.clear(); //clears projected vertices so that they don't stack up
-		std::vector<Vector3> extractedVertices = extract(pyramid1);
-		Matrix4 worldMatrix = Matrix4::worldmatrix(0, 0, 0, 0, 0, 0, 1, 1, 1);
-		Matrix4 viewMatrix = Matrix4::viewmatrix(camera.x, camera.y, camera.z)
-			.multiply(Matrix4::rotateX(camera.pitch))
-			.multiply(Matrix4::rotateY(camera.yaw))
-			.multiply(Matrix4::rotateZ(camera.roll));
-		std::cout << "--------------" << std::endl;
-		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, screenx / screeny, 0.1, 3000.0);
-		for (const auto& vertex : extractedVertices) {
-			Vector3 projectedVec3 = Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix);
-			Vector3 normalizedVec3 = Matrix4::norm(projectedVec3);
-			Vector2 projected = Matrix4::project2D(normalizedVec3, screenx, screeny);
-			projectedVertices.push_back(projected);
-			std::cout << projected.x << " " << projected.y << std::endl;
+		for (auto pyramid : pyramid_shapes) {
+			std::vector<Vector3> extractedVertices = extract(pyramid);
+			Matrix4 worldMatrix = Matrix4::worldmatrix(0, 0, 0, 0, 0, 0, 1, 1, 1);
+			Matrix4 viewMatrix = Matrix4::viewmatrix(camera.x, camera.y, camera.z)
+				.multiply(Matrix4::rotateX(camera.pitch))
+				.multiply(Matrix4::rotateY(camera.yaw))
+				.multiply(Matrix4::rotateZ(camera.roll));
+			std::cout << "--------------" << std::endl;
+			Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, screenx / screeny, 0.1, 3000.0);
+			for (const auto& vertex : extractedVertices) {
+				Vector3 projectedVec3 = Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix);
+				Vector3 normalizedVec3 = Matrix4::norm(projectedVec3);
+				Vector2 projected = Matrix4::project2D(normalizedVec3, screenx, screeny);
+
+				// Check if the projected vertex is within screen bounds
+				if (projected.x >= 0 && projected.x <= screenx && projected.y >= 0 && projected.y <= screeny) {
+					projectedVertices.push_back(projected);
+					//std::cout << projected.x << " " << projected.y << std::endl;
+					std::cout << camera.pitch << " " << camera.yaw << " " << camera.roll << std::endl;
+				}
+			}
 		}
 		break;
 	}
+
 	case WM_MOUSEMOVE: {
 		double newMouseX = LOWORD(lParam);
 		double newMouseY = HIWORD(lParam);
