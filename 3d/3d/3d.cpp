@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <random>
+
 double PI = 3.14159265358979323846;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 typedef struct {
