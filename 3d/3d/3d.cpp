@@ -166,6 +166,7 @@ typedef struct Pyramid {
 		};
 	}
 };
+
 struct Matrix4 {
 	float m[4][4];
 	Matrix4() {
@@ -309,11 +310,21 @@ struct Matrix4 {
 		Matrix4 result = world.multiply(view).multiply(projection);
 		return result.vecmatrix(vectoroni);
 	}
-	static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) {
-		float x = (vec3.x / vec3.z) * screenWidth / 2 + screenWidth / 2;
-		float y = (vec3.y / vec3.z) * screenHeight / 2 + screenHeight / 2;
-		return Vector2(x, y);
+	static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) { //converts a 3D vector to 2D to display
+		float halfScreenWidth = screenWidth / 2;
+		float halfScreenHeight = screenHeight / 2;
+		float zNormalized = std::max(0.001f, vec3.z + 1.0f);
+		float projectedX = vec3.x / zNormalized * halfScreenWidth + halfScreenWidth;
+		float projectedY = vec3.y / zNormalized * halfScreenHeight + halfScreenHeight;
+		return Vector2(projectedX, projectedY);
 	}
+	static Vector3 norm(const Vector3& vec3) { //normalizes a vector to NDC
+		float x = (vec3.x + 1.0f) / 2.0f;
+		float y = (vec3.y + 1.0f) / 2.0f;
+		float z = (vec3.z + 1.0f) / 2.0f;
+		return Vector3(x, y, z);
+	}
+
 };
 std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
 	std::vector<Vector3> extractedVertices;
@@ -323,7 +334,7 @@ std::vector<Vector3> extract(const Pyramid& pyramid) { //only works for pyramids
 	return extractedVertices;
 }
 
-Pyramid pyramid1(100.0f, 100.0f, 100.0f);
+Pyramid pyramid1(1000.0f, 1000.0f, 1000.0f);
 Matrix4 world;
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
 	static std::tuple<double, double> mouse = { 0,0 }; //mouse x and y
@@ -337,8 +348,23 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 	case WM_CREATE:
 		SetTimer(hwnd, 1, 35, NULL);
 		break;
-	case WM_TIMER: { //converting vertexes and projecting them to 2d screen
+	case WM_TIMER: {
 		InvalidateRect(hwnd, NULL, TRUE);
+		projectedVertices.clear(); //clears projected vertices so that they don't stack up
+		std::vector<Vector3> extractedVertices = extract(pyramid1);
+		Matrix4 worldMatrix = Matrix4::worldmatrix(0, 0, 0, 0, 0, 0, 1, 1, 1);
+		Matrix4 viewMatrix = Matrix4::viewmatrix(camera.x, camera.y, camera.z)
+			.multiply(Matrix4::rotateX(camera.pitch))
+			.multiply(Matrix4::rotateY(camera.yaw))
+			.multiply(Matrix4::rotateZ(camera.roll));
+		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, screenx / screeny, 0.1, 30000000000.0);
+		for (const auto& vertex : extractedVertices) {
+			Vector3 projectedVec3 = Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix);
+			Vector3 normalizedVec3 = Matrix4::norm(projectedVec3);
+			Vector2 projected = Matrix4::project2D(normalizedVec3, screenx, screeny);
+			projectedVertices.push_back(projected);
+		}
+
 		break;
 	}
 	case WM_MOUSEMOVE: {
@@ -380,22 +406,6 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 		case 'E':
 			camera.roll -= rotation_angle;
 			break;
-		case 'J': //for debugging
-			world.printmatrix();
-		}
-		projectedVertices.clear(); //clears projected vertices so that they don't stack up
-		std::vector<Vector3> extractedVertices = extract(pyramid1);
-		Matrix4 worldMatrix = Matrix4::worldmatrix(0, 0, 0, 0, 0, 0, 1, 1, 1);
-		Matrix4 viewMatrix = Matrix4::viewmatrix(camera.x, camera.y, camera.z)
-			.multiply(Matrix4::rotateX(camera.pitch))
-			.multiply(Matrix4::rotateY(camera.yaw))
-			.multiply(Matrix4::rotateZ(camera.roll));
-		Matrix4 projectionMatrix = Matrix4::perspective(camera.fov, 800.0f / 600.0f, 0.1, 1000.0);
-		std::cout << "--------------------------" << std::endl;
-		for (const auto& vertex : extractedVertices) {
-			Vector2 projected = Matrix4::project2D(Matrix4::projectVector(vertex, worldMatrix, viewMatrix, projectionMatrix), screenx, screeny);
-			projectedVertices.push_back(projected);
-			std::cout << projected.x << " " << projected.y << " " << std::endl;
 		}
 		break;
 	}
