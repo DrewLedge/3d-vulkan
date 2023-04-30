@@ -1,12 +1,13 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan.h>
 
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
 
-const uint32_t WIDTH = 800;
-const uint32_t HEIGHT = 600;
+const uint32_t WIDTH = 3200;
+const uint32_t HEIGHT = 1800;
 
 class HelloTriangleApplication {
 public:
@@ -19,7 +20,7 @@ public:
 
 private:
 	GLFWwindow* window;
-
+	VkInstance instance;
 	void initWindow() {
 		glfwInit();
 
@@ -28,11 +29,31 @@ private:
 
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	}
+	void createInstance() {
+		VkApplicationInfo appInfo{};
+		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		appInfo.pApplicationName = "Hello Triangle";
+		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		appInfo.pEngineName = "No Engine";
+		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		appInfo.apiVersion = VK_API_VERSION_1_0;
+		VkInstanceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		createInfo.pApplicationInfo = &appInfo;
+		uint32_t glfwExtensionCount = 0; //uint32_t is an unsigned 32 bit integer
+		const char** glfwExtensions;
+		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount); // gets the number of extensions required to interface with the window system
+		createInfo.enabledExtensionCount = glfwExtensionCount;
+		createInfo.ppEnabledExtensionNames = glfwExtensions;
+		createInfo.enabledLayerCount = 0;
 
-	void initVulkan() {
-
+		if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) { // if instance creation fails
+			throw std::runtime_error("failed to create instance!");
+		}
 	}
-
+	void initVulkan() {
+		createInstance();
+	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
 			glfwPollEvents();
@@ -40,8 +61,9 @@ private:
 	}
 
 	void cleanup() {
-		glfwDestroyWindow(window);
+		vkDestroyInstance(instance, nullptr);
 
+		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
 };
