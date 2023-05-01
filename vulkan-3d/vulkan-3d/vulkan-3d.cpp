@@ -65,10 +65,18 @@ private:
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
+	//TODO: 
+	// 1. clean up code (done)
+	// 2. set up the physical and logical devices.
+	// 3. create a swap chain to present images to the screen
+	// 4. create graphics pipeline to render the triangle (goal)
+	// 5. create render passes, commandbuffers and framebuffers
+	// 6. draw the triangle
+
 };
 
 int main() {
-	HelloTriangleApplication app;
+	HelloTriangleApplication app; // 
 
 	try {
 		app.run();
