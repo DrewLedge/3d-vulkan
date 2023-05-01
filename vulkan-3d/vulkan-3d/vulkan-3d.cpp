@@ -34,7 +34,7 @@ private:
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
 		appInfo.pApplicationName = "Hello Triangle";
 		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-		appInfo.pEngineName = "No Engine";
+		appInfo.pEngineName = "No Engine"; //an example would be Unreal, Unity or Godot
 		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 		appInfo.apiVersion = VK_API_VERSION_1_0;
 		VkInstanceCreateInfo createInfo{};
@@ -42,7 +42,7 @@ private:
 		createInfo.pApplicationInfo = &appInfo;
 		uint32_t glfwExtensionCount = 0; //uint32_t is an unsigned 32 bit integer
 		const char** glfwExtensions;
-		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount); // gets the number of extensions required to interface with the window system
+		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 		createInfo.enabledExtensionCount = glfwExtensionCount;
 		createInfo.ppEnabledExtensionNames = glfwExtensions;
 		createInfo.enabledLayerCount = 0;
@@ -59,7 +59,6 @@ private:
 			glfwPollEvents();
 		}
 	}
-
 	void cleanup() {
 		vkDestroyInstance(instance, nullptr);
 
