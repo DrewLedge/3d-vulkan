@@ -1,6 +1,9 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+#include <optional>
+#include <vector>
+#include <string>
 
 #include <iostream>
 #include <stdexcept>
@@ -51,6 +54,43 @@ private:
 			throw std::runtime_error("failed to create instance!");
 		}
 	}
+
+	struct QueueFamilyIndices { // this struct is used to find the queue families that are supported by the device
+		std::optional<uint32_t> graphicsFamily;
+
+		bool isComplete() {
+			return graphicsFamily.has_value();
+		}
+	};
+
+	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+		QueueFamilyIndices indices;
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr); //this function gets the number of queue families and stores it in queueFamilyCount
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data()); //passes device, queueFamilyCount and queueFamilies.data() as pointers to the function
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies) {
+			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //& bitwise AND operator to check if the queue family supports graphics. if it does then it will be non-zero
+				indices.graphicsFamily = i;
+			}
+
+			if (indices.isComplete()) {
+				break;
+			}
+
+			i++;
+		}
+
+		return indices; //return the indices/position of the queue family that supports graphics
+	}
+
+	bool isDeviceSuitable(VkPhysicalDevice device) {
+		QueueFamilyIndices indices = findQueueFamilies(device);
+		return indices.isComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
+	}
+
+
 	void initVulkan() {
 		createInstance();
 	}
