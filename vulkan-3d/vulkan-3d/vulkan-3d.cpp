@@ -21,6 +21,7 @@ public:
 	}
 
 private:
+	VkSurfaceKHR surface; // a surface is an abstract type that represents a window or monitor that will be rendered to
 	GLFWwindow* window;
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -28,7 +29,7 @@ private:
 
 	void initWindow() {
 		glfwInit();
-
+		createSurface();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // GLFW_NO_API tells GLFW to not create an OpenGL context but rather to only create a window
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
@@ -86,15 +87,22 @@ private:
 		VkPhysicalDeviceFeatures deviceFeatures{}; //this struct is used to specify the features we will be using. such as geometry shaders, anisotropic filtering, etc.
 		VkDeviceCreateInfo createInfo{}; //specify which queues to create
 		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		createInfo.pQueueCreateInfos = &queueCreateInfo; // pointer to the queueCreateInfo struct to specify the queues to create
+		createInfo.pQueueCreateInfos = &queueCreateInfo; //queues to create
 		createInfo.queueCreateInfoCount = 1;
-		createInfo.pEnabledFeatures = &deviceFeatures; //pointer to the deviceFeatures struct to specify the features to enable
-		createInfo.enabledExtensionCount = 0;
+		createInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
+		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }; // specify the device extensions to enable
+		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		createInfo.ppEnabledExtensionNames = nullptr; //no extensions to enable
 		createInfo.enabledLayerCount = 0;
-		createInfo.ppEnabledLayerNames = nullptr;
-		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
-			throw std::runtime_error("failed to create logical device!");
+		createInfo.ppEnabledLayerNames = nullptr; 
+			if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
+				throw std::runtime_error("failed to create logical device!");
+			}
+	}
+	void createSurface() {
+		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create window surface!");
 		}
 	}
 
@@ -131,6 +139,36 @@ private:
 	bool isDeviceSuitable(VkPhysicalDevice device) {
 		QueueFamilyIndices indices = findQueueFamilies(device);
 		return indices.isComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
+	}
+
+	struct SwapChainSupportDetails { // struct to hold the swap chain details
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector<VkSurfaceFormatKHR> formats;
+		std::vector<VkPresentModeKHR> presentModes;
+	};
+	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) { //takes in the physical device and outputs the swap chain details
+		SwapChainSupportDetails details;
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); //get the surface capabilities. an example of a surface capability is the minimum and maximum number of images in the swap chain
+		uint32_t formatCount;
+		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr); //get the number of formats. an example of a format is the pixel format and color space
+		if (formatCount != 0) {
+			details.formats.resize(formatCount);
+			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
+		}
+		uint32_t presentModeCount;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr); //gets the number of present modes. this is the conditions for "swapping" images to the screen
+		if (presentModeCount != 0) {
+			details.presentModes.resize(presentModeCount);
+			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
+		}
+		return details; //return the swap chain details
+	}
+	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
+		VkExtent2D actualExtent = { WIDTH, HEIGHT }; //extent=res
+		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));  //clamp the width between the min and max extents
+		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+
+		return actualExtent; //return the actual extent
 	}
 
 
