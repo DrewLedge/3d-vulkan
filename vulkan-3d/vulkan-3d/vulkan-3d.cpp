@@ -26,7 +26,10 @@ private:
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device; //logical device that interfaces with the physical device
-
+	VkSwapchainKHR swapChain; // swap chain handle
+	std::vector<VkImage> swapChainImages; // swap chain images
+	VkFormat swapChainImageFormat; // swap chain image format
+	VkExtent2D swapChainExtent; // swap chain extent
 	void initWindow() {
 		glfwInit();
 		createSurface();
@@ -122,7 +125,7 @@ private:
 		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data()); //outputs the queue families into the queueFamilies vector
 		int i = 0;
 		for (const auto& queueFamily : queueFamilies) {
-			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //& bitwise AND operator to check if the queue family supports graphics. if it does then it will be non-zero
+			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //check if the queue family supports graphics
 				indices.graphicsFamily = i;
 			}
 
@@ -171,7 +174,56 @@ private:
 		return actualExtent; //return the actual extent
 	}
 
+	void createSwapChain() {
+		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice); //get the swap chain details from functions above
+		// choose the best surface format, present mode, and swap extent for the swap chain.
+		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
+		VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
+		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
+			imageCount = swapChainSupport.capabilities.maxImageCount;
+		}
+		// create the swap chain.
+		VkSwapchainCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		createInfo.surface = surface;
+		createInfo.minImageCount = imageCount;
+		createInfo.imageFormat = surfaceFormat.format;
+		createInfo.imageColorSpace = surfaceFormat.colorSpace;
+		createInfo.imageExtent = extent;
+		createInfo.imageArrayLayers = 1; //the num of layers each image has.
+		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+		uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value() }; //the queue family indices that will be used
+		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
+		createInfo.queueFamilyIndexCount = 1;
+		createInfo.pQueueFamilyIndices = queueFamilyIndices;
+		createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
+		createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; //ignore the alpha channel
+		createInfo.presentMode = presentMode;
+		createInfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
+		createInfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
+		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create swap chain!");
+		}
+		// get the swap chain images
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
+		swapChainImages.resize(imageCount);
+		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data()); //gets the images in the swap chain
+		swapChainImageFormat = surfaceFormat.format;
+		swapChainExtent = extent;
+		createImageViews();
+	}
+	VkSurfaceFormatKHR  chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) { //choose the best surface format for the swap chain
+		for (const auto& availableFormat : availableFormats) {
+			if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) { //if the format is srgb and the colorspace is srgb return the format, otherwise return the first format
+				return availableFormat;
+			}
+		}
 
+		return availableFormats[0];
+	}
 	void initVulkan() {
 		createInstance();
 		pickPhysicalDevice();
