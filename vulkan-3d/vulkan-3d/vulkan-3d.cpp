@@ -21,21 +21,20 @@ public:
 	}
 
 private:
-	VkSurfaceKHR surface; // a surface is an abstract type that represents a window or monitor that will be rendered to
+	VkSurfaceKHR surface;
 	GLFWwindow* window;
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-	VkDevice device; //logical device that interfaces with the physical device
-	VkSwapchainKHR swapChain; // swap chain handle
-	std::vector<VkImage> swapChainImages; // swap chain images
-	VkFormat swapChainImageFormat; // swap chain image format
-	VkExtent2D swapChainExtent; // swap chain extent
+	VkDevice device;
+	VkSwapchainKHR swapChain;
+	std::vector<VkImage> swapChainImages;
+	VkFormat swapChainImageFormat;
+	VkExtent2D swapChainExtent;
+	std::vector<VkImageView> swapChainImageViews;
 	void initWindow() {
 		glfwInit();
-		createSurface();
-		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // GLFW_NO_API tells GLFW to not create an OpenGL context but rather to only create a window
+		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	}
 	void createInstance() {
@@ -96,12 +95,11 @@ private:
 		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }; // specify the device extensions to enable
 		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-		createInfo.ppEnabledExtensionNames = nullptr; //no extensions to enable
 		createInfo.enabledLayerCount = 0;
-		createInfo.ppEnabledLayerNames = nullptr; 
-			if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
-				throw std::runtime_error("failed to create logical device!");
-			}
+		createInfo.ppEnabledLayerNames = nullptr;
+		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
+			throw std::runtime_error("failed to create logical device!");
+		}
 	}
 	void createSurface() {
 		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
@@ -232,29 +230,59 @@ private:
 		}
 		return VK_PRESENT_MODE_FIFO_KHR;
 	}
+	void createImageViews() {
+		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			VkImageViewCreateInfo createInfo{};
+			createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			createInfo.image = swapChainImages[i]; // assign the current swap chain image
+			createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // set the image view type to 2D
+			createInfo.format = swapChainImageFormat;
+			createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+			createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set the aspect mask to color
+			createInfo.subresourceRange.baseMipLevel = 0;
+			createInfo.subresourceRange.levelCount = 1;
+			createInfo.subresourceRange.baseArrayLayer = 0;
+			createInfo.subresourceRange.layerCount = 1;
+			if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create image views!");
+			}
+		}
+	}
 
 	void initVulkan() {
 		createInstance();
 		pickPhysicalDevice();
 		createLogicalDevice();
-
+		createSurface();
+		createSwapChain();
 	}
+
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
 			glfwPollEvents(); // this function checks if any events are triggered
 		}
 	}
 	void cleanup() {
-		vkDestroyInstance(instance, nullptr);
+		for (auto imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
+		}
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
+		vkDestroyInstance(instance, nullptr);
 
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
+
 	//TODO: 
 	// 1. clean up code (done)
 	// 2. set up the physical and logical devices. (done)
-	// 3. create a swap chain to present images to the screen
+	// 3. create a swap chain to present images to the screen (done)
 	// 4. create graphics pipeline to render the triangle (goal)
 	// 5. create render passes, commandbuffers and framebuffers
 	// 6. draw the triangle
