@@ -12,7 +12,7 @@
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 
-class HelloTriangleApplication {
+class Engine {
 public:
 	void run() {
 		initWindow();
@@ -44,7 +44,7 @@ private:
 	void createInstance() {
 		VkApplicationInfo appInfo{};
 		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
-		appInfo.pApplicationName = "Hello Triangle"; //the "p" is a naming convention that indicates a pointer to a null-terminated string
+		appInfo.pApplicationName = "My Engine"; //the "p" is a naming convention that indicates a pointer to a null-terminated string
 		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 		appInfo.pEngineName = "No Engine";
 		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -306,7 +306,7 @@ private:
 };
 
 int main() {
-	HelloTriangleApplication app; // 
+	Engine app; // 
 
 	try {
 		app.run();
