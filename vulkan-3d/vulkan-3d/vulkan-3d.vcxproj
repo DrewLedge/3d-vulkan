@@ -136,6 +136,8 @@
   <ItemGroup>
     <None Include="engine.frag" />
     <None Include="engine.vert" />
+    <None Include="fragment_shader.spv" />
+    <None Include="vertex_shader.spv" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

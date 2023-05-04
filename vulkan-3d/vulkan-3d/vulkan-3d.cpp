@@ -34,7 +34,8 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
-
+	VkShaderModule fragShader;
+	VkShaderModule vertShader;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -42,28 +43,28 @@ private:
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	}
 	void createInstance() {
-		VkApplicationInfo appInfo{};
-		appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
-		appInfo.pApplicationName = "My Engine"; //the "p" is a naming convention that indicates a pointer to a null-terminated string
-		appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-		appInfo.pEngineName = "No Engine";
-		appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-		appInfo.apiVersion = VK_API_VERSION_1_0;
-		VkInstanceCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		createInfo.pApplicationInfo = &appInfo;
+		VkApplicationInfo info{};
+		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
+		info.pApplicationName = "My Engine"; //the "p" is a naming convention that indicates a pointer to a null-terminated string
+		info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		info.pEngineName = "No Engine";
+		info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		info.apiVersion = VK_API_VERSION_1_0;
+		VkInstanceCreateInfo newInfo{};
+		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		newInfo.pApplicationInfo = &info;
 		uint32_t glfwExtensionCount = 0;
 		const char** glfwExtensions;
 		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-		createInfo.enabledExtensionCount = glfwExtensionCount;
-		createInfo.ppEnabledExtensionNames = glfwExtensions;
-		createInfo.enabledLayerCount = 0;
+		newInfo.enabledExtensionCount = glfwExtensionCount;
+		newInfo.ppEnabledExtensionNames = glfwExtensions;
+		newInfo.enabledLayerCount = 0;
 
-		if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS) {
+		if (vkCreateInstance(&newInfo, nullptr, &instance) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create instance!");
 		}
 	}
-	void pickPhysicalDevice() { //outputs number of devices that support Vulkan
+	void pickDevice() { //outputs number of devices that support Vulkan
 		uint32_t deviceCount = 0;
 		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);//outputs the number of devices that support Vulkanm into deviceCount
 		if (deviceCount == 0) {
@@ -85,23 +86,23 @@ private:
 	void createLogicalDevice() {
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 		float queuePriority = 1.0f;
-		VkDeviceQueueCreateInfo queueCreateInfo{};
-		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
-		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
-		queueCreateInfo.queueCount = 1;
-		queueCreateInfo.pQueuePriorities = &queuePriority;
+		VkDeviceQueueCreateInfo queueinfo{};
+		queueinfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
+		queueinfo.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
+		queueinfo.queueCount = 1;
+		queueinfo.pQueuePriorities = &queuePriority;
 		VkPhysicalDeviceFeatures deviceFeatures{}; //this struct is used to specify the features we will be using. such as geometry shaders, anisotropic filtering, etc.
-		VkDeviceCreateInfo createInfo{}; //specify which queues to create
-		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		createInfo.pQueueCreateInfos = &queueCreateInfo; //queues to create
-		createInfo.queueCreateInfoCount = 1;
-		createInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
+		VkDeviceCreateInfo newinfo{}; //specify which queues to create
+		newinfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		newinfo.pQueueCreateInfos = &queueinfo; //queues to create
+		newinfo.queueCreateInfoCount = 1;
+		newinfo.pEnabledFeatures = &deviceFeatures; //device features to enable
 		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }; // specify the device extensions to enable
-		createInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-		createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-		createInfo.enabledLayerCount = 0;
-		createInfo.ppEnabledLayerNames = nullptr;
-		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
+		newinfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		newinfo.ppEnabledExtensionNames = deviceExtensions.data();
+		newinfo.enabledLayerCount = 0;
+		newinfo.ppEnabledLayerNames = nullptr;
+		if (vkCreateDevice(physicalDevice, &newinfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
 			throw std::runtime_error("failed to create logical device!");
 		}
 	}
@@ -158,13 +159,13 @@ private:
 		return indices.isComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
 	}
 
-	struct SwapChainSupportDetails { // struct to hold the swap chain details
+	struct SCsupportDetails { // struct to hold the swap chain details
 		VkSurfaceCapabilitiesKHR capabilities;
 		std::vector<VkSurfaceFormatKHR> formats;
 		std::vector<VkPresentModeKHR> presentModes;
 	};
-	SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice device) { //takes in the physical device and outputs the swap chain details
-		SwapChainSupportDetails details;
+	SCsupportDetails querySCsupport(VkPhysicalDevice device) { //takes in the physical device and outputs the swap chain details
+		SCsupportDetails details;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); //get the surface capabilities. an example of a surface capability is the minimum and maximum number of images in the swap chain
 		uint32_t formatCount;
 		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr); //get the number of formats. an example of a format is the pixel format and color space
@@ -187,37 +188,37 @@ private:
 
 		return actualExtent; //return the actual extent
 	}
-	void createSwapChain() {
-		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice); //get the swap chain details from functions above
+	void createSC() {
+		SCsupportDetails swapChainSupport = querySCsupport(physicalDevice); //get the swap chain details from functions above
 		// choose the best surface format, present mode, and swap extent for the swap chain.
 		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
-		VkPresentModeKHR presentMode = chooseSwapPresentMode(swapChainSupport.presentModes);
+		VkPresentModeKHR present = chooseSwapPresentMode(swapChainSupport.presentModes);
 		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
 		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
 		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
 			imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
 		// create the swap chain.
-		VkSwapchainCreateInfoKHR createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-		createInfo.surface = surface;
-		createInfo.minImageCount = imageCount;
-		createInfo.imageFormat = surfaceFormat.format;
-		createInfo.imageColorSpace = surfaceFormat.colorSpace;
-		createInfo.imageExtent = extent;
-		createInfo.imageArrayLayers = 1; //the num of layers each image has.
-		createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
+		VkSwapchainCreateInfoKHR newinfo{};
+		newinfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+		newinfo.surface = surface;
+		newinfo.minImageCount = imageCount;
+		newinfo.imageFormat = surfaceFormat.format;
+		newinfo.imageColorSpace = surfaceFormat.colorSpace;
+		newinfo.imageExtent = extent;
+		newinfo.imageArrayLayers = 1; //the num of layers each image has.
+		newinfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 		uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value() }; //the queue family indices that will be used
-		createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
-		createInfo.queueFamilyIndexCount = 1;
-		createInfo.pQueueFamilyIndices = queueFamilyIndices;
-		createInfo.preTransform = swapChainSupport.capabilities.currentTransform;
-		createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; //ignore the alpha channel
-		createInfo.presentMode = presentMode;
-		createInfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
-		createInfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
-		if (vkCreateSwapchainKHR(device, &createInfo, nullptr, &swapChain) != VK_SUCCESS) {
+		newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
+		newinfo.queueFamilyIndexCount = 1;
+		newinfo.pQueueFamilyIndices = queueFamilyIndices;
+		newinfo.preTransform = swapChainSupport.capabilities.currentTransform;
+		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; //ignore the alpha channel
+		newinfo.presentMode = present;
+		newinfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
+		newinfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
+		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swapChain) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
 		}
 		// get the swap chain images
@@ -248,21 +249,21 @@ private:
 	void createImageViews() {
 		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
-			VkImageViewCreateInfo createInfo{};
-			createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			createInfo.image = swapChainImages[i]; // assign the current swap chain image
-			createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // set the image view type to 2D
-			createInfo.format = swapChainImageFormat;
-			createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-			createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set the aspect mask to color
-			createInfo.subresourceRange.baseMipLevel = 0;
-			createInfo.subresourceRange.levelCount = 1;
-			createInfo.subresourceRange.baseArrayLayer = 0;
-			createInfo.subresourceRange.layerCount = 1;
-			if (vkCreateImageView(device, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
+			VkImageViewCreateInfo newinfo{};
+			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			newinfo.image = swapChainImages[i]; // assign the current swap chain image
+			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // set the image view type to 2D
+			newinfo.format = swapChainImageFormat;
+			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set the aspect mask to color
+			newinfo.subresourceRange.baseMipLevel = 0;
+			newinfo.subresourceRange.levelCount = 1;
+			newinfo.subresourceRange.baseArrayLayer = 0;
+			newinfo.subresourceRange.layerCount = 1;
+			if (vkCreateImageView(device, &newinfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create image views!");
 			}
 		}
@@ -280,17 +281,24 @@ private:
 
 		return shaderModule;
 	}
+	void setupGraphicsPipeline() {
+		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
+		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
+		vertShader = createShaderModule(vertShaderCode);
+		fragShader = createShaderModule(fragShaderCode);
+	}
 
-	void createGraphicsPipeline() { //implement this function soon
+	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) { //implement this function soon
 
 	}
 	void initVulkan() {
 		createInstance();
-		pickPhysicalDevice();
+		pickDevice();
 		createLogicalDevice();
 		createSurface();
-		createSwapChain();
-		createGraphicsPipeline();
+		createSC();
+		setupGraphicsPipeline();
+		createGraphicsPipeline(vertShader, fragShader);
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
@@ -309,7 +317,6 @@ private:
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
-
 	//TODO: 
 	// 1. clean up code (done)
 	// 2. set up the physical and logical devices. (done)
@@ -318,9 +325,7 @@ private:
 	// 5. create render passes, commandbuffers and framebuffers
 	// 6. semaphores and fences for synchronization
 	// 7. draw the triangle
-
 };
-
 int main() {
 	Engine app; // 
 

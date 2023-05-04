@@ -29,5 +29,11 @@
     <None Include="engine.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
+    <None Include="fragment_shader.spv">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="vertex_shader.spv">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
   </ItemGroup>
 </Project>
