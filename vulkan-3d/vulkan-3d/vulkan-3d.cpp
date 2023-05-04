@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
+#include <fstream>
 
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
@@ -31,6 +32,9 @@ private:
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
+	VkPipelineLayout pipelineLayout;
+	VkPipeline graphicsPipeline;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -101,12 +105,24 @@ private:
 			throw std::runtime_error("failed to create logical device!");
 		}
 	}
+	std::vector<char> readFile(const std::string& filename) { //reads shader code from file. it should reads SPIRV binary files
+		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
+		if (!file.is_open()) {
+			throw std::runtime_error("Failed to open file: " + filename);
+		}
+		size_t fileSize = static_cast<size_t>(file.tellg()); //tellg gets the position of the read/write head
+		std::vector<char> buffer(fileSize);
+
+		file.seekg(0); //seekg sets the position of the read/write head
+		file.read(buffer.data(), fileSize);
+		file.close();
+		return buffer;
+	}
 	void createSurface() {
 		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create window surface!");
 		}
 	}
-
 	struct QueueFamilyIndices { // store the indices of the queue families that are supported by the device
 		std::optional<uint32_t> graphicsFamily;
 
@@ -171,7 +187,6 @@ private:
 
 		return actualExtent; //return the actual extent
 	}
-
 	void createSwapChain() {
 		SwapChainSupportDetails swapChainSupport = querySwapChainSupport(physicalDevice); //get the swap chain details from functions above
 		// choose the best surface format, present mode, and swap extent for the swap chain.
@@ -252,15 +267,17 @@ private:
 			}
 		}
 	}
+	createGraphicsPipeline() {
 
+	}
 	void initVulkan() {
 		createInstance();
 		pickPhysicalDevice();
 		createLogicalDevice();
 		createSurface();
 		createSwapChain();
+		createGraphicsPipeline();
 	}
-
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
 			glfwPollEvents(); // this function checks if any events are triggered
@@ -274,7 +291,6 @@ private:
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
-
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
