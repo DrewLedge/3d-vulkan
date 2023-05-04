@@ -267,7 +267,21 @@ private:
 			}
 		}
 	}
-	createGraphicsPipeline() {
+	VkShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
+		VkShaderModuleCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); //convert the char array to uint32_t array
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shader module!");
+		}
+
+		return shaderModule;
+	}
+
+	void createGraphicsPipeline() { //implement this function soon
 
 	}
 	void initVulkan() {
@@ -291,6 +305,7 @@ private:
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
+		//once shaders are fully in, delete shader data here
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
@@ -301,7 +316,8 @@ private:
 	// 3. create a swap chain to present images to the screen (done)
 	// 4. create graphics pipeline to render the triangle (goal)
 	// 5. create render passes, commandbuffers and framebuffers
-	// 6. draw the triangle
+	// 6. semaphores and fences for synchronization
+	// 7. draw the triangle
 
 };
 
