@@ -279,26 +279,68 @@ private:
 		vertShader = createShaderModule(vertShaderCode);
 		fragShader = createShaderModule(fragShaderCode);
 	}
-
 	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) {
-		// shader stage setup
+		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
 		vertShader.module = vert; //assign the vertex shader module
 		vertShader.pName = "main";
-
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fragShader.module = frag;
 		fragShader.pName = "main";
+		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
-		VkPipelineShaderStageCreateInfo stages[] = { vertShaderStageInfo, fragShaderStageInfo };
-		//todo:
-		//1. vertex input 
-		//2. input assembly
-		//3. viewport and scissors
+		//vertex input setup 
+		VkVertexInputBindingDescription bindDesc{}; //create a struct for the vertex input binding description
+		bindDesc.binding = 0;
+		bindDesc.stride = sizeof(Vertex); //num of bytes from 2 entrys
+		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
+		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
+		attrDesc[0].binding = 0;
+		attrDesc[0].location = 0; // location in the vertex shader in vec3 position
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; //format is 3 32 bit floats for position
+		attrDesc[0].offset = offsetof(Vertex, position);
+		attrDesc[1].binding = 0;
+		attrDesc[1].location = 1;
+		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attrDesc[1].offset = offsetof(Vertex, color);
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{}; //create a struct for the vertex input state
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  //assign the struct type to the vertex input state
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); //assign the vertex input attribute descriptions
+
+		//input assembly setup (assembles the vertices into primitives)
+		VkPipelineInputAssemblyStateCreateInfo inputAssem{}; //create a struct for the input assembly state
+		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; //assign the struct type to the input assembly state
+		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
+		inputAssem.primitiveRestartEnable = VK_FALSE;
+
+		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
+		VkViewport vp{}; //struct for the viewport
+		vp.x = 0.0f;
+		vp.y = 0.0f;
+		vp.width = (float)swapChainExtent.width; //width for the viewport is the swap chain extent widthh
+		vp.height = (float)swapChainExtent.height;
+		vp.minDepth = 0.0f;
+		vp.maxDepth = 1.0f;
+		VkRect2D scissor{};
+		scissor.offset = { 0, 0 }; //0,0 offset (top left corner)
+		scissor.extent = swapChainExtent;
+		VkPipelineViewportStateCreateInfo vpState{}; //create a struct for the viewport state
+		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO; //assign the struct type to the viewport state
+		vpState.viewportCount = 1;
+		vpState.pViewports = &vp;
+		vpState.scissorCount = 1;
+		vpState.pScissors = &scissor;
+
+		//1. vertex input (done)
+		//2. input assembly (done)
+		//3. viewport and scissors (done)
 		//4. rasterizer
 		//5. multisampling
 		//6. depth and stencil testing
@@ -324,6 +366,7 @@ private:
 		}
 	}
 	void cleanup() {
+
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
