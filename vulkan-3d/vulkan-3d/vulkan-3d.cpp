@@ -296,12 +296,12 @@ private:
 		//vertex input setup 
 		VkVertexInputBindingDescription bindDesc{}; //create a struct for the vertex input binding description
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(Vertex); //num of bytes from 2 entrys
+		bindDesc.stride = sizeof(Vertex); //num of bytes from one entry
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
 		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
 		attrDesc[0].binding = 0;
-		attrDesc[0].location = 0; // location in the vertex shader in vec3 position
-		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; //format is 3 32 bit floats for position
+		attrDesc[0].location = 0; // corresponds to the location qualifier, not the actual x,y,z position
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attrDesc[0].offset = offsetof(Vertex, position);
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
@@ -337,6 +337,18 @@ private:
 		vpState.pViewports = &vp;
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
+
+		//rasterizer setup (takes the geometry that is shaped by the vertices from the vertex shader and turns it into fragments to be colored by the fragment shader)
+		VkPipelineRasterizationStateCreateInfo rasterizer{};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE; //if true, fragments that are beyond the near and far planes are clamped
+		rasterizer.rasterizerDiscardEnable = VK_FALSE; //if true, geometry never passes through the rasterizer
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterizer.lineWidth = 1.0f;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_FALSE; //if false, no depth bias is applied to fragments
+
 
 		//1. vertex input (done)
 		//2. input assembly (done)
