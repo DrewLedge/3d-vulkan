@@ -8,10 +8,8 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <fstream>
-
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
-
 class Engine {
 public:
 	void run() {
@@ -82,7 +80,6 @@ private:
 			throw std::runtime_error("failed to find a suitable GPU for graphics");
 		}
 	}
-
 	void createLogicalDevice() {
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 		float queuePriority = 1.0f;
@@ -113,7 +110,6 @@ private:
 		}
 		size_t fileSize = static_cast<size_t>(file.tellg()); //tellg gets the position of the read/write head
 		std::vector<char> buffer(fileSize);
-
 		file.seekg(0); //seekg sets the position of the read/write head
 		file.read(buffer.data(), fileSize);
 		file.close();
@@ -143,14 +139,11 @@ private:
 			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //check if the queue family supports graphics
 				indices.graphicsFamily = i;
 			}
-
 			if (indices.isComplete()) {
 				break;
 			}
-
 			i++;
 		}
-
 		return indices; //return the indices/position of the queue family that supports graphics
 	}
 
@@ -158,7 +151,6 @@ private:
 		QueueFamilyIndices indices = findQueueFamilies(device);
 		return indices.isComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
 	}
-
 	struct SCsupportDetails { // struct to hold the swap chain details
 		VkSurfaceCapabilitiesKHR capabilities;
 		std::vector<VkSurfaceFormatKHR> formats;
@@ -188,7 +180,7 @@ private:
 
 		return actualExtent; //return the actual extent
 	}
-	void createSC() {
+	void createSC() { //SC = swap chain
 		SCsupportDetails swapChainSupport = querySCsupport(physicalDevice); //get the swap chain details from functions above
 		// choose the best surface format, present mode, and swap extent for the swap chain.
 		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
@@ -288,7 +280,33 @@ private:
 		fragShader = createShaderModule(fragShaderCode);
 	}
 
-	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) { //implement this function soon
+	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) {
+		// shader stage setup
+		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
+		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vertShader.module = vert; //assign the vertex shader module
+		vertShader.pName = "main";
+
+		VkPipelineShaderStageCreateInfo fragShader{};
+		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragShader.module = frag;
+		fragShader.pName = "main";
+
+		VkPipelineShaderStageCreateInfo stages[] = { vertShaderStageInfo, fragShaderStageInfo };
+		//todo:
+		//1. vertex input 
+		//2. input assembly
+		//3. viewport and scissors
+		//4. rasterizer
+		//5. multisampling
+		//6. depth and stencil testing
+		//7. color blending
+		//8. pipeline layout
+		//9. render pass
+		//10. graphics pipeline
+
 
 	}
 	void initVulkan() {
@@ -297,8 +315,8 @@ private:
 		createLogicalDevice();
 		createSurface();
 		createSC();
-		setupGraphicsPipeline();
-		createGraphicsPipeline(vertShader, fragShader);
+		setupGraphicsPipeline(); //reads the SPIRV binary and creates the shader modules
+		createGraphicsPipeline(vertShader, fragShader); //takesn in the created shader modules and creates the graphics pipeline
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
@@ -313,7 +331,8 @@ private:
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
-		//once shaders are fully in, delete shader data here
+		vkDestroyShaderModule(device, vertShader, nullptr);
+		vkDestroyShaderModule(device, fragShader, nullptr);
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
