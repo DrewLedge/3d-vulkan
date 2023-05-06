@@ -8,8 +8,14 @@
 #include <stdexcept>
 #include <cstdlib>
 #include <fstream>
+#include <array>
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
+struct Vertex {
+	float posX, posY, posZ;
+	float colR, colG, colB;
+};
+
 class Engine {
 public:
 	void run() {
@@ -293,23 +299,23 @@ private:
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
-		//vertex input setup 
-		VkVertexInputBindingDescription bindDesc{}; //create a struct for the vertex input binding description
+		//vertex input setup (essentially tells vulkan how to read/organize the vertex data)
+		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
 		bindDesc.stride = sizeof(Vertex); //num of bytes from one entry
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
 		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
 		attrDesc[0].binding = 0;
-		attrDesc[0].location = 0; // corresponds to the location qualifier, not the actual x,y,z position
+		attrDesc[0].location = 0;
 		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attrDesc[0].offset = offsetof(Vertex, position);
+		attrDesc[0].offset = offsetof(Vertex, posX);
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
 		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attrDesc[1].offset = offsetof(Vertex, color);
-		VkPipelineVertexInputStateCreateInfo vertexInputInfo{}; //create a struct for the vertex input state
+		attrDesc[1].offset = offsetof(Vertex, colR);
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{}; //vertex input state struct
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  //assign the struct type to the vertex input state
-		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.vertexBindingDescriptionCount = 1;  //value is set to the amount of binding descriptions
 		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
 		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
 		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); //assign the vertex input attribute descriptions
@@ -348,12 +354,16 @@ private:
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE; //if false, no depth bias is applied to fragments
+		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
+		rasterizer.depthBiasClamp = 0.0f;
 
-
+		//multisampling setup (anti-aliasing)
+		VkPipelineMultisampleStateCreateInfo multiS{};
+		multiS.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 		//1. vertex input (done)
 		//2. input assembly (done)
 		//3. viewport and scissors (done)
-		//4. rasterizer
+		//4. rasterizer (done)
 		//5. multisampling
 		//6. depth and stencil testing
 		//7. color blending
@@ -378,27 +388,27 @@ private:
 		}
 	}
 	void cleanup() {
-
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 		vkDestroySurfaceKHR(instance, surface, nullptr);
-		vkDestroyDevice(device, nullptr);
-		vkDestroyInstance(instance, nullptr);
 		vkDestroyShaderModule(device, vertShader, nullptr);
 		vkDestroyShaderModule(device, fragShader, nullptr);
+		vkDestroyDevice(device, nullptr);
+		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
+
 	//TODO: 
 	// 1. clean up code (done)
 	// 2. set up the physical and logical devices. (done)
 	// 3. create a swap chain to present images to the screen (done)
-	// 4. create graphics pipeline to render the triangle (goal)
+	// 4. create graphics pipeline to render the triangle 
 	// 5. create render passes, commandbuffers and framebuffers
 	// 6. semaphores and fences for synchronization
-	// 7. draw the triangle
+	// 7. draw the triangle (goal)
 };
 int main() {
 	Engine app; // 
