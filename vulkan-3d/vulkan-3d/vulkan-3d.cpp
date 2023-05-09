@@ -38,8 +38,8 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
-	VkShaderModule fragShader;
-	VkShaderModule vertShader;
+	VkShaderModule fragShaderModule;
+	VkShaderModule vertShaderModule;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -282,8 +282,8 @@ private:
 	void setupGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
-		vertShader = createShaderModule(vertShaderCode);
-		fragShader = createShaderModule(fragShaderCode);
+		vertShaderModule = createShaderModule(vertShaderCode);
+		fragShaderModule = createShaderModule(fragShaderCode);
 	}
 	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) {
 		// shader stage setup 
@@ -299,7 +299,7 @@ private:
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
-		//vertex input setup (essentially tells vulkan how to read/organize the vertex data)
+		//vertex input setup (tells vulkan how to read/organize vertex data based on the stride, offset, and rate)
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
 		bindDesc.stride = sizeof(Vertex); //num of bytes from one entry
@@ -324,7 +324,7 @@ private:
 		VkPipelineInputAssemblyStateCreateInfo inputAssem{}; //create a struct for the input assembly state
 		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; //assign the struct type to the input assembly state
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
-		inputAssem.primitiveRestartEnable = VK_FALSE;
+		inputAssem.primitiveRestartEnable = VK_FALSE; //if true, then a special index value of 0xFFFF or 0xFFFFFFFF is treated as a restart index
 
 		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
 		VkViewport vp{}; //struct for the viewport
@@ -344,22 +344,42 @@ private:
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
 
-		//rasterizer setup (takes the geometry that is shaped by the vertices from the vertex shader and turns it into fragments to be colored by the fragment shader)
+		//rasterizer setup: Transforms 3D primitives into 2D fragments for display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		rasterizer.depthClampEnable = VK_FALSE; //if true, fragments that are beyond the near and far planes are clamped
 		rasterizer.rasterizerDiscardEnable = VK_FALSE; //if true, geometry never passes through the rasterizer
-		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
-		rasterizer.lineWidth = 1.0f;
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; //fill the area of the poly with fragments
+		rasterizer.lineWidth = 1.0f; //thickness of fragment lines
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE; //if false, no depth bias is applied to fragments
 		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
 		rasterizer.depthBiasClamp = 0.0f;
 
-		//multisampling setup (anti-aliasing)
-		VkPipelineMultisampleStateCreateInfo multiS{};
-		multiS.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
+		VkPipelineMultisampleStateCreateInfo multiSamp{};
+		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multiSamp.sampleShadingEnable = VK_TRUE; //if true, enable sample shading in the pipeline
+		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use per fragment
+		multiSamp.minSampleShading = 1.0f; //min fraction for sample shading; closer to one is smoother
+		multiSamp.pSampleMask = nullptr; //array of sample mask values
+		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, blending semi-transparent pixels based on alpha values
+		multiSamp.alphaToOneEnable = VK_FALSE; //used for testing right alpha values
+
+		//depth and stencil testing setup: Allows for fragments to be discarded based on depth and stencil values
+		VkPipelineDepthStencilStateCreateInfo dStencil{};
+		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		dStencil.depthTestEnable = VK_TRUE; //enable depth testing
+		dStencil.depthWriteEnable = VK_TRUE; //enable writing to the depth buffer
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //comparison operator that allows for overwriting of new depth values
+		dStencil.depthBoundsTestEnable = VK_FALSE; //if true, depth values are clamped to min and max depth bounds
+		dStencil.minDepthBounds = 0.0f; //min depth bound
+		dStencil.maxDepthBounds = 1.0f;
+		dStencil.stencilTestEnable = VK_FALSE; //enable stencil testing
+		dStencil.front = {}; //stencil operations for front-facing fragments. an example would b
+		dStencil.back = {};
+
 		//1. vertex input (done)
 		//2. input assembly (done)
 		//3. viewport and scissors (done)
@@ -370,8 +390,6 @@ private:
 		//8. pipeline layout
 		//9. render pass
 		//10. graphics pipeline
-
-
 	}
 	void initVulkan() {
 		createInstance();
@@ -380,7 +398,7 @@ private:
 		createSurface();
 		createSC();
 		setupGraphicsPipeline(); //reads the SPIRV binary and creates the shader modules
-		createGraphicsPipeline(vertShader, fragShader); //takesn in the created shader modules and creates the graphics pipeline
+		createGraphicsPipeline(vertShaderModule, fragShaderModule); //takesn in the created shader modules and creates the graphics pipeline
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
@@ -393,8 +411,8 @@ private:
 		}
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 		vkDestroySurfaceKHR(instance, surface, nullptr);
-		vkDestroyShaderModule(device, vertShader, nullptr);
-		vkDestroyShaderModule(device, fragShader, nullptr);
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
@@ -406,7 +424,7 @@ private:
 	// 2. set up the physical and logical devices. (done)
 	// 3. create a swap chain to present images to the screen (done)
 	// 4. create graphics pipeline to render the triangle 
-	// 5. create render passes, commandbuffers and framebuffers
+	// 5. commandbuffers and framebuffers
 	// 6. semaphores and fences for synchronization
 	// 7. draw the triangle (goal)
 };
