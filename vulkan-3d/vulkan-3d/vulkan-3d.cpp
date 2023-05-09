@@ -380,16 +380,62 @@ private:
 		dStencil.front = {}; //stencil operations for front-facing fragments. an example would b
 		dStencil.back = {};
 
+		//color blending setup: Combines the output of the fragment shader with the color that is already in the viewbuffer
+		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
+		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
+		colorBA.blendEnable = VK_TRUE; //enable blending
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for color channels
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
+		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for alpha channel
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
+		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBS.logicOpEnable = VK_FALSE; //doesnt apply bitwise operation to blending
+		colorBS.logicOp = VK_LOGIC_OP_COPY;
+		colorBS.attachmentCount = 1; //number of color blend attachments
+		colorBS.pAttachments = &colorBA; //array of color blend attachments
+		colorBS.blendConstants[0] = 0.0f; //constant values to use in blending operations
+		colorBS.blendConstants[1] = 0.0f;
+		colorBS.blendConstants[2] = 0.0f;
+		colorBS.blendConstants[3] = 0.0f;
+
+		//dynamic state setup: Allows for the dynamic changing of state without having to recreate the pipeline
+		VkDynamicState dynamicStates[] = {
+	VK_DYNAMIC_STATE_VIEWPORT,
+	VK_DYNAMIC_STATE_LINE_WIDTH,
+	VK_DYNAMIC_STATE_DEPTH_BIAS,
+	VK_DYNAMIC_STATE_BLEND_CONSTANTS,
+	VK_DYNAMIC_STATE_DEPTH_BOUNDS,
+	VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
+	VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
+	VK_DYNAMIC_STATE_STENCIL_REFERENCE,
+	VK_DYNAMIC_STATE_STENCIL_OP_EXT,
+	VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT,
+	VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR
+		}; //add more soon
+		VkPipelineDynamicStateCreateInfo dynamicState{};
+		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+		dynamicState.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]); //number of dynamic states in the arr
+		dynamicState.pDynamicStates = dynamicStates;
+
+		//pipeline layout setup: Allows for uniform variables to be passed into the shader
+		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
+		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+
 		//1. vertex input (done)
 		//2. input assembly (done)
 		//3. viewport and scissors (done)
 		//4. rasterizer (done)
-		//5. multisampling
-		//6. depth and stencil testing
-		//7. color blending
-		//8. pipeline layout
-		//9. render pass
-		//10. graphics pipeline
+		//5. multisampling (done)
+		//6. depth and stencil testing (done)
+		//7. color blending (done)
+		//8. dynamic state (done)
+		//9. pipeline layout
+		//10. render pass
+		//11. graphics pipeline
+
 	}
 	void initVulkan() {
 		createInstance();
@@ -398,22 +444,22 @@ private:
 		createSurface();
 		createSC();
 		setupGraphicsPipeline(); //reads the SPIRV binary and creates the shader modules
-		createGraphicsPipeline(vertShaderModule, fragShaderModule); //takesn in the created shader modules and creates the graphics pipeline
+		createGraphicsPipeline(vertShaderModule, fragShaderModule); //takes in the created shader modules and creates the graphics pipeline
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
-			glfwPollEvents(); // this function checks if any events are triggered
+			glfwPollEvents(); //check if any events are triggered
 		}
 	}
 	void cleanup() {
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
-		vkDestroySwapchainKHR(device, swapChain, nullptr);
-		vkDestroySurfaceKHR(instance, surface, nullptr);
-		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		vkDestroySwapchainKHR(device, swapChain, nullptr); //destroy swap chain
+		vkDestroySurfaceKHR(instance, surface, nullptr); //destroy surface 
+		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-		vkDestroyDevice(device, nullptr);
+		vkDestroyDevice(device, nullptr); //destroy logical device
 		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
 		glfwTerminate();
@@ -429,8 +475,7 @@ private:
 	// 7. draw the triangle (goal)
 };
 int main() {
-	Engine app; // 
-
+	Engine app;
 	try {
 		app.run();
 	}
