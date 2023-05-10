@@ -21,6 +21,9 @@
     <ClCompile Include="vulkan-3d.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="formulas.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <None Include="engine.vert">

@@ -356,6 +356,7 @@ private:
 		rasterizer.depthBiasEnable = VK_FALSE; //if false, no depth bias is applied to fragments
 		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
 		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
 
 		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
@@ -417,13 +418,25 @@ private:
 		}; //add more soon
 		VkPipelineDynamicStateCreateInfo dynamicState{};
 		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-		dynamicState.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]); //number of dynamic states in the arr
+		dynamicState.dynamicStateCount = std::size(dynamicStates);
 		dynamicState.pDynamicStates = dynamicStates;
 
-		//pipeline layout setup: Allows for uniform variables to be passed into the shader
+		//pipeline layout setup: Allows for uniform variables to be passed into the shader. no uniform variables are used yet thats fior later
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInf.setLayoutCount = 0; //number of descriptor sets used by the pipeline such as uniform variables
+		pipelineLayoutInf.pSetLayouts = nullptr; //array of descriptor set layouts
+		pipelineLayoutInf.pushConstantRangeCount = 0; //number of push constant ranges
+		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
+		if (result != VK_SUCCESS) {
+			std::runtime_error("failed to create pipeline layout!");
+		}
 
+		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
+		VkAttachmentDescription colorAttachment{};
+		colorAttachment.format = swapChainImageFormat; //format of the color attachment
+		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
 		//1. vertex input (done)
 		//2. input assembly (done)
 		//3. viewport and scissors (done)
@@ -432,7 +445,7 @@ private:
 		//6. depth and stencil testing (done)
 		//7. color blending (done)
 		//8. dynamic state (done)
-		//9. pipeline layout
+		//9. pipeline layout (sorta done)
 		//10. render pass
 		//11. graphics pipeline
 
