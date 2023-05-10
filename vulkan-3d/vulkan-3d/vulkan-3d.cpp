@@ -40,6 +40,7 @@ private:
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
+	VkRenderPass renderPass;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -378,8 +379,22 @@ private:
 		dStencil.minDepthBounds = 0.0f; //min depth bound
 		dStencil.maxDepthBounds = 1.0f;
 		dStencil.stencilTestEnable = VK_FALSE; //enable stencil testing
-		dStencil.front = {}; //stencil operations for front-facing fragments. an example would b
-		dStencil.back = {};
+		dStencil.front.failOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test fails
+		dStencil.front.passOp = VK_STENCIL_OP_KEEP; // stencil operation to perform if the stencil test passes
+		dStencil.front.depthFailOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test passes, but the depth test fails
+		dStencil.front.compareOp = VK_COMPARE_OP_ALWAYS; //comparison operator to use for the stencil test
+		dStencil.front.compareMask = 0; // 0 means don't compare against anything
+		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
+		dStencil.front.reference = 0; //reference value to use for the stencil test
+
+		dStencil.back.failOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
+		dStencil.back.compareMask = 0;
+		dStencil.back.writeMask = 0;
+		dStencil.back.reference = 0;
+
 
 		//color blending setup: Combines the output of the fragment shader with the color that is already in the viewbuffer
 		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
@@ -404,18 +419,8 @@ private:
 
 		//dynamic state setup: Allows for the dynamic changing of state without having to recreate the pipeline
 		VkDynamicState dynamicStates[] = {
-	VK_DYNAMIC_STATE_VIEWPORT,
-	VK_DYNAMIC_STATE_LINE_WIDTH,
-	VK_DYNAMIC_STATE_DEPTH_BIAS,
-	VK_DYNAMIC_STATE_BLEND_CONSTANTS,
-	VK_DYNAMIC_STATE_DEPTH_BOUNDS,
-	VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK,
-	VK_DYNAMIC_STATE_STENCIL_WRITE_MASK,
-	VK_DYNAMIC_STATE_STENCIL_REFERENCE,
-	VK_DYNAMIC_STATE_STENCIL_OP_EXT,
-	VK_DYNAMIC_STATE_SAMPLE_LOCATIONS_EXT,
-	VK_DYNAMIC_STATE_FRAGMENT_SHADING_RATE_KHR
-		}; //add more soon
+			VK_DYNAMIC_STATE_VIEWPORT
+		};
 		VkPipelineDynamicStateCreateInfo dynamicState{};
 		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
 		dynamicState.dynamicStateCount = std::size(dynamicStates);
@@ -430,24 +435,69 @@ private:
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
 		if (result != VK_SUCCESS) {
-			std::runtime_error("failed to create pipeline layout!");
+			std::runtime_error("failed to create pipeline layout!!");
 		}
 
 		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
+		//attachment: A memory location that can be read from or written to by a pipeline to perform rendering operations
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = swapChainImageFormat; //format of the color attachment
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
-		//1. vertex input (done)
-		//2. input assembly (done)
-		//3. viewport and scissors (done)
-		//4. rasterizer (done)
-		//5. multisampling (done)
-		//6. depth and stencil testing (done)
-		//7. color blending (done)
-		//8. dynamic state (done)
-		//9. pipeline layout (sorta done)
-		//10. render pass
-		//11. graphics pipeline
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //what to do with the data in the attachment before rendering
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //what to do with the data in the attachment after rendering
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; //what to do with the stencil data before rendering
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; //what to do with the stencil data after rendering
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //layout of the image before the render pass starts
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR; //layout of the image after the render pass ends
+
+		VkAttachmentReference colorAttachmentRef{};
+		colorAttachmentRef.attachment = 0; //index of the attachment description in the attachment descriptions array
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; //layout to use for the attachment during the subpass
+
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; //type of pipeline to bind to
+		subpass.colorAttachmentCount = 1; //number of color attachments
+		subpass.pColorAttachments = &colorAttachmentRef; //array of color attachment references
+
+		//define the render pass
+		VkRenderPassCreateInfo renderPassInf{};
+		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInf.attachmentCount = 1; //number of attachments
+		renderPassInf.pAttachments = &colorAttachment; //array of attachments
+		renderPassInf.subpassCount = 1; //number of subpasses
+		renderPassInf.pSubpasses = &subpass; //array of subpasses
+		VkResult RenderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
+		if (RenderPassResult != VK_SUCCESS) {
+			std::runtime_error("failed to create render pass!");
+		}
+
+		VkGraphicsPipelineCreateInfo pipelineInf{};
+		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInf.stageCount = 2; // Vertex and fragment shaders
+		pipelineInf.pStages = stages;
+		pipelineInf.pVertexInputState = &vertexInputInfo;
+		pipelineInf.pInputAssemblyState = &inputAssem;
+		pipelineInf.pViewportState = &vpState;
+		pipelineInf.pRasterizationState = &rasterizer;
+		pipelineInf.pMultisampleState = &multiSamp;
+		pipelineInf.pDepthStencilState = &dStencil; // Optional
+		pipelineInf.pColorBlendState = &colorBS;
+		pipelineInf.pDynamicState = nullptr; // Optional
+		pipelineInf.layout = pipelineLayout;
+		pipelineInf.renderPass = renderPass;
+		pipelineInf.subpass = 0; // Index of the subpass where this graphics pipeline is to be used
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // Optional
+		pipelineInf.basePipelineIndex = -1; // Optional
+
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
+		if (pipelineResult != VK_SUCCESS) {
+			throw std::runtime_error("failed to create graphics pipeline!");
+		}
+		else {
+			std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
+		}
+		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 
 	}
 	void initVulkan() {
@@ -472,6 +522,9 @@ private:
 		vkDestroySurfaceKHR(instance, surface, nullptr); //destroy surface 
 		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyRenderPass(device, renderPass, nullptr);
 		vkDestroyDevice(device, nullptr); //destroy logical device
 		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
