@@ -70,7 +70,7 @@ private:
 		newInfo.enabledLayerCount = 0;
 
 		if (vkCreateInstance(&newInfo, nullptr, &instance) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create instance!");
+			throw std::runtime_error("failed to create instance! " + vkCreateInstance(&newInfo, nullptr, &instance));
 		}
 	}
 	void pickDevice() { //outputs number of devices that support Vulkan
@@ -111,7 +111,7 @@ private:
 		newinfo.enabledLayerCount = 0;
 		newinfo.ppEnabledLayerNames = nullptr;
 		if (vkCreateDevice(physicalDevice, &newinfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
-			throw std::runtime_error("failed to create logical device!");
+			throw std::runtime_error("failed to create logical device! " + vkCreateDevice(physicalDevice, &newinfo, nullptr, &device));
 		}
 	}
 	std::vector<char> readFile(const std::string& filename) { //reads shader code from file. it should reads SPIRV binary files
@@ -128,7 +128,7 @@ private:
 	}
 	void createSurface() {
 		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create window surface!");
+			throw std::runtime_error("failed to create window surface! " + glfwCreateWindowSurface(instance, window, nullptr, &surface));
 		}
 	}
 	struct QueueFamilyIndices { // store the indices of the queue families that are supported by the device
@@ -222,7 +222,7 @@ private:
 		newinfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
 		newinfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
 		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swapChain) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create swap chain!");
+			throw std::runtime_error("failed to create swap chain! " + vkCreateSwapchainKHR(device, &newinfo, nullptr, &swapChain));
 		}
 		// get the swap chain images
 		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
@@ -267,7 +267,7 @@ private:
 			newinfo.subresourceRange.baseArrayLayer = 0;
 			newinfo.subresourceRange.layerCount = 1;
 			if (vkCreateImageView(device, &newinfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create image views!");
+				throw std::runtime_error("failed to create image views! " + vkCreateImageView(device, &newinfo, nullptr, &swapChainImageViews[i]));
 			}
 		}
 	}
@@ -279,7 +279,7 @@ private:
 
 		VkShaderModule shaderModule;
 		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shader module!");
+			throw std::runtime_error("failed to create shader module! " + vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule));
 		}
 
 		return shaderModule;
@@ -438,7 +438,7 @@ private:
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
 		if (result != VK_SUCCESS) {
-			std::runtime_error("failed to create pipeline layout!!");
+			std::runtime_error("failed to create pipeline layout!! " + result);
 		}
 
 		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
@@ -471,7 +471,7 @@ private:
 		renderPassInf.pSubpasses = &subpass; //array of subpasses
 		VkResult RenderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
 		if (RenderPassResult != VK_SUCCESS) {
-			std::runtime_error("failed to create render pass!");
+			std::runtime_error("failed to create render pass! " + RenderPassResult);
 		}
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
@@ -527,7 +527,7 @@ private:
 		poolInf.flags = 0; //the command pool will only be able to allocate command buffers that execute on the graphics queue
 		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &commandPool);
 		if (result != VK_SUCCESS) {
-			throw std::runtime_error("failed to create command pool!");
+			throw std::runtime_error("failed to create command pool! " + result);
 		}
 	}
 	void createCommandBuffer() {
@@ -539,7 +539,7 @@ private:
 		commandBuffer.resize(allocInfo.commandBufferCount); //resize the command buffer vector
 		VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffer.data());
 		if (result != VK_SUCCESS) {
-			throw std::runtime_error("failed to create command buffer!!");
+			throw std::runtime_error("failed to create command buffer!! " + result);
 		}
 	}
 
@@ -557,7 +557,7 @@ private:
 			framebufferInf.layers = 1; //1 means that each image only has one layer and there is no stereoscopic 3D
 			VkResult result = vkCreateFramebuffer(device, &framebufferInf, nullptr, &swapChainFramebuffers[i]);
 			if (result != VK_SUCCESS) {
-				throw std::runtime_error("failed to create framebuffer!");
+				throw std::runtime_error("failed to create framebuffer! " + result);
 			}
 		}
 	}
