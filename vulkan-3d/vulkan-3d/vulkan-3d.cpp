@@ -44,7 +44,8 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffer;
 	std::vector<VkFramebuffer> swapChainFramebuffers;
-
+	VkSemaphore imageAvailableSemaphore;
+	VkSemaphore renderFinishedSemaphore;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -94,15 +95,15 @@ private:
 	void createLogicalDevice() {
 		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
 		float queuePriority = 1.0f;
-		VkDeviceQueueCreateInfo queueinfo{};
-		queueinfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
-		queueinfo.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
-		queueinfo.queueCount = 1;
-		queueinfo.pQueuePriorities = &queuePriority;
+		VkDeviceQueueCreateInfo queueInf{};
+		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
+		queueInf.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
+		queueInf.queueCount = 1;
+		queueInf.pQueuePriorities = &queuePriority;
 		VkPhysicalDeviceFeatures deviceFeatures{}; //this struct is used to specify the features we will be using. such as geometry shaders, anisotropic filtering, etc.
 		VkDeviceCreateInfo newinfo{}; //specify which queues to create
 		newinfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		newinfo.pQueueCreateInfos = &queueinfo; //queues to create
+		newinfo.pQueueCreateInfos = &queueInf; //queues to create
 		newinfo.queueCreateInfoCount = 1;
 		newinfo.pEnabledFeatures = &deviceFeatures; //device features to enable
 		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }; // specify the device extensions to enable
@@ -495,12 +496,9 @@ private:
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
-
-		else {
-			std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
-		}
-		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
 	}
 	void initVulkan() { //initializes vulkan functions
 		createInstance();
@@ -513,6 +511,8 @@ private:
 		createGraphicsPipeline(vertShaderModule, fragShaderModule); //create the graphics pipeline
 		createCommandBuffer();
 		createFrameBuffer();
+		createSemaphores();
+		std::cout << "Vulkan Initialized Successfully!" << std::endl;
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
@@ -531,13 +531,13 @@ private:
 		}
 	}
 	void createCommandBuffer() {
-		VkCommandBufferAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.commandPool = commandPool; //command pool to allocate from
-		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
-		allocInfo.commandBufferCount = 5; //number of command buffers to allocate
-		commandBuffer.resize(allocInfo.commandBufferCount); //resize the command buffer vector
-		VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffer.data());
+		VkCommandBufferAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInf.commandPool = commandPool; //command pool to allocate from
+		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
+		allocInf.commandBufferCount = 5; //number of command buffers to allocate
+		commandBuffer.resize(allocInf.commandBufferCount); //resize the command buffer vector
+		VkResult result = vkAllocateCommandBuffers(device, &allocInf, commandBuffer.data());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command buffer!! " + result);
 		}
@@ -561,25 +561,39 @@ private:
 			}
 		}
 	}
+	void createSemaphores() {
+		VkSemaphoreCreateInfo semaphoreInfo{};
+		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		VkResult resultImageAvailable = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &imageAvailableSemaphore);
+		if (resultImageAvailable != VK_SUCCESS) {
+			throw std::runtime_error("failed to create image available semaphore!");
+		}
+		VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &renderFinishedSemaphore);
+		if (resultRenderFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create render finished semaphore!");
+		}
+	}
+
 
 	void cleanup() {
 		// Destroy resources in reverse order of creation
+		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
-		vkDestroyFramebuffer(device, framebuffer, nullptr);
+		for (auto frameBuffer : swapChainFramebuffers) {
+			vkDestroyFramebuffer(device, frameBuffer, nullptr);
+		}
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffer.size()), commandBuffer.data());
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
-		vkDestroyShaderModule(device, vertShaderModule, nullptr);
-		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
-
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
@@ -590,7 +604,7 @@ private:
 	// 3. create a swap chain to present images to the screen (done)
 	// 4. create graphics pipeline to render the triangle (done)
 	// 5. commandbuffers (done)
-	// 6. framebuffers
+	// 6. framebuffers (done)
 	// 7. semaphores and fences for synchronization
 	// 8. draw the triangle (goal)
 };
