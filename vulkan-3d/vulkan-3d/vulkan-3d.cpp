@@ -41,6 +41,8 @@ private:
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
 	VkRenderPass renderPass;
+	VkCommandPool commandPool;
+	std::vector<VkCommandBuffer> commandBuffer;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -386,7 +388,6 @@ private:
 		dStencil.front.compareMask = 0; // 0 means don't compare against anything
 		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
 		dStencil.front.reference = 0; //reference value to use for the stencil test
-
 		dStencil.back.failOp = VK_STENCIL_OP_KEEP;
 		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
 		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP;
@@ -480,15 +481,14 @@ private:
 		pipelineInf.pViewportState = &vpState;
 		pipelineInf.pRasterizationState = &rasterizer;
 		pipelineInf.pMultisampleState = &multiSamp;
-		pipelineInf.pDepthStencilState = &dStencil; // Optional
+		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.pDynamicState = nullptr; // Optional
+		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = pipelineLayout;
 		pipelineInf.renderPass = renderPass;
 		pipelineInf.subpass = 0; // Index of the subpass where this graphics pipeline is to be used
-		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // Optional
-		pipelineInf.basePipelineIndex = -1; // Optional
-
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // Optional: set later
+		pipelineInf.basePipelineIndex = -1; // Optional: set later
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
@@ -498,22 +498,50 @@ private:
 		}
 		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-
 	}
 	void initVulkan() {
 		createInstance();
-		pickDevice();
+		pickDevice(); //pick the physical device
 		createLogicalDevice();
 		createSurface();
-		createSC();
+		createSC(); //create swap chain
+		createCommandPool();
 		setupGraphicsPipeline(); //reads the SPIRV binary and creates the shader modules
 		createGraphicsPipeline(vertShaderModule, fragShaderModule); //takes in the created shader modules and creates the graphics pipeline
+		createCommandBuffer(); //create command buffer
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
 			glfwPollEvents(); //check if any events are triggered
 		}
 	}
+	void createCommandPool() {
+		QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+		VkCommandPoolCreateInfo poolInf{};
+		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); //the queue family that will be using this command pool
+		poolInf.flags = 0; //the command pool will only be able to allocate command buffers that execute on the graphics queue
+		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &commandPool);
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create command pool!");
+		}
+	}
+	void createCommandBuffer() {
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.commandPool = commandPool; //command pool to allocate from
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
+		allocInfo.commandBufferCount = 5; //number of command buffers to allocate
+		commandBuffer.resize(allocInfo.commandBufferCount); //resize the command buffer vector
+		VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffer.data());
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create command buffer!!");
+		}
+	}
+	void createFrameBuffer() {
+
+	}
+
 	void cleanup() {
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
@@ -525,6 +553,8 @@ private:
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffer.size()), commandBuffer.data());
+		vkDestroyCommandPool(device, commandPool, nullptr); //destroy command pool
 		vkDestroyDevice(device, nullptr); //destroy logical device
 		vkDestroyInstance(instance, nullptr);
 		glfwDestroyWindow(window);
@@ -535,10 +565,11 @@ private:
 	// 1. clean up code (done)
 	// 2. set up the physical and logical devices. (done)
 	// 3. create a swap chain to present images to the screen (done)
-	// 4. create graphics pipeline to render the triangle 
-	// 5. commandbuffers and framebuffers
-	// 6. semaphores and fences for synchronization
-	// 7. draw the triangle (goal)
+	// 4. create graphics pipeline to render the triangle (done)
+	// 5. commandbuffers (done)
+	// 6. framebuffers
+	// 7. semaphores and fences for synchronization
+	// 8. draw the triangle (goal)
 };
 int main() {
 	Engine app;
