@@ -43,6 +43,8 @@ private:
 	VkRenderPass renderPass;
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffer;
+	std::vector<VkFramebuffer> swapChainFramebuffers;
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -493,22 +495,24 @@ private:
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
+
 		else {
 			std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
 		}
 		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 	}
-	void initVulkan() {
+	void initVulkan() { //initializes vulkan functions
 		createInstance();
-		pickDevice(); //pick the physical device
-		createLogicalDevice();
 		createSurface();
+		pickDevice();
+		createLogicalDevice();
 		createSC(); //create swap chain
 		createCommandPool();
-		setupGraphicsPipeline(); //reads the SPIRV binary and creates the shader modules
-		createGraphicsPipeline(vertShaderModule, fragShaderModule); //takes in the created shader modules and creates the graphics pipeline
-		createCommandBuffer(); //create command buffer
+		setupGraphicsPipeline();
+		createGraphicsPipeline(vertShaderModule, fragShaderModule); //create the graphics pipeline
+		createCommandBuffer();
+		createFrameBuffer();
 	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
@@ -538,25 +542,44 @@ private:
 			throw std::runtime_error("failed to create command buffer!!");
 		}
 	}
-	void createFrameBuffer() {
 
+	void createFrameBuffer() {
+		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
+		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
+			VkImageView attachments[] = { swapChainImageViews[i] }; //array of attachments
+			VkFramebufferCreateInfo framebufferInf{};
+			framebufferInf.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			framebufferInf.renderPass = renderPass; //render pass that this framebuffer will be compatible with
+			framebufferInf.attachmentCount = 1; //attachment is the image from swap chain
+			framebufferInf.pAttachments = attachments; //array of attachments
+			framebufferInf.width = swapChainExtent.width; //width of the framebuffer
+			framebufferInf.height = swapChainExtent.height; //height of the framebuffer
+			framebufferInf.layers = 1; //1 means that each image only has one layer and there is no stereoscopic 3D
+			VkResult result = vkCreateFramebuffer(device, &framebufferInf, nullptr, &swapChainFramebuffers[i]);
+			if (result != VK_SUCCESS) {
+				throw std::runtime_error("failed to create framebuffer!");
+			}
+		}
 	}
 
 	void cleanup() {
+		// Destroy resources in reverse order of creation
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
-		vkDestroySwapchainKHR(device, swapChain, nullptr); //destroy swap chain
-		vkDestroySurfaceKHR(instance, surface, nullptr); //destroy surface 
-		vkDestroyShaderModule(device, vertShaderModule, nullptr); //destroy shader modules
-		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffer.size()), commandBuffer.data());
+		vkDestroyCommandPool(device, commandPool, nullptr);
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
-		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffer.size()), commandBuffer.data());
-		vkDestroyCommandPool(device, commandPool, nullptr); //destroy command pool
-		vkDestroyDevice(device, nullptr); //destroy logical device
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+		vkDestroySurfaceKHR(instance, surface, nullptr);
+		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
+
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
