@@ -12,8 +12,12 @@
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
-	float posX, posY, posZ;
-	float colR, colG, colB;
+	float position[2];
+};
+std::vector<Vertex> triangle1vert = {
+	{{0.0f, -0.5f}},  // bottom of the triangle
+	{{-0.5f, 0.5f}}, // top left of the triangle
+	{{0.5f, 0.5f}}   // top right of the triangle
 };
 class Engine {
 public:
@@ -558,6 +562,25 @@ private:
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
+	void recordCommandBuffers() {
+		for (size_t i = 0; i < commandBuffers.size(); i++) {
+			VkCommandBufferBeginInfo beginInfo{};
+			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+			beginInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
+			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording command buffer! " + resultStr(vkBeginCommandBuffer(commandBuffers[i], &beginInfo)));
+			}
+			//render pass info here
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
+			//vert drawing here
+			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
+			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer! " + resultStr(vkEndCommandBuffer(commandBuffers[i])));
+			}
+		}
+	}
+
 
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
@@ -589,7 +612,6 @@ private:
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
 	}
-
 	void cleanup() {
 		// Destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
@@ -620,8 +642,11 @@ private:
 	// 4. create graphics pipeline to render the triangle (done)
 	// 5. commandbuffers (done)
 	// 6. framebuffers (done)
-	// 7. semaphores and fences for synchronization
-	// 8. draw the triangle (goal)
+	// 7. semaphores (done)
+	// 8. vertex drawing and defining the vertex buffer
+	// 9. fences
+	// 10. draw triangle
+
 
 	// Current Graphic Functions Implemented:
 	// 1. createInstance()
@@ -635,7 +660,7 @@ private:
 	// 9. createCommandBuffer()
 	// 10. createFrameBuffer()
 	// 11. createSemaphores()
-
+	// 13. recordCommandBuffers()
 };
 int main() {
 	Engine app;
