@@ -49,6 +49,7 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkBuffer vertexBuffer;
+	VkDeviceMemory vertexBufferMemory;
 
 	void initWindow() {
 		glfwInit();
@@ -563,6 +564,31 @@ private:
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
+	void createVertexBuffer() { //create the vertex buffer based on the vertices, etc
+		VkBufferCreateInfo bufferInf{}; //struct to hold the buffer info
+		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInf.size = sizeof(vertices[0]) * vertices.size(); //size of the buffer
+		bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
+		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
+		if (vkCreateBuffer(device, &bufferInf, nullptr, &vertexBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create vertex buffer!");
+		}
+		VkMemoryRequirements memRequirements; //struct to hold memory requirements
+		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements); //get the memory requirements for the vertex buffer
+		VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		//params are: memory requirements, properties of the memory, and the memory type we are looking for
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		if (vkAllocateMemory(device, &allocInf, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate vertex buffer memory!");
+		}
+		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0); //bind the vertex buffer to the vertex buffer memory
+		void* data; //generic pointer to a point in memory
+		vkMapMemory(device, vertexBufferMemory, 0, bufferInf.size, 0, &data); //map the allocated device memory into the application's address space
+		memcpy(data, vertices.data(), (size_t)bufferInf.size); //copy the vertex data to the vertex buffer
+		vkUnmapMemory(device, vertexBufferMemory); //unmap the vertex buffer memory
+	}
 	void recordCommandBuffers() {
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
@@ -673,6 +699,7 @@ private:
 	// 10. createFrameBuffer()
 	// 11. createSemaphores()
 	// 13. recordCommandBuffers()
+	// 14. createVertexBuffer
 };
 int main() {
 	Engine app;
