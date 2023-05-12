@@ -48,6 +48,7 @@ private:
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
+	VkBuffer vertexBuffer;
 
 	void initWindow() {
 		glfwInit();
@@ -571,17 +572,28 @@ private:
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer! " + resultStr(vkBeginCommandBuffer(commandBuffers[i], &beginInfo)));
 			}
-			//render pass info here
+			VkRenderPassBeginInfo renderPassInfo{}; //different from the render pass info in the createGraphicsPipeline func
+			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassInfo.renderPass = renderPass;
+			renderPassInfo.framebuffer = swapChainFramebuffers[i]; //framebuffer to render to
+			renderPassInfo.renderArea.offset = { 0, 0 }; //top left corner of the render area
+			renderPassInfo.renderArea.extent = swapChainExtent;
+			VkClearValue clearColor = { 0.68f, 0.85f, 0.90f, 1.0f }; //light blue
+			renderPassInfo.clearValueCount = 1; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
+			renderPassInfo.pClearValues = &clearColor;
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
-			//vert drawing here
+			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkDeviceSize offsets[] = { 0 }; //offset into the buffer (where the data begins)
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets); //params are: command buffer, first binding, number of bindings, array of vertex buffers, array of offsets
+			vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(triangle1vert.size()), 1, 0, 0); //params are: command buffer, number of vertices, number of instances, first vertex, first instance
 			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer! " + resultStr(vkEndCommandBuffer(commandBuffers[i])));
 			}
+			std::cout << "command buffer recorded successfully!" << std::endl;
 		}
 	}
-
-
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
