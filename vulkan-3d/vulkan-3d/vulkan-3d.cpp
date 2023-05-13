@@ -12,12 +12,14 @@
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
-	float position[2];
+	float posX;
+	float posY;
+	float colR, colG;
 };
 std::vector<Vertex> triangle1vert = {
-	{{0.0f, -0.5f}},  // bottom of the triangle
-	{{-0.5f, 0.5f}}, // top left of the triangle
-	{{0.5f, 0.5f}}   // top right of the triangle
+	{0.0f, -0.5f},  // bottom of the triangle
+	{-0.5f, 0.5f}, // top left of the triangle
+	{0.5f, 0.5f}   // top right of the triangle
 };
 class Engine {
 public:
@@ -50,6 +52,8 @@ private:
 	VkSemaphore renderFinishedSemaphore;
 	VkBuffer vertexBuffer;
 	VkDeviceMemory vertexBufferMemory;
+	VkQueue presentQueue;
+	VkQueue graphicsQueue;
 
 	void initWindow() {
 		glfwInit();
@@ -80,26 +84,28 @@ private:
 			throw std::runtime_error("failed to create instance! " + resultStr(vkCreateInstance(&newInfo, nullptr, &instance)));
 		}
 	}
-	void pickDevice() { //outputs number of devices that support Vulkan
+	void pickDevice() {
 		uint32_t deviceCount = 0;
-		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);//outputs the number of devices that support Vulkanm into deviceCount
+		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
 		if (deviceCount == 0) {
 			throw std::runtime_error("failed to find GPUs with Vulkan support!");
 		}
 		std::vector<VkPhysicalDevice> devices(deviceCount);
-		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data()); // stores the physical devices into the devices vector
+		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 		for (const auto& device : devices) {
-			if (isDeviceSuitable(device)) {
+			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) { //isDeviceSuitableG checks if the device is suitable for graphics, isDeviceSuitableP checks if the device is suitable for presentation
+				std::cout << "GPU and Presentation device found!" << std::endl;
 				physicalDevice = device;
 				break;
 			}
 		}
 		if (physicalDevice == VK_NULL_HANDLE) {
-			throw std::runtime_error("failed to find a suitable GPU for graphics");
+			throw std::runtime_error("failed to find a suitable GPU for graphics and presentation");
 		}
 	}
+
 	void createLogicalDevice() {
-		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+		QueueFamilyIndices indices = findQueueFamiliesG(physicalDevice);
 		float queuePriority = 1.0f;
 		VkDeviceQueueCreateInfo queueInf{};
 		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
@@ -138,11 +144,15 @@ private:
 			throw std::runtime_error("failed to create window surface!");
 		}
 	}
-	struct QueueFamilyIndices { // store the indices of the queue families that are supported by the device
+	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
+		std::optional<uint32_t> presentFamily;
 
-		bool isComplete() {
+		bool graphicsComplete() {
 			return graphicsFamily.has_value();
+		}
+		bool presentComplete() {
+			return presentFamily.has_value();
 		}
 	};
 	std::string resultStr(VkResult result) {
@@ -163,7 +173,7 @@ private:
 		default: return "Unknown VkResult";
 		}
 	}
-	QueueFamilyIndices findQueueFamilies(VkPhysicalDevice device) {
+	QueueFamilyIndices findQueueFamiliesG(VkPhysicalDevice device) {
 		QueueFamilyIndices indices;
 		uint32_t queueFamilyCount = 0;
 		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr); //this function gets the number of queue families
@@ -174,7 +184,7 @@ private:
 			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //check if the queue family supports graphics
 				indices.graphicsFamily = i;
 			}
-			if (indices.isComplete()) {
+			if (indices.graphicsComplete()) {
 				break;
 			}
 			i++;
@@ -182,10 +192,37 @@ private:
 		return indices; //return the indices/position of the queue family that supports graphics
 	}
 
-	bool isDeviceSuitable(VkPhysicalDevice device) {
-		QueueFamilyIndices indices = findQueueFamilies(device);
-		return indices.isComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
+	bool isDeviceSuitableG(VkPhysicalDevice device) {
+		QueueFamilyIndices indices = findQueueFamiliesG(device);
+		return indices.graphicsComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
 	}
+	QueueFamilyIndices findQueueFamiliesP(VkPhysicalDevice device, VkSurfaceKHR surface) {
+		QueueFamilyIndices indices;
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+		int i = 0;
+		for (const auto& queueFamily : queueFamilies) {
+			VkBool32 presentSupport = false;
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+			if (presentSupport) { // check if the queue family supports presentation
+				indices.presentFamily = i;
+			}
+			if (indices.presentComplete()) {
+				break;
+			}
+			i++;
+		}
+		return indices; //return the indices/position of the queue family that supports presentation
+	}
+
+	bool isDeviceSuitableP(VkPhysicalDevice device, VkSurfaceKHR surface) {
+		QueueFamilyIndices indices = findQueueFamiliesP(device, surface);
+		return indices.presentComplete(); //checks if the queue families have all been searched and if the present family has been found
+	}
+
 	struct SCsupportDetails { // struct to hold the swap chain details
 		VkSurfaceCapabilitiesKHR capabilities;
 		std::vector<VkSurfaceFormatKHR> formats;
@@ -207,6 +244,12 @@ private:
 			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
 		}
 		return details; //return the swap chain details
+	}
+	void initQueues() {
+		QueueFamilyIndices indicesG = findQueueFamiliesG(physicalDevice);
+		QueueFamilyIndices indicesP = findQueueFamiliesP(physicalDevice, surface);
+		vkGetDeviceQueue(device, indicesG.graphicsFamily.value(), 0, &graphicsQueue); //params: device, queue family index, queue index, pointer to queue
+		vkGetDeviceQueue(device, indicesP.presentFamily.value(), 0, &presentQueue);
 	}
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
 		VkExtent2D actualExtent = { WIDTH, HEIGHT }; //extent=res
@@ -235,7 +278,7 @@ private:
 		newinfo.imageExtent = extent;
 		newinfo.imageArrayLayers = 1; //the num of layers each image has.
 		newinfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
-		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+		QueueFamilyIndices indices = findQueueFamiliesG(physicalDevice);
 		uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value() }; //the queue family indices that will be used
 		newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
 		newinfo.queueFamilyIndexCount = 1;
@@ -523,27 +566,31 @@ private:
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
 	}
-	void initVulkan() { //initializes vulkan functions
+	void initVulkan() { //initializes Vulkan functions
 		createInstance();
 		createSurface();
 		pickDevice();
 		createLogicalDevice();
+		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
 		createCommandPool();
+		createVertexBuffer();
 		setupGraphicsPipeline();
 		createGraphicsPipeline(vertShaderModule, fragShaderModule); //create the graphics pipeline
-		createCommandBuffer();
 		createFrameBuffer();
+		createCommandBuffer();
+		recordCommandBuffers();
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
 	}
+
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) { // while window is not closed
 			glfwPollEvents(); //check if any events are triggered
 		}
 	}
 	void createCommandPool() {
-		QueueFamilyIndices queueFamilyIndices = findQueueFamilies(physicalDevice);
+		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); //the queue family that will be using this command pool
@@ -564,10 +611,20 @@ private:
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
+	uint32_t findMemoryType(uint32_t tFilter, VkMemoryPropertyFlags prop) { //find the memory type based on the type filter and properties
+		VkPhysicalDeviceMemoryProperties memP; //struct to hold memory properties
+		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memP); //get the memory properties for the physical device
+		for (uint32_t i = 0; i < memP.memoryTypeCount; i++) { //loop through the memory types
+			if ((tFilter & (1 << i)) && (memP.memoryTypes[i].propertyFlags & prop) == prop) { //if the memory type is suitable
+				return i; //return the index of the memory type
+			}
+		}
+		throw std::runtime_error("failed to find suitable memory type!");
+	}
 	void createVertexBuffer() { //create the vertex buffer based on the vertices, etc
 		VkBufferCreateInfo bufferInf{}; //struct to hold the buffer info
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInf.size = sizeof(vertices[0]) * vertices.size(); //size of the buffer
+		bufferInf.size = sizeof(triangle1vert[0]) * triangle1vert.size(); //size of the buffer
 		bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
 		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
 		if (vkCreateBuffer(device, &bufferInf, nullptr, &vertexBuffer) != VK_SUCCESS) {
@@ -586,7 +643,7 @@ private:
 		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0); //bind the vertex buffer to the vertex buffer memory
 		void* data; //generic pointer to a point in memory
 		vkMapMemory(device, vertexBufferMemory, 0, bufferInf.size, 0, &data); //map the allocated device memory into the application's address space
-		memcpy(data, vertices.data(), (size_t)bufferInf.size); //copy the vertex data to the vertex buffer
+		memcpy(data, triangle1vert.data(), (size_t)bufferInf.size); //copy the vertex data to the vertex buffer
 		vkUnmapMemory(device, vertexBufferMemory); //unmap the vertex buffer memory
 	}
 	void recordCommandBuffers() {
@@ -681,25 +738,10 @@ private:
 	// 5. commandbuffers (done)
 	// 6. framebuffers (done)
 	// 7. semaphores (done)
-	// 8. vertex drawing and defining the vertex buffer
-	// 9. fences
-	// 10. draw triangle
-
-
-	// Current Graphic Functions Implemented:
-	// 1. createInstance()
-	// 2. createSurface()
-	// 3. pickDevice()
-	// 4. createLogicalDevice()	
-	// 5. createSC()
-	// 6. createCommandPool()
-	// 7. setupGraphicsPipeline()
-	// 8. createGraphicsPipeline()
-	// 9. createCommandBuffer()
-	// 10. createFrameBuffer()
-	// 11. createSemaphores()
-	// 13. recordCommandBuffers()
-	// 14. createVertexBuffer
+	// 8. vertex drawing and defining the vertex buffer (done)
+	// 9. fences (do later)
+	// 10. draw frame
+	// 11. draw triangle
 };
 int main() {
 	Engine app;
