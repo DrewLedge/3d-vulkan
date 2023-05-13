@@ -23,6 +23,18 @@ std::vector<Vertex> triangle1vert = {
 	{-0.5f, 0.5f, 0.0f, 1.0f, 0.0f},  // Green vertex at top-left
 	{0.5f, 0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
 };
+std::vector<Vertex> triangle2vert = {
+	{0.0f, 0.5f, 1.0f, 0.0f, 0.0f},  // Red vertex at bottom
+	{0.5f, -0.5f, 0.0f, 1.0f, 0.0f},  // Green vertex at top-left
+	{-0.5f, -0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
+};
+std::vector<Vertex> triangle3vert = {
+	{-0.8f, 0.0f, 0.0f, 0.0f, 1.0f},   // Blue vertex at left
+	{-0.3f, -0.8f, 0.0f, 1.0f, 0.0f},   // Green vertex at bottom-left
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}     // Red vertex at bottom-right
+};
+
+std::vector<std::vector<Vertex>>objects = { triangle1vert,triangle2vert, triangle3vert };
 
 class Engine {
 public:
@@ -53,8 +65,8 @@ private:
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
-	VkBuffer vertexBuffer;
-	VkDeviceMemory vertexBufferMemory;
+	std::vector<VkBuffer> vertBuffers;
+	std::vector<VkDeviceMemory> vertBufferMems;
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 
@@ -383,7 +395,7 @@ private:
 		//vertex input setup (tells vulkan how to read/organize vertex data based on the stride, offset, and rate)
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(triangle1vert); //num of bytes from one entry
+		bindDesc.stride = sizeof(Vertex) * 2; //num of bytes from one entry
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
 		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
 		attrDesc[0].binding = 0;
@@ -646,29 +658,34 @@ private:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 	void createVertexBuffer() { //create the vertex buffer based on the vertices, etc
-		VkBufferCreateInfo bufferInf{}; //struct to hold the buffer info
-		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInf.size = sizeof(triangle1vert[0]) * triangle1vert.size(); //size of the buffer
-		bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
-		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
-		if (vkCreateBuffer(device, &bufferInf, nullptr, &vertexBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create vertex buffer!");
+		vertBuffers.resize(objects.size());
+		vertBufferMems.resize(objects.size());
+		for (size_t i = 0; i < objects.size(); i++) {
+			VkDeviceSize bufferSize = sizeof(objects[i][0]) * objects[i].size();
+			VkBufferCreateInfo bufferInf{}; //struct to hold the buffer info
+			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			bufferInf.size = sizeof(triangle1vert[0]) * triangle1vert.size(); //size of the buffer
+			bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
+			bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
+			if (vkCreateBuffer(device, &bufferInf, nullptr, &vertBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create vertex buffer!");
+			}
+			VkMemoryRequirements memRequirements; //struct to hold memory requirements
+			vkGetBufferMemoryRequirements(device, vertBuffers[i], &memRequirements); //get the memory requirements for the vertex buffer
+			VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
+			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			allocInf.allocationSize = memRequirements.size;
+			//params are: memory requirements, properties of the memory, and the memory type we are looking for
+			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			if (vkAllocateMemory(device, &allocInf, nullptr, &vertBufferMems[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to allocate vertex buffer memory!");
+			}
+			vkBindBufferMemory(device, vertBuffers[i], vertBufferMems[i], 0); //bind the vertex buffer to the vertex buffer memory
+			void* data;
+			vkMapMemory(device, vertBufferMems[i], 0, bufferSize, 0, &data);
+			memcpy(data, objects[i].data(), bufferSize);
+			vkUnmapMemory(device, vertBufferMems[i]);
 		}
-		VkMemoryRequirements memRequirements; //struct to hold memory requirements
-		vkGetBufferMemoryRequirements(device, vertexBuffer, &memRequirements); //get the memory requirements for the vertex buffer
-		VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		//params are: memory requirements, properties of the memory, and the memory type we are looking for
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (vkAllocateMemory(device, &allocInf, nullptr, &vertexBufferMemory) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate vertex buffer memory!");
-		}
-		vkBindBufferMemory(device, vertexBuffer, vertexBufferMemory, 0); //bind the vertex buffer to the vertex buffer memory
-		void* data; //generic pointer to a point in memory
-		vkMapMemory(device, vertexBufferMemory, 0, bufferInf.size, 0, &data); //map the allocated device memory into the application's address space
-		memcpy(data, triangle1vert.data(), (size_t)bufferInf.size); //copy the vertex data to the vertex buffer
-		vkUnmapMemory(device, vertexBufferMemory); //unmap the vertex buffer memory
 	}
 	void recordCommandBuffers() {
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
@@ -680,8 +697,9 @@ private:
 			// Reset the command buffer
 			vkResetCommandBuffer(commandBuffers[i], 0);
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer! " + resultStr(vkBeginCommandBuffer(commandBuffers[i], &beginInfo)));
+				throw std::runtime_error("failed to begin recording command buffer!");
 			}
+
 			VkViewport vp{}; // Create a viewport object
 			vp.x = 0.0f;
 			vp.y = 0.0f;
@@ -703,18 +721,24 @@ private:
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
-			VkBuffer vertexBuffers[] = { vertexBuffer };
-			VkDeviceSize offsets[] = { 0 }; //offset into the buffer (where the data begins)
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffers, offsets); //params are: command buffer, first binding, number of bindings, array of vertex buffers, array of offsets
-			vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(triangle1vert.size()), 1, 0, 0); //params are: command buffer, number of vertices, number of instances, first vertex, first instance
-			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
-			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer! " + resultStr(vkEndCommandBuffer(commandBuffers[i])));
+
+			// loop over all objects:
+			for (size_t j = 0; j < objects.size(); j++) {
+				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
+				VkDeviceSize offsets[] = { 0 };
+				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets); // bind the correct vertex buffer
+				vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(objects[j].size()), 1, 0, 0); // draw the object
 			}
 
-			std::cout << "command buffer recorded successfully!" << std::endl;
+			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
+
+			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer!");
+			}
 		}
+		std::cout << "Command buffers recorded successfully!" << std::endl;
 	}
+
 
 
 	void createFrameBuffer() {
@@ -822,8 +846,12 @@ private:
 		vkDestroyRenderPass(device, renderPass, nullptr);
 
 		// clean up vertex buffer and its memory
-		vkDestroyBuffer(device, vertexBuffer, nullptr);
-		vkFreeMemory(device, vertexBufferMemory, nullptr);
+		for (int i = 0; i < vertBuffers.size(); i++) {
+			vkDestroyBuffer(device, vertBuffers[i], nullptr);
+		}
+		for (int i = 0; i < vertBufferMems.size(); i++) {
+			vkFreeMemory(device, vertBufferMems[i], nullptr);
+		}
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 		vkDestroySurfaceKHR(instance, surface, nullptr);
