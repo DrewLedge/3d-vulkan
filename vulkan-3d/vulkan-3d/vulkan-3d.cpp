@@ -14,13 +14,16 @@ const uint32_t HEIGHT = 1800;
 struct Vertex {
 	float posX;
 	float posY;
-	float colR, colG;
+	float colR;
+	float colG;
+	float colB;
 };
 std::vector<Vertex> triangle1vert = {
-	{0.0f, -0.5f},  // bottom of the triangle
-	{-0.5f, 0.5f}, // top left of the triangle
-	{0.5f, 0.5f}   // top right of the triangle
+	{0.0f, -0.5f, 1.0f, 0.0f, 0.0f},  // Red vertex at bottom
+	{-0.5f, 0.5f, 0.0f, 1.0f, 0.0f},  // Green vertex at top-left
+	{0.5f, 0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
 };
+
 class Engine {
 public:
 	void run() {
@@ -357,17 +360,17 @@ private:
 		vertShaderModule = createShaderModule(vertShaderCode);
 		fragShaderModule = createShaderModule(fragShaderCode);
 	}
-	void createGraphicsPipeline(VkShaderModule vert, VkShaderModule frag) {
+	void createGraphicsPipeline() {
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vert; //assign the vertex shader module
+		vertShader.module = vertShaderModule; //assign the vertex shader module
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = frag;
+		fragShader.module = fragShaderModule;
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
@@ -505,7 +508,7 @@ private:
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
 		if (result != VK_SUCCESS) {
-			std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
+			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
 		}
 
 		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
@@ -538,8 +541,9 @@ private:
 		renderPassInf.pSubpasses = &subpass; //array of subpasses
 		VkResult RenderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
 		if (RenderPassResult != VK_SUCCESS) {
-			std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
+			throw std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
 		}
+		std::cout << " Render pass created successfully" << std::endl;
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -576,7 +580,7 @@ private:
 		createCommandPool();
 		createVertexBuffer();
 		setupGraphicsPipeline();
-		createGraphicsPipeline(vertShaderModule, fragShaderModule); //create the graphics pipeline
+		createGraphicsPipeline(); //create the graphics pipeline
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers();
@@ -585,10 +589,13 @@ private:
 	}
 
 	void mainLoop() {
-		while (!glfwWindowShouldClose(window)) { // while window is not closed
-			glfwPollEvents(); //check if any events are triggered
+		while (!glfwWindowShouldClose(window)) {
+			glfwPollEvents();
+			drawF();
 		}
+		vkDeviceWaitIdle(device);
 	}
+
 	void createCommandPool() {
 		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
@@ -707,6 +714,64 @@ private:
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
 	}
+	void recreateSwap() { //needs work
+		std::cout << " recreating swap chain..." << std::endl;
+		int width = 0, height = 0;
+		glfwGetFramebufferSize(window, &width, &height);
+		while (width == 0 || height == 0) {
+			glfwGetFramebufferSize(window, &width, &height);
+			glfwWaitEvents(); //wait until the window is not minimized
+		}
+		vkDeviceWaitIdle(device); //wait until the device is idle
+		createSC();
+		createImageViews();
+		createGraphicsPipeline();
+		createFrameBuffer();
+		createCommandBuffer();
+	}
+	void drawF() { //draw frame function
+		uint32_t imageIndex;
+		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+			recreateSwap();
+			return;
+		}
+		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
+		}
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //pipeline stage to wait at
+		submitInfo.waitSemaphoreCount = 1; //number of semaphores to wait on
+		submitInfo.pWaitSemaphores = waitSemaphores; //list of semaphores to wait on
+		submitInfo.pWaitDstStageMask = waitStages; //list of pipeline stages to wait on
+		submitInfo.commandBufferCount = 1; //number of command buffers to submit
+		submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; //list of command buffers to submit
+		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
+		submitInfo.signalSemaphoreCount = 1; //number of semaphores to signal
+		submitInfo.pSignalSemaphores = signalSemaphores; //list of semaphores to signal
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) { //submit the command buffer to the graphics queue
+			throw std::runtime_error("failed to submit draw command buffer!");
+		}
+		VkPresentInfoKHR presentInfo{};
+		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		presentInfo.waitSemaphoreCount = 1; //number of semaphores to wait on
+		presentInfo.pWaitSemaphores = signalSemaphores; //list of semaphores to wait on
+		VkSwapchainKHR swapChains[] = { swapChain }; //swap chains to present images to
+		presentInfo.swapchainCount = 1; //number of swap chains to present to
+		presentInfo.pSwapchains = swapChains; //list of swap chains to present to
+		presentInfo.pImageIndices = &imageIndex; //index of image in swap chain to present
+		presentInfo.pResults = nullptr; //optional array to receive results of each swap chain's presentation
+		result = vkQueuePresentKHR(presentQueue, &presentInfo); //present the image in the swap chain
+		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+			recreateSwap();
+		}
+		else if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to present swap chain image! " + resultStr(result));
+		}
+		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
+	}
 	void cleanup() {
 		// Destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
@@ -740,7 +805,7 @@ private:
 	// 7. semaphores (done)
 	// 8. vertex drawing and defining the vertex buffer (done)
 	// 9. fences (do later)
-	// 10. draw frame
+	// 10. draw frame function (done)
 	// 11. draw triangle
 };
 int main() {
