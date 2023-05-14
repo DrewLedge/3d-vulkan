@@ -24,17 +24,17 @@ std::vector<Vertex> triangle1vert = {
 	{0.5f, 0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
 };
 std::vector<Vertex> triangle2vert = {
-	{0.0f, 0.5f, 1.0f, 0.0f, 0.0f},  // Red vertex at bottom
-	{0.5f, -0.5f, 0.0f, 1.0f, 0.0f},  // Green vertex at top-left
-	{-0.5f, -0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
+	{0.0f, 0.5f, 1.0f, 0.0f, 0.0f},
+	{0.5f, -0.5f, 0.0f, 1.0f, 0.0f},
+	{-0.5f, -0.5f, 0.0f, 0.0f, 1.0f}
 };
 std::vector<Vertex> triangle3vert = {
-	{-0.8f, 0.0f, 0.0f, 0.0f, 1.0f},   // Blue vertex at left
-	{-0.3f, -0.8f, 0.0f, 1.0f, 0.0f},   // Green vertex at bottom-left
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}     // Red vertex at bottom-right
+	{-0.8f, 0.0f, 0.0f, 0.0f, 1.0f},
+	{-0.3f, -0.8f, 0.0f, 1.0f, 0.0f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}
 };
 
-std::vector<std::vector<Vertex>>objects = { triangle1vert,triangle2vert, triangle3vert };
+std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert, triangle3vert };
 
 class Engine {
 public:
@@ -55,6 +55,7 @@ private:
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
 	std::vector<VkImageView> swapChainImageViews;
+	VkViewport vp{};
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
@@ -395,23 +396,28 @@ private:
 		//vertex input setup (tells vulkan how to read/organize vertex data based on the stride, offset, and rate)
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(Vertex) * 2; //num of bytes from one entry
+		bindDesc.stride = sizeof(Vertex); //num of bytes from one entry to the next
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
+
 		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
+
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
-		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attrDesc[0].format = VK_FORMAT_R32G32_SFLOAT;
 		attrDesc[0].offset = offsetof(Vertex, posX);
+
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
 		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attrDesc[1].offset = offsetof(Vertex, colR);
+
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{}; //vertex input state struct
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  //assign the struct type to the vertex input state
 		vertexInputInfo.vertexBindingDescriptionCount = 1;  //value is set to the amount of binding descriptions
 		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
 		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
 		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); //assign the vertex input attribute descriptions
+
 
 		//input assembly setup (assembles the vertices into primitives)
 		VkPipelineInputAssemblyStateCreateInfo inputAssem{}; //create a struct for the input assembly state
@@ -420,7 +426,6 @@ private:
 		inputAssem.primitiveRestartEnable = VK_FALSE; //if true, then a special index value of 0xFFFF or 0xFFFFFFFF is treated as a restart index
 
 		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
-		VkViewport vp{}; //struct for the viewport
 		vp.x = 0.0f;
 		vp.y = 0.0f;
 		vp.width = (float)swapChainExtent.width; //width for the viewport is the swap chain extent widthh
@@ -637,14 +642,6 @@ private:
 		if (vkAllocateCommandBuffers(device, &allocInf, commandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
-
-		// Explicitly reset the command buffers to initial state
-		for (auto& commandBuffer : commandBuffers) {
-			VkCommandBufferBeginInfo beginInfo{};
-			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-			vkBeginCommandBuffer(commandBuffer, &beginInfo);
-		}
 	}
 
 	uint32_t findMemoryType(uint32_t tFilter, VkMemoryPropertyFlags prop) { //find the memory type based on the type filter and properties
@@ -657,29 +654,31 @@ private:
 		}
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
-	void createVertexBuffer() { //create the vertex buffer based on the vertices, etc
+	void createVertexBuffer() {
 		vertBuffers.resize(objects.size());
 		vertBufferMems.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
-			VkDeviceSize bufferSize = sizeof(objects[i][0]) * objects[i].size();
-			VkBufferCreateInfo bufferInf{}; //struct to hold the buffer info
+			VkDeviceSize bufferSize = sizeof(objects[i][0]) * objects[i].size(); //size of the buffer. formula is: size of the data * number of vertices
+			VkBufferCreateInfo bufferInf{};
 			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferInf.size = sizeof(triangle1vert[0]) * triangle1vert.size(); //size of the buffer
+			bufferInf.size = bufferSize; //size of the buffer
 			bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
 			bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
 			if (vkCreateBuffer(device, &bufferInf, nullptr, &vertBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create vertex buffer!");
 			}
-			VkMemoryRequirements memRequirements; //struct to hold memory requirements
+			VkMemoryRequirements memRequirements;
 			vkGetBufferMemoryRequirements(device, vertBuffers[i], &memRequirements); //get the memory requirements for the vertex buffer
 			VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
 			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 			allocInf.allocationSize = memRequirements.size;
+
 			//params are: memory requirements, properties of the memory, and the memory type we are looking for
-			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //bitwise OR the memory properties to find the memory type
 			if (vkAllocateMemory(device, &allocInf, nullptr, &vertBufferMems[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to allocate vertex buffer memory!");
 			}
+
 			vkBindBufferMemory(device, vertBuffers[i], vertBufferMems[i], 0); //bind the vertex buffer to the vertex buffer memory
 			void* data;
 			vkMapMemory(device, vertBufferMems[i], 0, bufferSize, 0, &data);
@@ -687,6 +686,7 @@ private:
 			vkUnmapMemory(device, vertBufferMems[i]);
 		}
 	}
+
 	void recordCommandBuffers() {
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
@@ -700,14 +700,7 @@ private:
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
 
-			VkViewport vp{}; // Create a viewport object
-			vp.x = 0.0f;
-			vp.y = 0.0f;
-			vp.width = static_cast<float>(swapChainExtent.width);
-			vp.height = static_cast<float>(swapChainExtent.height);
-			vp.minDepth = 0.0f;
-			vp.maxDepth = 1.0f;
-			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport
+			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport to already existing viewport state from the pipeline
 
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -726,8 +719,8 @@ private:
 			for (size_t j = 0; j < objects.size(); j++) {
 				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
 				VkDeviceSize offsets[] = { 0 };
-				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets); // bind the correct vertex buffer
-				vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(objects[j].size()), 1, 0, 0); // draw the object
+				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets); //params are: command buffer, first binding, number of bindings, array of vertex buffers, array of offsets into buffers
+				vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(objects[j].size()), 1, 0, 0); //params are: command buffer, number of vertices, number of instances, first vertex, first instance
 			}
 
 			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
@@ -786,6 +779,7 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 	}
+
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
