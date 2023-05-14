@@ -18,6 +18,16 @@ struct Vertex {
 	float colG;
 	float colB;
 };
+struct testVelo {
+	double vx;
+	double vy;
+};
+std::vector<testVelo> velocities = {
+	{0.001, 0},
+	{0.001, 0},
+	{0.001, 0}
+};
+
 std::vector<Vertex> triangle1vert = {
 	{-1.0f, 0.0f, 0.0f, 0.0f, 1.0f},
 	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f},
@@ -451,7 +461,7 @@ private:
 		rasterizer.lineWidth = 1.0f; //thickness of fragment lines
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-		rasterizer.depthBiasEnable = VK_FALSE; //if false, no depth bias is applied to fragments
+		rasterizer.depthBiasEnable = VK_TRUE; //if false, no depth bias is applied to fragments
 		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
 		rasterizer.depthBiasClamp = 0.0f;
 		rasterizer.depthBiasSlopeFactor = 0.0f;
@@ -615,6 +625,8 @@ private:
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
 			drawF();
+			updateObjects();
+			recreateVertexBuffer();
 		}
 		vkDeviceWaitIdle(device);
 	}
@@ -743,9 +755,6 @@ private:
 		}
 	}
 
-
-
-
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
@@ -776,21 +785,7 @@ private:
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
 	}
-	void recreateSwap() { //needs work
-		std::cout << " recreating swap chain..." << std::endl;
-		int width = 0, height = 0;
-		glfwGetFramebufferSize(window, &width, &height);
-		while (width == 0 || height == 0) {
-			glfwGetFramebufferSize(window, &width, &height);
-			glfwWaitEvents(); //wait until the window is not minimized
-		}
-		vkDeviceWaitIdle(device); //wait until the device is idle
-		createSC();
-		createImageViews();
-		createGraphicsPipeline();
-		createFrameBuffer();
-		createCommandBuffer();
-	}
+	void recreateSwap() {} //update later
 
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
@@ -835,6 +830,24 @@ private:
 		}
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
+	void recreateVertexBuffer() {
+		for (auto vertBuffer : vertBuffers) {
+			vkDestroyBuffer(device, vertBuffer, nullptr);
+		}
+		for (auto vertBufferMemory : vertBufferMems) {
+			vkFreeMemory(device, vertBufferMemory, nullptr);
+		}
+		createVertexBuffer();
+	}
+	void updateObjects() {
+		for (size_t i = 0; i < objects.size(); i++) {
+			for (Vertex& vertex : objects[i]) { //move the objects
+				vertex.posX += velocities[i].vx;
+				vertex.posY += velocities[i].vy;
+			}
+		}
+	}
+
 	void cleanup() {
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
@@ -878,10 +891,12 @@ private:
 	// 7. semaphores (done)
 	// 8. vertex drawing and defining the vertex buffer (done)
 	// 10. draw frame function (done)
-	// 11. draw triangle
-	// 12. fences
-	// 13. convert to 3d
-	// 14. textures
+	// 11. draw triangle (done)
+	// 12. moving objects
+	// 13. fences
+	// 14. convert to 3d
+	// 15. textures
+	// 16. shadows
 };
 int main() {
 	Engine app;
