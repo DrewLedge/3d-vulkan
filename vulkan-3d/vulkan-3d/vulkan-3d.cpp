@@ -19,14 +19,14 @@ struct Vertex {
 	float colB;
 };
 std::vector<Vertex> triangle1vert = {
-	{0.0f, -0.5f, 1.0f, 0.0f, 0.0f},  // Red vertex at bottom
-	{-0.5f, 0.5f, 0.0f, 1.0f, 0.0f},  // Green vertex at top-left
-	{0.5f, 0.5f, 0.0f, 0.0f, 1.0f}    // Blue vertex at top-right
+	{-1.0f, 0.0f, 0.0f, 0.0f, 1.0f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}
 };
 std::vector<Vertex> triangle2vert = {
-	{0.0f, 0.5f, 1.0f, 0.0f, 0.0f},
-	{0.5f, -0.5f, 0.0f, 1.0f, 0.0f},
-	{-0.5f, -0.5f, 0.0f, 0.0f, 1.0f}
+	{-0.2f, 0.0f, 0.0f, 0.0f, 1.0f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f},
+	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f}
 };
 std::vector<Vertex> triangle3vert = {
 	{-0.8f, 0.0f, 0.0f, 0.0f, 1.0f},
@@ -607,7 +607,6 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers();
-		recordCommandBuffers();
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
 	}
@@ -694,7 +693,6 @@ private:
 			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 			beginInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
 
-			// Reset the command buffer
 			vkResetCommandBuffer(commandBuffers[i], 0);
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
@@ -705,8 +703,8 @@ private:
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = renderPass;
-			renderPassInfo.framebuffer = swapChainFramebuffers[i]; //framebuffer to render to
-			renderPassInfo.renderArea.offset = { 0, 0 }; //top left corner of the render area
+			renderPassInfo.framebuffer = swapChainFramebuffers[i];
+			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
 			VkClearValue clearColor = { 0.68f, 0.85f, 0.90f, 1.0f }; //light blue
 			renderPassInfo.clearValueCount = 1; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
@@ -715,22 +713,36 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
-			// loop over all objects:
 			for (size_t j = 0; j < objects.size(); j++) {
+				// ensure vertex buffer and object correspondence
+				if (j >= vertBuffers.size()) {
+					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
+					continue;
+				}
+
 				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
 				VkDeviceSize offsets[] = { 0 };
-				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets); //params are: command buffer, first binding, number of bindings, array of vertex buffers, array of offsets into buffers
-				vkCmdDraw(commandBuffers[i], static_cast<uint32_t>(objects[j].size()), 1, 0, 0); //params are: command buffer, number of vertices, number of instances, first vertex, first instance
+				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+
+				// ensure object size is correct
+				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].size());
+				if (objectVertexCount == 0) {
+					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
+					continue;
+				}
+
+				vkCmdDraw(commandBuffers[i], objectVertexCount, 1, 0, 0);
+				std::cout << "Drawing object " << j + 1 << std::endl;
 			}
 
-			vkCmdEndRenderPass(commandBuffers[i]); //end the render pass
+			vkCmdEndRenderPass(commandBuffers[i]);
 
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
 		}
-		std::cout << "Command buffers recorded successfully!" << std::endl;
 	}
+
 
 
 
