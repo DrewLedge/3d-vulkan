@@ -64,6 +64,8 @@ private:
 	std::vector<VkImage> swapChainImages;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
+	std::vector<VkFence> inFlightFences;
+	size_t currentFrame = 0;
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 	VkPipelineLayout pipelineLayout;
@@ -610,6 +612,7 @@ private:
 		createLogicalDevice();
 		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
+		setupFences();
 		createCommandPool();
 		createVertexBuffer();
 		setupGraphicsPipeline();
@@ -620,11 +623,22 @@ private:
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
 	}
-
+	void setupFences() {
+		inFlightFences.resize(swapChainImages.size());
+		VkFenceCreateInfo fenceInfo{};
+		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+		for (size_t i = 0; i < inFlightFences.size(); i++) {
+			if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create synchronization objects for a frame!");
+			}
+		}
+	}
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
 			drawF();
+			currentFrame = (currentFrame + 1) % swapChainImages.size();
 			updateObjects();
 			recreateVertexBuffer();
 		}
@@ -744,7 +758,7 @@ private:
 				}
 
 				vkCmdDraw(commandBuffers[i], objectVertexCount, 1, 0, 0);
-				std::cout << "Drawing object " << j + 1 << std::endl;
+				//std::cout << "Drawing object " << j + 1 << std::endl;
 			}
 
 			vkCmdEndRenderPass(commandBuffers[i]);
@@ -789,6 +803,8 @@ private:
 
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			recreateSwap();
@@ -809,7 +825,7 @@ private:
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
 		submitInf.signalSemaphoreCount = 1; //number of semaphores to signal
 		submitInf.pSignalSemaphores = signalSemaphores; //list of semaphores to signal
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, VK_NULL_HANDLE) != VK_SUCCESS) { //submit the command buffer to the graphics queue
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
 		VkPresentInfoKHR presentInf{};
@@ -831,6 +847,7 @@ private:
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
 	void recreateVertexBuffer() {
+		vkDeviceWaitIdle(device);  // wait for all frames to finish
 		for (auto vertBuffer : vertBuffers) {
 			vkDestroyBuffer(device, vertBuffer, nullptr);
 		}
@@ -838,8 +855,12 @@ private:
 			vkFreeMemory(device, vertBufferMemory, nullptr);
 		}
 		createVertexBuffer();
+		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
+
+
 	void updateObjects() {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		for (size_t i = 0; i < objects.size(); i++) {
 			for (Vertex& vertex : objects[i]) { //move the objects
 				vertex.posX += velocities[i].vx;
@@ -848,10 +869,15 @@ private:
 		}
 	}
 
+
 	void cleanup() {
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+		for (size_t i = 0; i < 3; i++) {
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
+
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
