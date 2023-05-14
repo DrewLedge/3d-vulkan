@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <array>
+#include "forms.h"
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
@@ -925,6 +926,8 @@ private:
 	// 16. shadows
 };
 int main() {
+	formulas f;
+	std::cout << f.goodgen(1, 10) << std::endl;
 	Engine app;
 	try {
 		app.run();
