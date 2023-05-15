@@ -83,11 +83,12 @@ private:
 	std::vector<VkDeviceMemory> vertBufferMems;
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
-
+	formulas formula;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-		glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
+
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
 	}
 	const std::vector<const char*> validationLayers = {
@@ -602,8 +603,6 @@ private:
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
-		vkDestroyShaderModule(device, vertShaderModule, nullptr);
-		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
 	}
 	void initVulkan() { //initializes Vulkan functions
@@ -739,7 +738,6 @@ private:
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
-
 			for (size_t j = 0; j < objects.size(); j++) {
 				// ensure vertex buffer and object correspondence
 				if (j >= vertBuffers.size()) {
@@ -800,7 +798,34 @@ private:
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
 	}
-	void recreateSwap() {} //update later
+	void recreateSwap() {
+		int width = 0, height = 0;
+		while (width == 0 || height == 0) {
+			glfwGetFramebufferSize(window, &width, &height);
+			glfwWaitEvents();
+		}
+		vkDeviceWaitIdle(device); // Wait for device idle
+		cleanupSwapChain();
+		createSC();
+		createImageViews();
+		createGraphicsPipeline();
+		createFrameBuffer();
+
+		recordCommandBuffers();
+	}
+	void cleanupSwapChain() {
+		for (auto framebuffer : swapChainFramebuffers) {
+			vkDestroyFramebuffer(device, framebuffer, nullptr);
+		}
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+		vkDestroyRenderPass(device, renderPass, nullptr);
+		for (auto imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
+		}
+		vkDestroySwapchainKHR(device, swapChain, nullptr);
+	}
 
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
@@ -864,8 +889,8 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		for (size_t i = 0; i < objects.size(); i++) {
 			for (Vertex& vertex : objects[i]) { //move the objects
-				vertex.posX += velocities[i].vx;
-				vertex.posY += velocities[i].vy;
+				vertex.posX += formula.goodgen(-1, 1) * 0.0005;
+				vertex.posY += formula.goodgen(-1, 1) * 0.0005;
 			}
 		}
 	}
@@ -887,6 +912,8 @@ private:
 		}
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 		vkDestroyCommandPool(device, commandPool, nullptr);
+		vkDestroyShaderModule(device, vertShaderModule, nullptr);
+		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
@@ -926,8 +953,6 @@ private:
 	// 16. shadows
 };
 int main() {
-	formulas f;
-	std::cout << f.goodgen(1, 10) << std::endl;
 	Engine app;
 	try {
 		app.run();
