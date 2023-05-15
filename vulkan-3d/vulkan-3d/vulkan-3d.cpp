@@ -18,6 +18,7 @@ struct Vertex {
 	float colR;
 	float colG;
 	float colB;
+	float alpha;
 };
 struct testVelo {
 	double vx;
@@ -28,24 +29,18 @@ std::vector<testVelo> velocities = {
 	{0.001, 0},
 	{0.001, 0}
 };
-
 std::vector<Vertex> triangle1vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 1.0f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}
+	{-0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}, // x, y, r, g, b, a
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f},
+	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
 };
 std::vector<Vertex> triangle2vert = {
-	{-0.2f, 0.0f, 0.0f, 0.0f, 1.0f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f},
-	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f}
-};
-std::vector<Vertex> triangle3vert = {
-	{-0.8f, 0.0f, 0.0f, 0.0f, 1.0f},
-	{-0.3f, -0.8f, 0.0f, 1.0f, 0.0f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f}
+	{-1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f, 0.0f}
 };
 
-std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert, triangle3vert };
+std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
 
 class Engine {
 public:

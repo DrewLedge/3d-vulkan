@@ -32,11 +32,8 @@
     <None Include="engine.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="fragment_shader.spv">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
-    <None Include="vertex_shader.spv">
-      <Filter>Source Files\Shaders</Filter>
+    <None Include="SPIRV.md">
+      <Filter>Source Files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

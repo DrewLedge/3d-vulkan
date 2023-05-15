@@ -137,8 +137,7 @@
   <ItemGroup>
     <None Include="engine.frag" />
     <None Include="engine.vert" />
-    <None Include="fragment_shader.spv" />
-    <None Include="vertex_shader.spv" />
+    <None Include="SPIRV.md" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="forms.h" />

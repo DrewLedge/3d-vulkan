@@ -396,3 +396,4 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+vulkan-3d/vulkan-3d/SPIRV.md
