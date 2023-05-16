@@ -32,9 +32,6 @@
     <None Include="engine.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="SPIRV.md">
-      <Filter>Source Files</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="forms.h">

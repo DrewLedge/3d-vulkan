@@ -20,24 +20,15 @@ struct Vertex {
 	float colB;
 	float alpha;
 };
-struct testVelo {
-	double vx;
-	double vy;
-};
-std::vector<testVelo> velocities = {
-	{0.001, 0},
-	{0.001, 0},
-	{0.001, 0}
-};
 std::vector<Vertex> triangle1vert = {
 	{-0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}, // x, y, r, g, b, a
 	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f},
 	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
 };
 std::vector<Vertex> triangle2vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 0.0f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.0f, 0.0f}
+	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.5f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.5f}
 };
 
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
@@ -313,7 +304,7 @@ private:
 		newinfo.queueFamilyIndexCount = 1;
 		newinfo.pQueueFamilyIndices = queueFamilyIndices;
 		newinfo.preTransform = swapChainSupport.capabilities.currentTransform;
-		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; //ignore the alpha channel
+		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 		newinfo.presentMode = present;
 		newinfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
 		newinfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
@@ -457,7 +448,7 @@ private:
 		rasterizer.depthClampEnable = VK_FALSE; //if true, fragments that are beyond the near and far planes are clamped
 		rasterizer.rasterizerDiscardEnable = VK_FALSE; //if true, geometry never passes through the rasterizer
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; //fill the area of the poly with fragments
-		rasterizer.lineWidth = 1.0f; //thickness of fragment lines
+		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_TRUE; //if false, no depth bias is applied to fragments
@@ -468,7 +459,7 @@ private:
 		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		multiSamp.sampleShadingEnable = VK_FALSE; //if true, enable sample shading in the pipeline
+		multiSamp.sampleShadingEnable = VK_FALSE;
 		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use per fragment
 		multiSamp.minSampleShading = 1.0f; //min fraction for sample shading; closer to one is smoother
 		multiSamp.pSampleMask = nullptr; //array of sample mask values
@@ -505,11 +496,11 @@ private:
 		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
 		colorBA.blendEnable = VK_TRUE; //enable blending
-		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for color channels
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for color channels
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
 		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
-		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for alpha channel
-		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for alpha channel
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
 		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
 		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -728,7 +719,7 @@ private:
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
 			VkClearValue clearColor = { 0.68f, 0.85f, 0.90f, 1.0f }; //light blue
-			renderPassInfo.clearValueCount = 1; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
+			renderPassInfo.clearValueCount = 2; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
 			renderPassInfo.pClearValues = &clearColor;
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
