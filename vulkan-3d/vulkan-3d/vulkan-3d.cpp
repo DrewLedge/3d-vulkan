@@ -25,11 +25,13 @@ std::vector<Vertex> triangle1vert = {
 	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f},
 	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
 };
+
 std::vector<Vertex> triangle2vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.5f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.5f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.5f}
+	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.7f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.7f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.7f}
 };
+
 
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
 
@@ -344,7 +346,7 @@ private:
 			newinfo.image = swapChainImages[i]; // assign the current swap chain image
 			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // set the image view type to 2D
 			newinfo.format = swapChainImageFormat;
-			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -393,13 +395,13 @@ private:
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
-		//vertex input setup (tells vulkan how to read/organize vertex data based on the stride, offset, and rate)
+		// Vertex input setup (tells Vulkan how to read/organize vertex data based on the stride, offset, and rate)
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(Vertex); //num of bytes from one entry to the next
-		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; //the rate when data is loaded
+		bindDesc.stride = sizeof(Vertex); // Number of bytes from one entry to the next
+		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 2> attrDesc; //attr0 is position, attr1 is color
+		std::array<VkVertexInputAttributeDescription, 3> attrDesc; // attr0 is position, attr1 is color, attr2 is alpha
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -411,13 +413,17 @@ private:
 		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
 		attrDesc[1].offset = offsetof(Vertex, colR);
 
-		VkPipelineVertexInputStateCreateInfo vertexInputInfo{}; //vertex input state struct
-		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;  //assign the struct type to the vertex input state
-		vertexInputInfo.vertexBindingDescriptionCount = 1;  //value is set to the amount of binding descriptions
-		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
-		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); //assign the vertex input attribute descriptions
+		attrDesc[2].binding = 0;
+		attrDesc[2].location = 2;
+		attrDesc[2].format = VK_FORMAT_R32_SFLOAT;
+		attrDesc[2].offset = offsetof(Vertex, alpha);
 
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
 
 		//input assembly setup (assembles the vertices into primitives)
 		VkPipelineInputAssemblyStateCreateInfo inputAssem{}; //create a struct for the input assembly state
@@ -583,8 +589,8 @@ private:
 		pipelineInf.layout = pipelineLayout;
 		pipelineInf.renderPass = renderPass;
 		pipelineInf.subpass = 0; // Index of the subpass where this graphics pipeline is to be used
-		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // Optional: set later
-		pipelineInf.basePipelineIndex = -1; // Optional: set later
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // says there is no base pipeline
+		pipelineInf.basePipelineIndex = -1;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
