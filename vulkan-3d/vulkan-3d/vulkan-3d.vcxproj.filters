@@ -16,6 +16,9 @@
     <Filter Include="Source Files\Shaders">
       <UniqueIdentifier>{41eb6084-856d-4bb5-b8c4-ce153d0e4683}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Other dependencies">
+      <UniqueIdentifier>{f163d2c7-acb2-4e51-b8f3-187586c0c3f0}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="vulkan-3d.cpp">
@@ -36,6 +39,9 @@
   <ItemGroup>
     <ClInclude Include="forms.h">
       <Filter>Source Files</Filter>
+    </ClInclude>
+    <ClInclude Include="stb_image.h">
+      <Filter>Other dependencies</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

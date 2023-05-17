@@ -1,3 +1,6 @@
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h" // library for loading images
+
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
@@ -27,9 +30,9 @@ std::vector<Vertex> triangle1vert = {
 };
 
 std::vector<Vertex> triangle2vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.7f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.7f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.7f}
+	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.90f},
+	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.90f},
+	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.90f}
 };
 
 
@@ -57,6 +60,15 @@ private:
 	size_t currentFrame = 0;
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
+	VkImage textureImage;
+	VkDeviceMemory TIM; // teture image memory
+
+	uint32_t textureWidth = 512;
+	uint32_t textureHeight = 512;
+	unsigned char* imageData;
+	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
+
+
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
@@ -507,7 +519,7 @@ private:
 		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
 		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for alpha channel
 		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+		colorBA.alphaBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
 		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
 		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBS.logicOpEnable = VK_FALSE; //doesnt apply bitwise operation to blending
@@ -602,6 +614,7 @@ private:
 		createSurface();
 		pickDevice();
 		createLogicalDevice();
+		createTexturedImage();
 		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
 		setupFences();
@@ -615,6 +628,27 @@ private:
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
 	}
+	void getImageData(std::string path) {
+		int texWidth, texHeight, texChannels;
+		unsigned char* imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		if (!imageData) {
+			throw std::runtime_error("failed to load image!");
+		}
+	}
+	void createStagingBuffer() {
+
+	}
+	void createTexturedImage() {
+
+	}
+	void transImgLayout();
+
+	void bufferImageCopy();
+
+	VkSampler createTS();
+
+	void cleanTextureResources();
+
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
 		VkFenceCreateInfo fenceInfo{};
