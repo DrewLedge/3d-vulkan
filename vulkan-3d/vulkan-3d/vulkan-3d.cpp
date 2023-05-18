@@ -625,9 +625,9 @@ private:
 		createVertexBuffer();
 		setupGraphicsPipeline();
 		createGraphicsPipeline(); //create the graphics pipeline
-		createTexturedImage();
 		createFrameBuffer();
 		createCommandBuffer();
+		createTexturedImage(); //create the textured image and texture sampler
 		recordCommandBuffers();
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
@@ -739,15 +739,16 @@ private:
 	void createTexturedImage() { // textured image creation
 		getImageData("textures/texture.jpg");
 		createStagingBuffer();
-
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX); //wait for fence before continuing to next frame
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		// create image info
 		VkImageCreateInfo imageInf{};
 		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageInf.imageType = VK_IMAGE_TYPE_2D;
 		imageInf.extent.width = textureWidth;
 		imageInf.extent.height = textureHeight;
-		imageInf.extent.depth = 1; // depth is 1 for 2d images
-		imageInf.mipLevels = 1; //enable mipmapping with the max mip level being the log2 of the max texture width and height
+		imageInf.extent.depth = 1;
+		imageInf.mipLevels = 1; //if 1, no mipmapping. to calc mip levels: floor(log2(max(w, h, d))) + 1
 		imageInf.arrayLayers = 1; // set array layers to 1 (no array layers for now)
 		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; // set image format
 		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL; // set optimal tiling for GPU
@@ -779,6 +780,7 @@ private:
 		transImgLayout();
 		stbi_image_free(imageData); // free CPU memory after creating staging buffer
 		imageData = nullptr;
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		createTS(); // create texture sampler after creating texture image
 	}
 	void setupFences() {
