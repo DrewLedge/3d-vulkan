@@ -60,8 +60,12 @@ private:
 	size_t currentFrame = 0;
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
-	VkImage textureImage;
+
+	VkImage textureImg;
 	VkDeviceMemory TIM; // teture image memory
+	VkBuffer stagingBuffer; // buffer that is accessible by both CPU and GPU
+	VkDeviceMemory stagingBufferMem; // memory for the staging buffer
+	VkSampler textureSamp; // sampler for the texture (how to read the texture)
 
 	uint32_t textureWidth = 512;
 	uint32_t textureHeight = 512;
@@ -617,7 +621,7 @@ private:
 		createTexturedImage();
 		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
-		setupFences();
+		setupFences(); //create fences
 		createCommandPool();
 		createVertexBuffer();
 		setupGraphicsPipeline();
@@ -635,25 +639,99 @@ private:
 			throw std::runtime_error("failed to load image!");
 		}
 	}
-	void createStagingBuffer() {
+	void createStagingBuffer() { // buffer to transfer data from the CPU (imageData) to the GPU sta
+		VkBufferCreateInfo bufferInf{};
+		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInf.size = imageSize;
+		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		if (vkCreateBuffer(device, &bufferInf, nullptr, &stagingBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create staging buffer!");
+		}
+		// get mem requirements;
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, stagingBuffer, &memRequirements);
+		VkMemoryAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		if (vkAllocateMemory(device, &allocInf, nullptr, &stagingBufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate staging buffer memory!");
+		}
+
+		// bind the memory to the buffer:
+		vkBindBufferMemory(device, stagingBuffer, stagingBufferMem, 0);
+		void* data;
+		if (vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
+			throw std::runtime_error("failed to map staging buffer memory!");
+		}
+
+		// copy imageData to the staging buffer
+		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
+		vkUnmapMemory(device, stagingBufferMem);
+	}
+
+	void transImgLayout() { // transitions the image layout
 
 	}
-	void createTexturedImage() {
+
+	void bufferImageCopy() { //copies the buffer to the image
 
 	}
-	void transImgLayout();
 
-	void bufferImageCopy();
+	void createTS() { //creates texture sampling object
 
-	VkSampler createTS();
+	}
+	void createTexturedImage() { // textured image creation
+		getImageData("textures/texture.jpg");
+		createStagingBuffer();
+		transImgLayout();
+		bufferImageCopy();
 
-	void cleanTextureResources();
+		// create image info
+		VkImageCreateInfo imageInf{};
+		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		imageInf.imageType = VK_IMAGE_TYPE_2D;
+		imageInf.extent.width = textureWidth;
+		imageInf.extent.height = textureHeight;
+		imageInf.extent.depth = 1;
+		imageInf.mipLevels = 1; // set mip levels to 1 (no mip mapping for now)
+		imageInf.arrayLayers = 1; // set array layers to 1 (no array layers for now)
+		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; // set image format
+		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL; // set optimal tiling for GPU
+		imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // set initial layout of the image
+		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // set image usage flags
+		imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // set sample count to 1 (no multisampling for now)
+		imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // set exclusive sharing mode
 
+		if (vkCreateImage(device, &imageInf, nullptr, &textureImg) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image!");
+		}
+		// get mem requirements:
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, textureImg, &memRequirements);
+
+		// allocate and bind memory for the texture image using staging buffer memory:
+		VkMemoryAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // find memory type index for the texture image.
+		//VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT means that the memory is on the GPU and not the CPU.
+		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate texture image memory!!!");
+		}
+		vkBindImageMemory(device, textureImg, TIM, 0);
+
+		//free memory:
+		stbi_image_free(imageData); // free CPU memory after creating staging buffer
+		imageData = nullptr;
+		createTS(); // create texture sampler after creating texture image
+	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
 		VkFenceCreateInfo fenceInfo{};
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
 		for (size_t i = 0; i < inFlightFences.size(); i++) {
 			if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create synchronization objects for a frame!");
@@ -972,10 +1050,10 @@ private:
 	// 8. vertex drawing and defining the vertex buffer (done)
 	// 10. draw frame function (done)
 	// 11. draw triangle (done)
-	// 12. moving objects
-	// 13. fences
-	// 14. convert to 3d
-	// 15. textures
+	// 12. moving objects (done)
+	// 13. fences (done)
+	// 14. textures
+	// 15. convert to 3d
 	// 16. shadows
 };
 int main() {
