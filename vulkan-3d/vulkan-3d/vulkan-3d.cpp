@@ -794,15 +794,17 @@ private:
 		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
+
 		VkResult res = vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
 		if (res != VK_SUCCESS) {
 			throw std::runtime_error("failed to bind texture image memory" + resultStr(res));
 		}
+		// imageview and sampler creation:
 		createTextureImgView(); //crete image view before copying buffer to image
-
-		//free memory:
 		transImgLayout();
 		bufferImageCopy();
+
+		//free memory:
 		stbi_image_free(imageData); // free CPU memory after creating staging buffer
 		imageData = nullptr;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
@@ -836,7 +838,7 @@ private:
 			throw std::runtime_error("failed to create descriptor pool!");
 		}
 	}
-	void createDS() { //sets up a descriptor set for the textures
+	void createDS() { //sets up a descriptor set for the textures 
 		VkDescriptorSetLayout layouts[] = { descriptorSetLayout }; //layout defined in pipeline
 		// allocate descriptor set:
 		VkDescriptorSetAllocateInfo allocInfo{};
@@ -852,6 +854,7 @@ private:
 		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // sets the img layout to shader read only optimal
 		imageInfo.imageView = textureImgView;
 		imageInfo.sampler = textureSamp;
+
 		// write descriptor set:
 		VkWriteDescriptorSet descriptorWrite{};
 		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -865,6 +868,13 @@ private:
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to update descriptor set!");
 		}
+	}
+	void cleanupTextures() { // cleanup textures, samplers and descriptors
+		vkDestroySampler(device, textureSamp, nullptr);
+		vkDestroyImageView(device, textureImgView, nullptr);
+		vkDestroyImage(device, textureImg, nullptr);
+		vkFreeMemory(device, TIM, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr); // destroy descriptor pool
 	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
@@ -999,6 +1009,7 @@ private:
 					continue;
 				}
 
+
 				vkCmdDraw(commandBuffers[i], objectVertexCount, 1, 0, 0);
 				//std::cout << "Drawing object " << j + 1 << std::endl;
 			}
@@ -1053,7 +1064,6 @@ private:
 		createImageViews();
 		createGraphicsPipeline();
 		createFrameBuffer();
-
 		recordCommandBuffers();
 	}
 	void cleanupSwapChain() {
@@ -1072,6 +1082,7 @@ private:
 
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
+		//wait for the frame to be finished:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
@@ -1082,13 +1093,14 @@ private:
 		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
+		//submit the command buffer:
 		VkSubmitInfo submitInf{};
 		submitInf.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //pipeline stage to wait at
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
 		submitInf.waitSemaphoreCount = 1;
 		submitInf.pWaitSemaphores = waitSemaphores;
-		submitInf.pWaitDstStageMask = waitStages; //list of pipeline stages to wait on
+		submitInf.pWaitDstStageMask = waitStages;
 		submitInf.commandBufferCount = 1;
 		submitInf.pCommandBuffers = &commandBuffers[imageIndex];
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
@@ -1097,6 +1109,7 @@ private:
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
+		//present the image:
 		VkPresentInfoKHR presentInf{};
 		presentInf.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInf.waitSemaphoreCount = 1;
@@ -1107,6 +1120,7 @@ private:
 		presentInf.pImageIndices = &imageIndex; //index of image in swap chain to present
 		presentInf.pResults = nullptr; //optional array to receive results of each swap chain's presentation
 		result = vkQueuePresentKHR(presentQueue, &presentInf);
+		//check if the swap chain is out of date (window was resized, etc):
 		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
 			recreateSwap();
 		}
@@ -1146,7 +1160,7 @@ private:
 		for (size_t i = 0; i < 3; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
-
+		cleanupTextures(); //cleanup texture, descriptor and all sampler data
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
