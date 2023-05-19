@@ -72,6 +72,7 @@ private:
 	unsigned char* imageData;
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 
+	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -544,11 +545,27 @@ private:
 		dynamicState.dynamicStateCount = std::size(dynamicStates);
 		dynamicState.pDynamicStates = dynamicStates;
 
+		VkDescriptorSetLayoutBinding uboLayoutBinding{}; // uniform buffer object layout binding
+		uboLayoutBinding.binding = 0; //binding point in the shader
+		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uboLayoutBinding.descriptorCount = 1;
+		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //shader stage to bind to
+		uboLayoutBinding.pImmutableSamplers = nullptr; //only relevant for image sampling related descriptors
+
+		VkDescriptorSetLayoutCreateInfo layoutInf{};
+		layoutInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInf.bindingCount = 1;
+		layoutInf.pBindings = &uboLayoutBinding; //array of bindings
+		if (vkCreateDescriptorSetLayout(device, &layoutInf, nullptr, &descriptorSetLayout) != VK_SUCCESS) { //descriptorSetLayout is defined gloab scope
+			throw std::runtime_error("failed to create descriptor set layout!");
+		}
+
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader. no uniform variables are used yet thats fior later
+
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = 0; //number of descriptor sets used by the pipeline such as uniform variables
-		pipelineLayoutInf.pSetLayouts = nullptr; //array of descriptor set layouts
+		pipelineLayoutInf.setLayoutCount = 1; //number of descriptor sets used by the pipeline such as uniform variables
+		pipelineLayoutInf.pSetLayouts = &descriptorSetLayout; //array of descriptor set layouts (a pointer to the array)
 		pipelineLayoutInf.pushConstantRangeCount = 0; //number of push constant ranges
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
@@ -557,7 +574,6 @@ private:
 		}
 
 		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
-		//attachment: A memory location that can be read from or written to by a pipeline to perform rendering operations
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = swapChainImageFormat; //format of the color attachment
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
@@ -628,6 +644,8 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		createTexturedImage(); //create the textured image and texture sampler
+		createDSPool(); //create the descriptor pool
+		createDS(); //create the descriptor set
 		recordCommandBuffers();
 		createSemaphores();
 		std::cout << "Vulkan Initialized Successfully!" << std::endl;
@@ -776,12 +794,18 @@ private:
 		vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
 
 		//free memory:
-		bufferImageCopy();
 		transImgLayout();
+		bufferImageCopy();
 		stbi_image_free(imageData); // free CPU memory after creating staging buffer
 		imageData = nullptr;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		createTS(); // create texture sampler after creating texture image
+	}
+	void createDSPool() { // create descriptor set pool
+
+	}
+	void createDS() { //sets up a descriptor set for the textures
+
 	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
