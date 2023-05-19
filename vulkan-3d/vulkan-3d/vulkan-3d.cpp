@@ -73,7 +73,7 @@ private:
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
-
+	VkDescriptorPool descriptorPool; // descriptor pool object, defined in the pipeline
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
@@ -802,7 +802,17 @@ private:
 		createTS(); // create texture sampler after creating texture image
 	}
 	void createDSPool() { // create descriptor set pool
-
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = 1; // 1 descriptor set
+		VkDescriptorPoolCreateInfo poolInf{};
+		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInf.poolSizeCount = 1; // 1 pool
+		poolInf.pPoolSizes = &poolSize;
+		poolInf.maxSets = 1; // 1 descriptor set
+		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create descriptor pool!");
+		}
 	}
 	void createDS() { //sets up a descriptor set for the textures
 
@@ -1132,9 +1142,11 @@ private:
 	// 11. draw triangle (done)
 	// 12. moving objects (done)
 	// 13. fences (done)
-	// 14. textures
-	// 15. convert to 3d
-	// 16. shadows
+	// 14. texture image (done)
+	// 15. texture sampler (done)
+	// 16. descriptor sett
+	// 17. convert to 3d
+	// 18. shadows
 };
 int main() {
 	Engine app;
