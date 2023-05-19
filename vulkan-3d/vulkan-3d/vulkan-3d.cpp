@@ -71,9 +71,12 @@ private:
 	uint32_t textureHeight = 512;
 	unsigned char* imageData;
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
+	VkImageView textureImgView; // image view for the texture
 
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
-	VkDescriptorPool descriptorPool; // descriptor pool object, defined in the pipeline
+	VkDescriptorPool descriptorPool; // descriptor pool object
+	VkDescriptorSet descriptorSet; // descriptor set object
+
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
@@ -791,7 +794,11 @@ private:
 		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
-		vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
+		VkResult res = vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
+		if (res != VK_SUCCESS) {
+			throw std::runtime_error("failed to bind texture image memory" + resultStr(res));
+		}
+		createTextureImgView(); //crete image view before copying buffer to image
 
 		//free memory:
 		transImgLayout();
@@ -801,21 +808,63 @@ private:
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		createTS(); // create texture sampler after creating texture image
 	}
+	void createTextureImgView() {
+		VkImageViewCreateInfo viewInf{};
+		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInf.image = textureImg;
+		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 2D
+		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
+		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
+		viewInf.subresourceRange.baseMipLevel = 0;
+		viewInf.subresourceRange.levelCount = 1;
+		viewInf.subresourceRange.baseArrayLayer = 0;
+		viewInf.subresourceRange.layerCount = 1;
+		if (vkCreateImageView(device, &viewInf, nullptr, &textureImgView) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image view!");
+		}
+	}
 	void createDSPool() { // create descriptor set pool
 		VkDescriptorPoolSize poolSize{};
 		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		poolSize.descriptorCount = 1; // 1 descriptor set
 		VkDescriptorPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInf.poolSizeCount = 1; // 1 pool
+		poolInf.poolSizeCount = 1;
 		poolInf.pPoolSizes = &poolSize;
-		poolInf.maxSets = 1; // 1 descriptor set
+		poolInf.maxSets = 1; // 1 descriptor set max
 		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create descriptor pool!");
 		}
 	}
 	void createDS() { //sets up a descriptor set for the textures
-
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout }; //layout defined in pipeline
+		// allocate descriptor set:
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool; // set descriptor pool
+		allocInfo.descriptorSetCount = 1; // 1 descriptor set
+		allocInfo.pSetLayouts = layouts;
+		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) { // allocate descriptor set
+			throw std::runtime_error("failed to allocate descriptor set!");
+		}
+		// update descriptor set:
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // sets the img layout to shader read only optimal
+		imageInfo.imageView = textureImgView;
+		imageInfo.sampler = textureSamp;
+		// write descriptor set:
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = descriptorSet;
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //set the descriptor to be a combined image sampler
+		descriptorWrite.descriptorCount = 1;
+		descriptorWrite.pImageInfo = &imageInfo;
+		VkResult result = vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to update descriptor set!");
+		}
 	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
