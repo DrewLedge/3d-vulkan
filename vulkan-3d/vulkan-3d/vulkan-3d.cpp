@@ -550,7 +550,7 @@ private:
 
 		VkDescriptorSetLayoutBinding uboLayoutBinding{}; // uniform buffer object layout binding
 		uboLayoutBinding.binding = 0; //binding point in the shader
-		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		uboLayoutBinding.descriptorCount = 1;
 		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //shader stage to bind to
 		uboLayoutBinding.pImmutableSamplers = nullptr; //only relevant for image sampling related descriptors
@@ -691,72 +691,6 @@ private:
 		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
 		vkUnmapMemory(device, stagingBufferMem); //unmap the staging buffer memory
 	}
-
-	void transImgLayout() { // transitions the image layout. 
-		VkImageMemoryBarrier barrier{}; // create the barrier (ensures that img is not being read while being written to)
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // layout before the transition
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; // layout after the transition
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; //ignore the queue family index rn
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = textureImg; // image being transitioned
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // aspect mask
-		barrier.subresourceRange.baseMipLevel = 0; // base mip level 
-		barrier.subresourceRange.levelCount = 1; // level count. apply minimapping later
-		barrier.subresourceRange.baseArrayLayer = 0; // base array layer. change when converting to 3d
-		barrier.subresourceRange.layerCount = 1; // layer count
-		barrier.srcAccessMask = 0; // source access mask
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // destination access mask
-		for (auto& cBuffer : commandBuffers) {
-			VkResult barrierResult = vkCmdPipelineBarrier(cBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); // pipeline barrier. start: top of pipeline, end: transfer bit
-			if (barrierResult != VK_SUCCESS) {
-				throw std::runtime_error("failed to create pipeline barrier!" + resultStr(barrierResult));
-			}
-		}
-
-	}
-
-	void bufferImageCopy() { //copies the buffer to the image
-		VkBufferImageCopy region{}; // create the buffer image copy region
-		region.bufferOffset = 0; // buffer offset
-		region.bufferRowLength = 0; // buffer row length
-		region.bufferImageHeight = 0; // buffer image height
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // image aspect mask
-		region.imageSubresource.mipLevel = 0; // image mip level
-		region.imageSubresource.baseArrayLayer = 0; // image base array layer
-		region.imageSubresource.layerCount = 1; // image layer count
-		region.imageOffset = { 0, 0 }; // image offset: x, y
-		region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight) }; // image extent
-		for (auto& cBuffer : commandBuffers) {
-			VkResult res = vkCmdCopyBufferToImage(cBuffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); // copy buffer to image
-			if (res != VK_SUCCESS) {
-				throw std::runtime_error("failed to copy stagingBuffer" + resultStr(res));
-			}
-		}
-	}
-
-	void createTS() { //creates texture sampling object
-		VkSamplerCreateInfo samplerInf{}; // create sampler info
-		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
-		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_TRUE; // warps textures to fit objects, etc
-		samplerInf.maxAnisotropy = 16;
-		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
-		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
-		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
-		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; //linear mipmap mode (GPU will interpolate between mipmap levels)
-		samplerInf.mipLodBias = 0.0f;
-		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = 0.0f; // implement soon
-
-		if (vkCreateSampler(device, &samplerInf, nullptr, &textureSamp) != VK_SUCCESS) { // create sampler
-			throw std::runtime_error("failed to create texture sampler!");
-		}
-	}
 	void createTexturedImage() { // textured image creation
 		getImageData("textures/texture.jpg");
 		createStagingBuffer();
@@ -790,25 +724,84 @@ private:
 		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInf.allocationSize = memRequirements.size;
 		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // find memory type index for the texture image.
-		//VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT means that the memory is on the GPU and not the CPU.
 		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
-
 		VkResult res = vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
 		if (res != VK_SUCCESS) {
 			throw std::runtime_error("failed to bind texture image memory" + resultStr(res));
 		}
-		// imageview and sampler creation:
-		createTextureImgView(); //crete image view before copying buffer to image
-		transImgLayout();
-		bufferImageCopy();
+		createTextureImgView();
+
+		//initialize img and barrier data before buffer copy:
+		VkBufferImageCopy region{}; // create the buffer image copy region
+		region.bufferOffset = 0; // buffer offset
+		region.bufferRowLength = 0; // buffer row length
+		region.bufferImageHeight = 0; // buffer image height
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // image aspect mask
+		region.imageSubresource.mipLevel = 0; // image mip level
+		region.imageSubresource.baseArrayLayer = 0; // image base array layer
+		region.imageSubresource.layerCount = 1; // image layer count
+		region.imageOffset = { 0, 0, 0 }; // image offset: x, y, z
+		region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; // image extent: width, height, depth
+
+		VkImageMemoryBarrier barrier{}; // create the barrier (ensures that img is not being read while being written to)
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // layout before the transition
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; // layout after the transition
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; //ignore the queue family index rn
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = textureImg; // image being transitioned
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // aspect mask
+		barrier.subresourceRange.baseMipLevel = 0; // base mip level 
+		barrier.subresourceRange.levelCount = 1; // level count. apply minimapping later
+		barrier.subresourceRange.baseArrayLayer = 0; // base array layer. change when converting to 3d
+		barrier.subresourceRange.layerCount = 1; // layer count
+		barrier.srcAccessMask = 0; // source access mask
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // destination access mask
+
+		VkCommandBufferBeginInfo bInfo{};
+		bInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		bInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		bInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
+
+		for (auto& buffer : commandBuffers) {
+			vkResetCommandBuffer(buffer, 0);
+			if (vkBeginCommandBuffer(buffer, &bInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording command buffer!");
+			}
+			vkCmdCopyBufferToImage(buffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); // copy buffer to image
+			vkCmdPipelineBarrier(buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); // pipeline barrier. start: top of pipeline, end: transfer bit
+			if (vkEndCommandBuffer(buffer) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer!");
+			}
+		}
 
 		//free memory:
 		stbi_image_free(imageData); // free CPU memory after creating staging buffer
 		imageData = nullptr;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-		createTS(); // create texture sampler after creating texture image
+
+		//texture sampling creation:
+		VkSamplerCreateInfo samplerInf{}; // create sampler info
+		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
+		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
+		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
+		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
+		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
+		samplerInf.maxAnisotropy = 16;
+		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
+		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
+		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
+		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; //linear mipmap mode (GPU will interpolate between mipmap levels)
+		samplerInf.mipLodBias = 0.0f;
+		samplerInf.minLod = 0.0f;
+		samplerInf.maxLod = 0.0f; // implement soon
+		if (vkCreateSampler(device, &samplerInf, nullptr, &textureSamp) != VK_SUCCESS) { // create sampler
+			throw std::runtime_error("failed to create texture sampler!");
+		}
 	}
 	void createTextureImgView() {
 		VkImageViewCreateInfo viewInf{};
@@ -864,10 +857,7 @@ private:
 		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //set the descriptor to be a combined image sampler
 		descriptorWrite.descriptorCount = 1;
 		descriptorWrite.pImageInfo = &imageInfo;
-		VkResult result = vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
-		if (result != VK_SUCCESS) {
-			throw std::runtime_error("failed to update descriptor set!");
-		}
+		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
 	}
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroySampler(device, textureSamp, nullptr);
@@ -956,7 +946,6 @@ private:
 			if (vkAllocateMemory(device, &allocInf, nullptr, &vertBufferMems[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to allocate vertex buffer memory!");
 			}
-
 			vkBindBufferMemory(device, vertBuffers[i], vertBufferMems[i], 0); //bind the vertex buffer to the vertex buffer memory
 			void* data;
 			vkMapMemory(device, vertBufferMems[i], 0, bufferSize, 0, &data);
