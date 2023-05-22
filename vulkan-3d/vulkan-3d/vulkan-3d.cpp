@@ -34,6 +34,12 @@ std::vector<Vertex> triangle2vert = {
 	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.90f},
 	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.90f}
 };
+struct UniformBufferObject { //UBO for short :)
+	float model[16]; //model matrix
+	float view[16];  //view matrix
+	float projection[16];  //projection matrix
+};
+
 
 
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
@@ -76,8 +82,8 @@ private:
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	VkDescriptorSet descriptorSet; // descriptor set object
-
-	VkPipelineLayout pipelineLayout;
+	V
+		VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
@@ -395,7 +401,101 @@ private:
 
 		return shaderModule;
 	}
-	void setupGraphicsPipeline() {
+	void createDSLayout() {
+		VkDescriptorSetLayoutBinding uboLayoutBinding{};
+		uboLayoutBinding.binding = 0;
+		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		uboLayoutBinding.descriptorCount = 1;
+		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		uboLayoutBinding.pImmutableSamplers = nullptr;
+
+		VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
+		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutCreateInfo.bindingCount = 1;
+		layoutCreateInfo.pBindings = &uboLayoutBinding;
+
+		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create descriptor set layout!");
+		}
+	}
+	void createDSPool() { // create descriptor set pool
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = 1; // 1 descriptor set
+		VkDescriptorPoolCreateInfo poolInf{};
+		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInf.poolSizeCount = 1;
+		poolInf.pPoolSizes = &poolSize;
+		poolInf.maxSets = 1; // 1 descriptor set max
+		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create descriptor pool!");
+		}
+	}
+	void createDS() { //sets up a descriptor set for the textures 
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout }; //layout defined in pipeline
+		// allocate descriptor set:
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool; // set descriptor pool
+		allocInfo.descriptorSetCount = 1; // 1 descriptor set
+		allocInfo.pSetLayouts = layouts;
+		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) { // allocate descriptor set
+			throw std::runtime_error("failed to allocate descriptor set!");
+		}
+		// update descriptor set:
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // sets the img layout to shader read only optimal
+		imageInfo.imageView = textureImgView;
+		imageInfo.sampler = textureSamp;
+
+		// write descriptor set:
+		VkWriteDescriptorSet descriptorWrite{};
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.dstSet = descriptorSet;
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //set the descriptor to be a combined image sampler
+		descriptorWrite.descriptorCount = 1;
+		descriptorWrite.pImageInfo = &imageInfo;
+		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
+	}
+	void createTS() { //create texture sampler
+		VkSamplerCreateInfo samplerInf{}; // create sampler info
+		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
+		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
+		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
+		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
+		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
+		samplerInf.maxAnisotropy = 16;
+		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
+		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
+		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
+		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; //linear mipmap mode (GPU will interpolate between mipmap levels)
+		samplerInf.mipLodBias = 0.0f;
+		samplerInf.minLod = 0.0f;
+		samplerInf.maxLod = 0.0f; // implement soon
+		if (vkCreateSampler(device, &samplerInf, nullptr, &textureSamp) != VK_SUCCESS) { // create sampler
+			throw std::runtime_error("failed to create texture sampler!");
+		}
+	}
+	void createTextureImgView() {
+		VkImageViewCreateInfo viewInf{};
+		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInf.image = textureImg;
+		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 2D
+		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
+		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
+		viewInf.subresourceRange.baseMipLevel = 0;
+		viewInf.subresourceRange.levelCount = 1;
+		viewInf.subresourceRange.baseArrayLayer = 0;
+		viewInf.subresourceRange.layerCount = 1;
+		if (vkCreateImageView(device, &viewInf, nullptr, &textureImgView) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image view!");
+		}
+	}
+	void setupShaders() {
 		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
 		vertShaderModule = createShaderModule(vertShaderCode);
@@ -548,21 +648,6 @@ private:
 		dynamicState.dynamicStateCount = std::size(dynamicStates);
 		dynamicState.pDynamicStates = dynamicStates;
 
-		VkDescriptorSetLayoutBinding uboLayoutBinding{}; // uniform buffer object layout binding
-		uboLayoutBinding.binding = 0; //binding point in the shader
-		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		uboLayoutBinding.descriptorCount = 1;
-		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //shader stage to bind to
-		uboLayoutBinding.pImmutableSamplers = nullptr; //only relevant for image sampling related descriptors
-
-		VkDescriptorSetLayoutCreateInfo layoutInf{};
-		layoutInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInf.bindingCount = 1;
-		layoutInf.pBindings = &uboLayoutBinding; //array of bindings
-		if (vkCreateDescriptorSetLayout(device, &layoutInf, nullptr, &descriptorSetLayout) != VK_SUCCESS) { //descriptorSetLayout is defined gloab scope
-			throw std::runtime_error("failed to create descriptor set layout!");
-		}
-
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader. no uniform variables are used yet thats fior later
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
@@ -639,25 +724,34 @@ private:
 		createLogicalDevice();
 		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
-		setupFences(); //create fences
+		setupFences();
 		createCommandPool();
 		createVertexBuffer();
-		setupGraphicsPipeline();
-		createGraphicsPipeline(); //create the graphics pipeline
+		setupShaders(); //read the shader files and create the shader modules
+		createDSLayout();
+		createDSPool();
+		createDS(); //create the descriptor set
+		createTS(); //create the texture sampler
+		createTextureImgView();
+		createTexturedImage(); //create the textured image and texture sampler
+		createGraphicsPipeline();
 		createFrameBuffer();
 		createCommandBuffer();
-		createTexturedImage(); //create the textured image and texture sampler
-		createDSPool(); //create the descriptor pool
-		createDS(); //create the descriptor set
-		recordCommandBuffers();
 		createSemaphores();
-		std::cout << "Vulkan Initialized Successfully!" << std::endl;
+		recordCommandBuffers(); //record and submit the command buffers
+		bindDS(); //bind the descriptor set to the command buffer
 	}
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
 		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		if (!imageData) {
 			throw std::runtime_error("failed to load image!");
+		}
+	}
+	void bindDS() { //bind the descriptor set to the command buffer
+		for (auto buffer : commandBuffers) {
+			VkDescriptorSet descriptorSets[] = { descriptorSet };
+			vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr);
 		}
 	}
 	void createStagingBuffer() { // buffer to transfer data from the CPU (imageData) to the GPU sta
@@ -731,8 +825,6 @@ private:
 		if (res != VK_SUCCESS) {
 			throw std::runtime_error("failed to bind texture image memory" + resultStr(res));
 		}
-		createTextureImgView();
-
 		//initialize img and barrier data before buffer copy:
 		VkBufferImageCopy region{}; // create the buffer image copy region
 		region.bufferOffset = 0; // buffer offset
@@ -766,7 +858,6 @@ private:
 		bInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
 
 		for (auto& buffer : commandBuffers) {
-			vkResetCommandBuffer(buffer, 0);
 			if (vkBeginCommandBuffer(buffer, &bInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -781,83 +872,6 @@ private:
 		stbi_image_free(imageData); // free CPU memory after creating staging buffer
 		imageData = nullptr;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-
-		//texture sampling creation:
-		VkSamplerCreateInfo samplerInf{}; // create sampler info
-		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
-		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
-		samplerInf.maxAnisotropy = 16;
-		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
-		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
-		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
-		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; //linear mipmap mode (GPU will interpolate between mipmap levels)
-		samplerInf.mipLodBias = 0.0f;
-		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = 0.0f; // implement soon
-		if (vkCreateSampler(device, &samplerInf, nullptr, &textureSamp) != VK_SUCCESS) { // create sampler
-			throw std::runtime_error("failed to create texture sampler!");
-		}
-	}
-	void createTextureImgView() {
-		VkImageViewCreateInfo viewInf{};
-		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInf.image = textureImg;
-		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 2D
-		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
-		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
-		viewInf.subresourceRange.baseMipLevel = 0;
-		viewInf.subresourceRange.levelCount = 1;
-		viewInf.subresourceRange.baseArrayLayer = 0;
-		viewInf.subresourceRange.layerCount = 1;
-		if (vkCreateImageView(device, &viewInf, nullptr, &textureImgView) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image view!");
-		}
-	}
-	void createDSPool() { // create descriptor set pool
-		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSize.descriptorCount = 1; // 1 descriptor set
-		VkDescriptorPoolCreateInfo poolInf{};
-		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInf.poolSizeCount = 1;
-		poolInf.pPoolSizes = &poolSize;
-		poolInf.maxSets = 1; // 1 descriptor set max
-		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create descriptor pool!");
-		}
-	}
-	void createDS() { //sets up a descriptor set for the textures 
-		VkDescriptorSetLayout layouts[] = { descriptorSetLayout }; //layout defined in pipeline
-		// allocate descriptor set:
-		VkDescriptorSetAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorPool = descriptorPool; // set descriptor pool
-		allocInfo.descriptorSetCount = 1; // 1 descriptor set
-		allocInfo.pSetLayouts = layouts;
-		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) { // allocate descriptor set
-			throw std::runtime_error("failed to allocate descriptor set!");
-		}
-		// update descriptor set:
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // sets the img layout to shader read only optimal
-		imageInfo.imageView = textureImgView;
-		imageInfo.sampler = textureSamp;
-
-		// write descriptor set:
-		VkWriteDescriptorSet descriptorWrite{};
-		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrite.dstSet = descriptorSet;
-		descriptorWrite.dstBinding = 0;
-		descriptorWrite.dstArrayElement = 0;
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //set the descriptor to be a combined image sampler
-		descriptorWrite.descriptorCount = 1;
-		descriptorWrite.pImageInfo = &imageInfo;
-		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
 	}
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroySampler(device, textureSamp, nullptr);
