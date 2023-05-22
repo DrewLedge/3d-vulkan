@@ -34,14 +34,14 @@ std::vector<Vertex> triangle2vert = {
 	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.90f},
 	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.90f}
 };
-struct UniformBufferObject { //UBO for short :)
+struct UniformBufferObject {
 	float model[16]; //model matrix
 	float view[16];  //view matrix
 	float projection[16];  //projection matrix
 };
 
 
-
+UniformBufferObject ubo;
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
 
 class Engine {
@@ -82,8 +82,10 @@ private:
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	VkDescriptorSet descriptorSet; // descriptor set object
-	V
-		VkPipelineLayout pipelineLayout;
+	VkBuffer uboBuffer;
+	VkDeviceMemory uboBufferMemory;
+
+	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
@@ -401,10 +403,42 @@ private:
 
 		return shaderModule;
 	}
+	void createUBO() {
+		//create and allocate memory for the UBO buffer:
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = sizeof(UniformBufferObject);
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &uboBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create UBO buffer!");
+		}
+
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, uboBuffer, &memoryRequirements);
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //find a memory type that is host visible and coherent
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &uboBufferMemory) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
+		}
+		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0);
+
+		//map the UBO buffer memory and copy UBO data:
+		void* data;
+		vkMapMemory(device, uboBufferMemory, 0, sizeof(UniformBufferObject), 0, &data);
+		memcpy(data, &ubo, sizeof(UniformBufferObject));
+		vkUnmapMemory(device, uboBufferMemory);
+	}
+
 	void createDSLayout() {
 		VkDescriptorSetLayoutBinding uboLayoutBinding{};
 		uboLayoutBinding.binding = 0;
-		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		uboLayoutBinding.descriptorCount = 1;
 		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		uboLayoutBinding.pImmutableSamplers = nullptr;
@@ -415,49 +449,56 @@ private:
 		layoutCreateInfo.pBindings = &uboLayoutBinding;
 
 		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create descriptor set layout!");
+			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
 	}
-	void createDSPool() { // create descriptor set pool
+
+	void createDSPool() {
 		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSize.descriptorCount = 1; // 1 descriptor set
+		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //UBO descriptor
+		poolSize.descriptorCount = 1;
+
 		VkDescriptorPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInf.poolSizeCount = 1;
 		poolInf.pPoolSizes = &poolSize;
-		poolInf.maxSets = 1; // 1 descriptor set max
+		poolInf.maxSets = 1;
+
 		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create descriptor pool!");
+			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
-	void createDS() { //sets up a descriptor set for the textures 
-		VkDescriptorSetLayout layouts[] = { descriptorSetLayout }; //layout defined in pipeline
-		// allocate descriptor set:
+
+	void createDS() { //create the descriptor set
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorPool = descriptorPool; // set descriptor pool
-		allocInfo.descriptorSetCount = 1; // 1 descriptor set
+		allocInfo.descriptorPool = descriptorPool;
+		allocInfo.descriptorSetCount = 1;
 		allocInfo.pSetLayouts = layouts;
-		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) { // allocate descriptor set
-			throw std::runtime_error("failed to allocate descriptor set!");
+
+		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSet) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate descriptor set!");
 		}
-		// update descriptor set:
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; // sets the img layout to shader read only optimal
-		imageInfo.imageView = textureImgView;
-		imageInfo.sampler = textureSamp;
+
+		// ubo buffer info:
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = uboBuffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformBufferObject);
 
 		// write descriptor set:
 		VkWriteDescriptorSet descriptorWrite{};
-		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; //write to the descriptor set
 		descriptorWrite.dstSet = descriptorSet;
-		descriptorWrite.dstBinding = 0;
-		descriptorWrite.dstArrayElement = 0;
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //set the descriptor to be a combined image sampler
+		descriptorWrite.dstBinding = 0; //binding in the shader
+		descriptorWrite.dstArrayElement = 0; //index in the array to update
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //UBO type of descriptor
 		descriptorWrite.descriptorCount = 1;
-		descriptorWrite.pImageInfo = &imageInfo;
-		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr); // params: device, descriptor count, descriptor write, 0, nullptr
+		descriptorWrite.pBufferInfo = &bufferInfo;
+
+		// update the descriptor set with the new buffer/binding info:
+		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
 	}
 	void createTS() { //create texture sampler
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
@@ -495,6 +536,133 @@ private:
 			throw std::runtime_error("failed to create texture image view!");
 		}
 	}
+	void getImageData(std::string path) {
+		int texWidth, texHeight, texChannels;
+		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		if (!imageData) {
+			throw std::runtime_error("failed to load image!");
+		}
+	}
+	void createStagingBuffer() { // buffer to transfer data from the CPU (imageData) to the GPU sta
+		VkBufferCreateInfo bufferInf{};
+		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInf.size = imageSize;
+		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		if (vkCreateBuffer(device, &bufferInf, nullptr, &stagingBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create staging buffer!");
+		}
+		// get mem requirements;
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, stagingBuffer, &memRequirements);
+		VkMemoryAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		if (vkAllocateMemory(device, &allocInf, nullptr, &stagingBufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate staging buffer memory!");
+		}
+
+		// bind the memory to the buffer:
+		vkBindBufferMemory(device, stagingBuffer, stagingBufferMem, 0);
+		void* data;
+		if (vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
+			throw std::runtime_error("failed to map staging buffer memory!");
+		}
+
+		// copy imageData to the staging buffer
+		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
+		vkUnmapMemory(device, stagingBufferMem); //unmap the staging buffer memory
+	}
+	void createTexturedImage() {
+		getImageData("textures/texture.jpg");
+		createStagingBuffer();
+
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+
+		// create image:
+		VkImageCreateInfo imageInf{};
+		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		imageInf.imageType = VK_IMAGE_TYPE_2D;
+		imageInf.extent.width = textureWidth;
+		imageInf.extent.height = textureHeight;
+		imageInf.extent.depth = 1;
+		imageInf.mipLevels = 1;
+		imageInf.arrayLayers = 1;
+		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
+		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
+		imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		imageInf.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateImage(device, &imageInf, nullptr, &textureImg) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image!");
+		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, textureImg, &memRequirements);
+
+		VkMemoryAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate texture image memory!!!");
+		}
+
+		vkBindImageMemory(device, textureImg, TIM, 0); // bind the memory to the image through TIM (texture image memory) and the image
+
+		// initialize img and barrier data before buffer copy:
+		VkBufferImageCopy region{};
+		region.bufferOffset = 0;
+		region.bufferRowLength = 0;
+		region.bufferImageHeight = 0;
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //specifies the aspect of the image to copy
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = { 0, 0, 0 };
+		region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; //gets the 2d image extent
+
+		VkImageMemoryBarrier barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; //too tired to add this rn lol
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = textureImg;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.baseMipLevel = 0;
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+		barrier.srcAccessMask = 0; //specifies the type of access that must be available in the old layout in order to transition to the new layout
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+		VkCommandBuffer commandBuffer = beginSingleTimeCommands(); //add this tommorow lol
+
+		// transition image to suitable layout for receiving data:
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
+
+		vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+
+		// transition image to be shader readable:
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
+		endSingleTimeCommands(commandBuffer); //add this tommorow lol
+
+		// free data:
+		stbi_image_free(imageData);
+		imageData = nullptr;
+		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+	}
+
 	void setupShaders() {
 		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
@@ -741,137 +909,11 @@ private:
 		recordCommandBuffers(); //record and submit the command buffers
 		bindDS(); //bind the descriptor set to the command buffer
 	}
-	void getImageData(std::string path) {
-		int texWidth, texHeight, texChannels;
-		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (!imageData) {
-			throw std::runtime_error("failed to load image!");
-		}
-	}
 	void bindDS() { //bind the descriptor set to the command buffer
 		for (auto buffer : commandBuffers) {
 			VkDescriptorSet descriptorSets[] = { descriptorSet };
 			vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr);
 		}
-	}
-	void createStagingBuffer() { // buffer to transfer data from the CPU (imageData) to the GPU sta
-		VkBufferCreateInfo bufferInf{};
-		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInf.size = imageSize;
-		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		if (vkCreateBuffer(device, &bufferInf, nullptr, &stagingBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create staging buffer!");
-		}
-		// get mem requirements;
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, stagingBuffer, &memRequirements);
-		VkMemoryAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (vkAllocateMemory(device, &allocInf, nullptr, &stagingBufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate staging buffer memory!");
-		}
-
-		// bind the memory to the buffer:
-		vkBindBufferMemory(device, stagingBuffer, stagingBufferMem, 0);
-		void* data;
-		if (vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
-			throw std::runtime_error("failed to map staging buffer memory!");
-		}
-
-		// copy imageData to the staging buffer
-		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
-		vkUnmapMemory(device, stagingBufferMem); //unmap the staging buffer memory
-	}
-	void createTexturedImage() { // textured image creation
-		getImageData("textures/texture.jpg");
-		createStagingBuffer();
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX); //wait for fence before continuing to next frame
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-		// create image info
-		VkImageCreateInfo imageInf{};
-		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInf.imageType = VK_IMAGE_TYPE_2D;
-		imageInf.extent.width = textureWidth;
-		imageInf.extent.height = textureHeight;
-		imageInf.extent.depth = 1;
-		imageInf.mipLevels = 1; //if 1, no mipmapping. to calc mip levels: floor(log2(max(w, h, d))) + 1
-		imageInf.arrayLayers = 1; // set array layers to 1 (no array layers for now)
-		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; // set image format
-		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL; // set optimal tiling for GPU
-		imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; // set initial layout of the image
-		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // set image usage flags
-		imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // set sample count to 1 (no multisampling for now)
-		imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // set exclusive sharing mode
-
-		if (vkCreateImage(device, &imageInf, nullptr, &textureImg) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image!");
-		}
-		// get mem requirements:
-		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, textureImg, &memRequirements);
-
-		// allocate and bind memory for the texture image using staging buffer memory:
-		VkMemoryAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT); // find memory type index for the texture image.
-		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate texture image memory!!!");
-		}
-		VkResult res = vkBindImageMemory(device, textureImg, TIM, 0); //params: device, image, memory, offset
-		if (res != VK_SUCCESS) {
-			throw std::runtime_error("failed to bind texture image memory" + resultStr(res));
-		}
-		//initialize img and barrier data before buffer copy:
-		VkBufferImageCopy region{}; // create the buffer image copy region
-		region.bufferOffset = 0; // buffer offset
-		region.bufferRowLength = 0; // buffer row length
-		region.bufferImageHeight = 0; // buffer image height
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // image aspect mask
-		region.imageSubresource.mipLevel = 0; // image mip level
-		region.imageSubresource.baseArrayLayer = 0; // image base array layer
-		region.imageSubresource.layerCount = 1; // image layer count
-		region.imageOffset = { 0, 0, 0 }; // image offset: x, y, z
-		region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; // image extent: width, height, depth
-
-		VkImageMemoryBarrier barrier{}; // create the barrier (ensures that img is not being read while being written to)
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; // layout before the transition
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; // layout after the transition
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; //ignore the queue family index rn
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = textureImg; // image being transitioned
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // aspect mask
-		barrier.subresourceRange.baseMipLevel = 0; // base mip level 
-		barrier.subresourceRange.levelCount = 1; // level count. apply minimapping later
-		barrier.subresourceRange.baseArrayLayer = 0; // base array layer. change when converting to 3d
-		barrier.subresourceRange.layerCount = 1; // layer count
-		barrier.srcAccessMask = 0; // source access mask
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; // destination access mask
-
-		VkCommandBufferBeginInfo bInfo{};
-		bInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		bInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		bInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
-
-		for (auto& buffer : commandBuffers) {
-			if (vkBeginCommandBuffer(buffer, &bInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer!");
-			}
-			vkCmdCopyBufferToImage(buffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); // copy buffer to image
-			vkCmdPipelineBarrier(buffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); // pipeline barrier. start: top of pipeline, end: transfer bit
-			if (vkEndCommandBuffer(buffer) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
-			}
-		}
-
-		//free memory:
-		stbi_image_free(imageData); // free CPU memory after creating staging buffer
-		imageData = nullptr;
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 	}
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroySampler(device, textureSamp, nullptr);
