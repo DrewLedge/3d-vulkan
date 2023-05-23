@@ -581,9 +581,6 @@ private:
 		getImageData("textures/texture.jpg");
 		createStagingBuffer();
 
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-
 		// create image:
 		VkImageCreateInfo imageInf{};
 		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -662,7 +659,6 @@ private:
 		// free data:
 		stbi_image_free(imageData);
 		imageData = nullptr;
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 	}
 	VkCommandBuffer beginSingleTimeCommands() {
 		VkCommandBufferAllocateInfo allocInfo{};
@@ -927,6 +923,7 @@ private:
 		initQueues(); //sets the queue family indices such as graphics and presentation
 		createSC(); //create swap chain
 		setupFences();
+		createSemaphores();
 		createCommandPool();
 		createVertexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
@@ -939,7 +936,6 @@ private:
 		createGraphicsPipeline();
 		createFrameBuffer();
 		createCommandBuffer();
-		createSemaphores();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
 	}
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
@@ -1065,7 +1061,7 @@ private:
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
 			VkDescriptorSet descriptorSets[] = { descriptorSet };
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr); // bind the descriptor sets to the command buffer
 			std::cout << "bound descriptor sets" << std::endl;
 			for (size_t j = 0; j < objects.size(); j++) {
 				if (j >= vertBuffers.size()) {
@@ -1155,6 +1151,7 @@ private:
 	}
 
 	void drawF() { //draw frame function
+		std::cout << "frame " << currentFrame << " drawn" << std::endl;
 		uint32_t imageIndex;
 		//wait for the frame to be finished:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
@@ -1225,7 +1222,6 @@ private:
 			}
 		}
 	}
-
 
 	void cleanup() {
 		// destroy resources in reverse order of creation
