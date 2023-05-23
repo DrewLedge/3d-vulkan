@@ -18,22 +18,26 @@ const uint32_t HEIGHT = 1800;
 struct Vertex {
 	float posX;
 	float posY;
+	float texU; // texture coordinates x
+	float texV; // texture coordinates y
 	float colR;
 	float colG;
 	float colB;
 	float alpha;
 };
+
 std::vector<Vertex> triangle1vert = {
-	{-0.2f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}, // x, y, r, g, b, a
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.0f, 1.0f},
-	{0.0f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
+	{-0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}, // x, y, u, v, r, g, b, a
+	{-0.3f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
+	{0.0f, -1.0f, 0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
 };
 
 std::vector<Vertex> triangle2vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.90f},
-	{-0.3f, -1.0f, 0.0f, 1.0f, 0.7f, 0.90f},
-	{0.3f, -0.8f, 1.0f, 0.0f, 0.2f, 0.90f}
+	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.90f},
+	{-0.3f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.7f, 0.90f},
+	{0.3f, -0.8f, 0.5f, 1.0f, 1.0f, 0.0f, 0.2f, 0.90f}
 };
+
 struct UniformBufferObject {
 	float model[16]; //model matrix
 	float view[16];  //view matrix
@@ -403,8 +407,7 @@ private:
 
 		return shaderModule;
 	}
-	void createUBO() {
-		//create and allocate memory for the UBO buffer:
+	void createUBO() { //not needed right now
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(UniformBufferObject);
@@ -436,17 +439,17 @@ private:
 	}
 
 	void createDSLayout() {
-		VkDescriptorSetLayoutBinding uboLayoutBinding{};
-		uboLayoutBinding.binding = 0;
-		uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		uboLayoutBinding.descriptorCount = 1;
-		uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-		uboLayoutBinding.pImmutableSamplers = nullptr;
+		VkDescriptorSetLayoutBinding isLayoutBinding{};
+		isLayoutBinding.binding = 0;
+		isLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		isLayoutBinding.descriptorCount = 1;
+		isLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // only used in the fragment shader
+		isLayoutBinding.pImmutableSamplers = nullptr;
 
 		VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
 		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		layoutCreateInfo.bindingCount = 1;
-		layoutCreateInfo.pBindings = &uboLayoutBinding;
+		layoutCreateInfo.pBindings = &isLayoutBinding;
 
 		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
@@ -455,7 +458,7 @@ private:
 
 	void createDSPool() {
 		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //UBO descriptor
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //UBO descriptor
 		poolSize.descriptorCount = 1;
 
 		VkDescriptorPoolCreateInfo poolInf{};
@@ -469,7 +472,7 @@ private:
 		}
 	}
 
-	void createDS() { //create the descriptor set
+	void createDS() {
 		VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -481,23 +484,23 @@ private:
 			throw std::runtime_error("Failed to allocate descriptor set!");
 		}
 
-		// ubo buffer info:
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = uboBuffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
+		// create an image info for the texture:
+		VkDescriptorImageInfo imageInfo{};
+		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		imageInfo.imageView = textureImgView; // imageView associated with your texture
+		imageInfo.sampler = textureSamp; // sampler associated with your texture
 
-		// write descriptor set:
+		// write descriptor set for the texture image:
 		VkWriteDescriptorSet descriptorWrite{};
-		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET; //write to the descriptor set
+		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite.dstSet = descriptorSet;
-		descriptorWrite.dstBinding = 0; //binding in the shader
-		descriptorWrite.dstArrayElement = 0; //index in the array to update
-		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //UBO type of descriptor
-		descriptorWrite.descriptorCount = 1;
-		descriptorWrite.pBufferInfo = &bufferInfo;
+		descriptorWrite.dstBinding = 0; // binding 0 = texture
+		descriptorWrite.dstArrayElement = 0; // index in array
+		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descriptorWrite.descriptorCount = 1; // only 1 texture for now
+		descriptorWrite.pImageInfo = &imageInfo;
 
-		// update the descriptor set with the new buffer/binding info:
+		// update the descriptor set with the new image/binding info:
 		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
 	}
 	void createTS() { //create texture sampler
@@ -612,7 +615,6 @@ private:
 		if (vkAllocateMemory(device, &allocInf, nullptr, &TIM) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
-
 		vkBindImageMemory(device, textureImg, TIM, 0); // bind the memory to the image through TIM (texture image memory) and the image
 
 		// initialize img and barrier data before buffer copy:
@@ -642,25 +644,50 @@ private:
 		barrier.srcAccessMask = 0; //specifies the type of access that must be available in the old layout in order to transition to the new layout
 		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 
-		VkCommandBuffer commandBuffer = beginSingleTimeCommands(); //add this tommorow lol
+		VkCommandBuffer tempBuffer = beginSingleTimeCommands(); //transition image to suitable layout for receiving data:
 
 		// transition image to suitable layout for receiving data:
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
+		vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
 
-		vkCmdCopyBufferToImage(commandBuffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+		vkCmdCopyBufferToImage(tempBuffer, stagingBuffer, textureImg, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 		// transition image to be shader readable:
 		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
 		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
 		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		vkCmdPipelineBarrier(commandBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
-		endSingleTimeCommands(commandBuffer); //add this tommorow lol
+		vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
+		endSingleTimeCommands(tempBuffer);
 
 		// free data:
 		stbi_image_free(imageData);
 		imageData = nullptr;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+	}
+	VkCommandBuffer beginSingleTimeCommands() {
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //specifies if the command buffer is primary or secondary
+		allocInfo.commandPool = commandPool;
+		allocInfo.commandBufferCount = 1;
+		VkCommandBuffer commandBuffer;
+		vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
+		vkBeginCommandBuffer(commandBuffer, &beginInfo);
+		return commandBuffer;
+	}
+
+	void endSingleTimeCommands(VkCommandBuffer commandBuffer) {
+		vkEndCommandBuffer(commandBuffer);
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.commandBufferCount = 1;
+		submitInfo.pCommandBuffers = &commandBuffer;
+		vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
+		vkQueueWaitIdle(graphicsQueue); //wait for the queue to be idle
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer); //free the command buffer
 	}
 
 	void setupShaders() {
@@ -669,6 +696,7 @@ private:
 		vertShaderModule = createShaderModule(vertShaderCode);
 		fragShaderModule = createShaderModule(fragShaderCode);
 	}
+
 	void createGraphicsPipeline() {
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
@@ -689,7 +717,7 @@ private:
 		bindDesc.stride = sizeof(Vertex); // Number of bytes from one entry to the next
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 3> attrDesc; // attr0 is position, attr1 is color, attr2 is alpha
+		std::array<VkVertexInputAttributeDescription, 4> attrDesc; // attr0 is position, attr1 is color, attr2 is alpha, attr3 is texture coordinates
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -705,6 +733,12 @@ private:
 		attrDesc[2].location = 2;
 		attrDesc[2].format = VK_FORMAT_R32_SFLOAT;
 		attrDesc[2].offset = offsetof(Vertex, alpha);
+
+		attrDesc[3].binding = 0;
+		attrDesc[3].location = 3;
+		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT;
+		attrDesc[3].offset = offsetof(Vertex, texU);
+
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -896,24 +930,17 @@ private:
 		createCommandPool();
 		createVertexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
+		createTS(); //create the texture sampler
+		createTexturedImage(); //create the textured image and texture sampler
+		createTextureImgView();
 		createDSLayout();
 		createDSPool();
 		createDS(); //create the descriptor set
-		createTS(); //create the texture sampler
-		createTextureImgView();
-		createTexturedImage(); //create the textured image and texture sampler
 		createGraphicsPipeline();
 		createFrameBuffer();
 		createCommandBuffer();
 		createSemaphores();
-		recordCommandBuffers(); //record and submit the command buffers
-		bindDS(); //bind the descriptor set to the command buffer
-	}
-	void bindDS() { //bind the descriptor set to the command buffer
-		for (auto buffer : commandBuffers) {
-			VkDescriptorSet descriptorSets[] = { descriptorSet };
-			vkCmdBindDescriptorSets(buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr);
-		}
+		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
 	}
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroySampler(device, textureSamp, nullptr);
@@ -1036,8 +1063,11 @@ private:
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
+
+			VkDescriptorSet descriptorSets[] = { descriptorSet };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr);
+			std::cout << "bound descriptor sets" << std::endl;
 			for (size_t j = 0; j < objects.size(); j++) {
-				// ensure vertex buffer and object correspondence
 				if (j >= vertBuffers.size()) {
 					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
 					continue;
@@ -1047,7 +1077,7 @@ private:
 				VkDeviceSize offsets[] = { 0 };
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 
-				// ensure object size is correct
+				// ensure object size is correct:
 				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].size());
 				if (objectVertexCount == 0) {
 					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
@@ -1056,7 +1086,6 @@ private:
 
 
 				vkCmdDraw(commandBuffers[i], objectVertexCount, 1, 0, 0);
-				//std::cout << "Drawing object " << j + 1 << std::endl;
 			}
 
 			vkCmdEndRenderPass(commandBuffers[i]);
