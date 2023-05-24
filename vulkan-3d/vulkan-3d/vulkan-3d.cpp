@@ -38,7 +38,7 @@ std::vector<Vertex> triangle2vert = {
 	{0.3f, -0.8f, 0.5f, 1.0f, 1.0f, 0.0f, 0.2f, 0.90f}
 };
 
-struct UniformBufferObject {
+struct UniformBufferObject { //use later when converting to 3D
 	float model[16]; //model matrix
 	float view[16];  //view matrix
 	float projection[16];  //projection matrix
@@ -75,13 +75,13 @@ private:
 	VkDeviceMemory TIM; // teture image memory
 	VkBuffer stagingBuffer; // buffer that is accessible by both CPU and GPU
 	VkDeviceMemory stagingBufferMem; // memory for the staging buffer
-	VkSampler textureSamp; // sampler for the texture (how to read the texture)
 
 	uint32_t textureWidth = 512;
 	uint32_t textureHeight = 512;
 	unsigned char* imageData;
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
-	VkImageView textureImgView; // image view for the texture
+	std::vector<VkImageView> imageViews;
+	std::vector<VkSampler> textureSamplers;
 
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
@@ -442,8 +442,8 @@ private:
 		VkDescriptorSetLayoutBinding isLayoutBinding{};
 		isLayoutBinding.binding = 0;
 		isLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		isLayoutBinding.descriptorCount = 1;
-		isLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // only used in the fragment shader
+		isLayoutBinding.descriptorCount = static_cast<uint32_t>(objects.size());
+		isLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		isLayoutBinding.pImmutableSamplers = nullptr;
 
 		VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
@@ -458,21 +458,31 @@ private:
 
 	void createDSPool() {
 		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //UBO descriptor
-		poolSize.descriptorCount = 1;
-
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = static_cast<uint32_t>(objects.size());
 		VkDescriptorPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInf.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInf.poolSizeCount = 1;
 		poolInf.pPoolSizes = &poolSize;
 		poolInf.maxSets = 1;
-
 		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
 
 	void createDS() {
+		std::vector<VkDescriptorImageInfo> imageInfos(objects.size());
+
+		for (int i = 0; i < objects.size(); i++) {
+			textureSamplers.push_back(createTS());
+			createTexturedImage("textures/texture.jpg");
+			imageViews.push_back(createTextureImgView());
+			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfos[i].imageView = imageViews.back();
+			imageInfos[i].sampler = textureSamplers.back();
+		}
+
 		VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -484,26 +494,28 @@ private:
 			throw std::runtime_error("Failed to allocate descriptor set!");
 		}
 
-		// create an image info for the texture:
-		VkDescriptorImageInfo imageInfo{};
-		imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		imageInfo.imageView = textureImgView; // imageView associated with your texture
-		imageInfo.sampler = textureSamp; // sampler associated with your texture
-
 		// write descriptor set for the texture image:
 		VkWriteDescriptorSet descriptorWrite{};
 		descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrite.dstSet = descriptorSet;
-		descriptorWrite.dstBinding = 0; // binding 0 = texture
-		descriptorWrite.dstArrayElement = 0; // index in array
+		descriptorWrite.dstBinding = 0;
+		descriptorWrite.dstArrayElement = 0;
 		descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descriptorWrite.descriptorCount = 1; // only 1 texture for now
-		descriptorWrite.pImageInfo = &imageInfo;
+		descriptorWrite.descriptorCount = static_cast<uint32_t>(imageInfos.size());
+		descriptorWrite.pImageInfo = imageInfos.data();
 
 		// update the descriptor set with the new image/binding info:
 		vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
 	}
-	void createTS() { //create texture sampler
+
+
+	void setupDescriptorSets() {
+		createDSLayout();
+		createDSPool();
+		createDS(); //create the descriptor set
+	}
+	VkSampler createTS() { //create texture sampler
+		VkSampler textureSamp;
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
 		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
@@ -523,8 +535,10 @@ private:
 		if (vkCreateSampler(device, &samplerInf, nullptr, &textureSamp) != VK_SUCCESS) { // create sampler
 			throw std::runtime_error("failed to create texture sampler!");
 		}
+		return textureSamp;
 	}
-	void createTextureImgView() {
+	VkImageView createTextureImgView() {
+		VkImageView textureImgView;
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = textureImg;
@@ -538,6 +552,7 @@ private:
 		if (vkCreateImageView(device, &viewInf, nullptr, &textureImgView) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture image view!");
 		}
+		return textureImgView;
 	}
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
@@ -577,8 +592,11 @@ private:
 		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
 		vkUnmapMemory(device, stagingBufferMem); //unmap the staging buffer memory
 	}
-	void createTexturedImage() {
-		getImageData("textures/texture.jpg");
+	void createTexturedImage(std::string path) {
+		getImageData(path);
+		textureImg = nullptr;
+		TIM = nullptr;
+		stagingBuffer = nullptr;
 		createStagingBuffer();
 
 		// create image:
@@ -927,23 +945,11 @@ private:
 		createCommandPool();
 		createVertexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
-		createTS(); //create the texture sampler
-		createTexturedImage(); //create the textured image and texture sampler
-		createTextureImgView();
-		createDSLayout();
-		createDSPool();
-		createDS(); //create the descriptor set
+		setupDescriptorSets();
 		createGraphicsPipeline();
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
-	}
-	void cleanupTextures() { // cleanup textures, samplers and descriptors
-		vkDestroySampler(device, textureSamp, nullptr);
-		vkDestroyImageView(device, textureImgView, nullptr);
-		vkDestroyImage(device, textureImg, nullptr);
-		vkFreeMemory(device, TIM, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool, nullptr); // destroy descriptor pool
 	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
@@ -1062,7 +1068,6 @@ private:
 
 			VkDescriptorSet descriptorSets[] = { descriptorSet };
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, descriptorSets, 0, nullptr); // bind the descriptor sets to the command buffer
-			std::cout << "bound descriptor sets" << std::endl;
 			for (size_t j = 0; j < objects.size(); j++) {
 				if (j >= vertBuffers.size()) {
 					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
@@ -1136,7 +1141,7 @@ private:
 		createFrameBuffer();
 		recordCommandBuffers();
 	}
-	void cleanupSwapChain() {
+	void cleanupSwapChain() { //this needs heavy modification lol
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
@@ -1151,7 +1156,6 @@ private:
 	}
 
 	void drawF() { //draw frame function
-		std::cout << "frame " << currentFrame << " drawn" << std::endl;
 		uint32_t imageIndex;
 		//wait for the frame to be finished:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
@@ -1225,11 +1229,6 @@ private:
 
 	void cleanup() {
 		// destroy resources in reverse order of creation
-		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-		for (size_t i = 0; i < 3; i++) {
-			vkDestroyFence(device, inFlightFences[i], nullptr);
-		}
 		cleanupTextures(); //cleanup texture, descriptor and all sampler data
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
@@ -1239,6 +1238,11 @@ private:
 		}
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 		vkDestroyCommandPool(device, commandPool, nullptr);
+		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+		for (size_t i = 0; i < 3; i++) {
+			vkDestroyFence(device, inFlightFences[i], nullptr);
+		}
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -1260,6 +1264,22 @@ private:
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
+	void cleanupTextures() { // cleanup textures, samplers and descriptors
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+		vkDestroyBuffer(device, uboBuffer, nullptr);
+		vkFreeMemory(device, uboBufferMemory, nullptr);
+		for (auto s : imageViews) {
+			vkDestroyImageView(device, s, nullptr);
+		}
+		for (auto m : textureSamplers) {
+			vkDestroySampler(device, m, nullptr);
+		}
+		vkDestroyBuffer(device, stagingBuffer, nullptr);
+		vkFreeMemory(device, stagingBufferMem, nullptr);
+		vkDestroyImage(device, textureImg, nullptr);
+		vkFreeMemory(device, TIM, nullptr);
+	}
 
 
 	//TODO: 
@@ -1277,7 +1297,7 @@ private:
 	// 13. fences (done)
 	// 14. texture image (done)
 	// 15. texture sampler (done)
-	// 16. descriptor sett
+	// 16. descriptor sett (done)
 	// 17. convert to 3d
 	// 18. shadows
 };
