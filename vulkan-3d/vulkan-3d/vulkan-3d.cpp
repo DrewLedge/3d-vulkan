@@ -112,7 +112,7 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
-
+	formulas::Vector3 cameraPos = { 0.0f, 0.0f, 0.0f };
 	void createInstance() {
 		VkApplicationInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
@@ -468,7 +468,6 @@ private:
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
-
 
 	void createDS() {
 		VkDescriptorImageInfo imageInfo;
