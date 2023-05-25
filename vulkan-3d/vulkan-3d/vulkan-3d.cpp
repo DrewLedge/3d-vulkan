@@ -934,24 +934,6 @@ private:
 		}
 		std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
 	}
-	void initVulkan() { //initializes Vulkan functions
-		createInstance();
-		createSurface();
-		pickDevice();
-		createLogicalDevice();
-		initQueues(); //sets the queue family indices such as graphics and presentation
-		createSC(); //create swap chain
-		setupFences();
-		createSemaphores();
-		createCommandPool();
-		createVertexBuffer();
-		setupShaders(); //read the shader files and create the shader modules
-		setupDescriptorSets();
-		createGraphicsPipeline();
-		createFrameBuffer();
-		createCommandBuffer();
-		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
-	}
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
 		VkFenceCreateInfo fenceInfo{};
@@ -1228,23 +1210,37 @@ private:
 			}
 		}
 	}
-
-	void cleanup() {
+	void initVulkan() { //initializes Vulkan functions
+		createInstance();
+		createSurface();
+		pickDevice();
+		createLogicalDevice();
+		initQueues(); //sets the queue family indices such as graphics and presentation
+		createSC(); //create swap chain
+		setupFences();
+		createSemaphores();
+		createCommandPool();
+		createVertexBuffer();
+		setupShaders(); //read the shader files and create the shader modules
+		setupDescriptorSets();
+		createGraphicsPipeline();
+		createFrameBuffer();
+		createCommandBuffer();
+		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
+	}
+	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
 		cleanupTextures(); //cleanup texture, descriptor and all sampler data
-		for (auto imageView : swapChainImageViews) {
-			vkDestroyImageView(device, imageView, nullptr);
+		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
+		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+		for (size_t i = 0; i < 3; i++) {
+			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
 		for (auto frameBuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, frameBuffer, nullptr);
 		}
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 		vkDestroyCommandPool(device, commandPool, nullptr);
-		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-		for (size_t i = 0; i < 3; i++) {
-			vkDestroyFence(device, inFlightFences[i], nullptr);
-		}
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
@@ -1257,6 +1253,9 @@ private:
 		}
 		for (int i = 0; i < vertBufferMems.size(); i++) {
 			vkFreeMemory(device, vertBufferMems[i], nullptr);
+		}
+		for (auto imageView : swapChainImageViews) {
+			vkDestroyImageView(device, imageView, nullptr);
 		}
 
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
