@@ -4,7 +4,7 @@
 
 class formulas {
 public:
-	int goodgen(int m, int mm);
+	int rng(int m, int mm);
 };
 
 #endif
