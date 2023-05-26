@@ -4,12 +4,7 @@
 const float PI = 3.14159f;
 class formulas {
 public:
-	int rng(int min, int max) {
-		static std::random_device rd;
-		static std::mt19937 gen(rd());
-		std::uniform_int_distribution<int> dist(min, max);
-		return dist(gen);
-	};
+	int rng(int m, int mm);
 	struct Vector3 {
 		float x, y, z;
 		Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
