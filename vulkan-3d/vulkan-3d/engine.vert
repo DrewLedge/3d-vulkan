@@ -10,12 +10,19 @@ layout(location = 0) out vec4 fragColor; // output color of vertex shader
 layout(location = 2) out float outAlpha;
 layout(location = 3) out vec2 outTexCoord; // output texture coordinates to fragment shader
 
+layout(set = 0, binding = 0) uniform UniformBufferObject {
+    mat4 model;
+    mat4 view;
+    mat4 proj;
+} ubo; // UBO declaration
+
 void main() {
-    gl_Position = vec4(inPosition, 1.0);
+    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
 }
+
 
 
 

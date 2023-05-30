@@ -34,17 +34,16 @@ typedef struct Vertex {
 	{}
 };
 
-
 std::vector<Vertex> triangle1vert = {
 	Vertex(formulas::Vector3(-0.2f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 1.0f, 1.0f), 1.0f),
-	Vertex(formulas::Vector3(-0.3f, -1.0f, 1.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.0f, 1.0f), 1.0f),
-	Vertex(formulas::Vector3(0.0f, -1.0f, 0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
+	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.0f, 1.0f), 1.0f),
+	Vertex(formulas::Vector3(0.0f, -1.0f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
 };
 
 std::vector<Vertex> triangle2vert = {
 	Vertex(formulas::Vector3(-1.0f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), 0.60f),
-	Vertex(formulas::Vector3(-0.3f, -1.0f, 1.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.7f, 0.60f), 0.60f),
-	Vertex(formulas::Vector3(0.3f, -0.8f, 0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
+	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.7f, 0.60f), 0.60f),
+	Vertex(formulas::Vector3(0.3f, -0.8f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
 };
 
 struct UniformBufferObject { //use later when converting to 3D
@@ -56,7 +55,13 @@ struct UniformBufferObject { //use later when converting to 3D
 
 UniformBufferObject ubo;
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
-
+void printPosData(const std::vector<Vertex>& vertices) {
+	std::cout << "---------------" << std::endl;
+	for (const Vertex& vertex : vertices) {
+		std::cout << "Position: (" << vertex.pos.x << ", " << vertex.pos.y << ", " << vertex.pos.z << ")" << std::endl;
+	}
+	std::cout << "---------------" << std::endl;
+}
 class Engine {
 public:
 	void run() {
@@ -383,7 +388,7 @@ private:
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 			newinfo.image = swapChainImages[i]; // assign the current swap chain image
-			newinfo.viewType = VK_IMAGE_VIEW_TYPE_3D; // set the image view type to 3D
+			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // 2d image for now
 			newinfo.format = swapChainImageFormat;
 			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -414,7 +419,7 @@ private:
 
 		return shaderModule;
 	}
-	void createUBO() {
+	VkBuffer createUBO() {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(UniformBufferObject);
@@ -437,15 +442,11 @@ private:
 			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
 		}
 		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0);
-
-		//map the UBO buffer memory and copy UBO data:
-		void* data;
-		vkMapMemory(device, uboBufferMemory, 0, sizeof(UniformBufferObject), 0, &data);
-		memcpy(data, &ubo, sizeof(UniformBufferObject));
-		vkUnmapMemory(device, uboBufferMemory);
+		return uboBuffer;
 	}
+
 	void updateUBO() {
-		ubo.model = formulas::Matrix4::rotateZ(1 * 90.0f);
+		ubo.model = formulas::Matrix4::rotateZ(90.0f);
 		ubo.view = formulas::Matrix4::viewmatrix(2.0f, 2.0f, 2.0f);
 		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 		void* data;
@@ -453,8 +454,6 @@ private:
 		memcpy(data, &ubo, sizeof(ubo));
 		vkUnmapMemory(device, uboBufferMemory);
 	}
-
-
 
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -477,37 +476,38 @@ private:
 		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
-
 	}
 
 	void createDSPool() {
-		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSize.descriptorCount = static_cast<uint32_t>(objects.size()); //count of individual descriptors of the type right above ^^^
-		VkDescriptorPoolCreateInfo poolInf{};
-		poolInf.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInf.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; //descriptor sets can be freed individually if needed. not needed rn
-		poolInf.poolSizeCount = 1;
-		poolInf.pPoolSizes = &poolSize;
-		poolInf.maxSets = static_cast<uint32_t>(objects.size()); //max num of descriptor sets that can be allocated from the pool
-		if (vkCreateDescriptorPool(device, &poolInf, nullptr, &descriptorPool) != VK_SUCCESS) {
+		std::array<VkDescriptorPoolSize, 2> poolSizes{};
+		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
+		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
+
+		VkDescriptorPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+		poolInfo.pPoolSizes = poolSizes.data();
+		poolInfo.maxSets = static_cast<uint32_t>(objects.size());
+
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
 
+
 	void createDS() {
-		createUBO();
-		updateUBO(); //update with initial values
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
-		bufferInfo.buffer = uboBuffer;
+		bufferInfo.buffer = createUBO();;
 		bufferInfo.offset = 0;
 		bufferInfo.range = sizeof(UniformBufferObject);
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());
 
 		for (int i = 0; i < objects.size(); i++) {
-			int texttureNum = formula.rng(1, 2);
-			std::cout << "texture num: " << texttureNum << std::endl;
+			int texttureNum = formula.rng(1, 2); //temporrary: randomize the texture
 			if (texttureNum == 1) {
 				createTexturedImage("textures/texture.jpg");
 			}
@@ -583,7 +583,7 @@ private:
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = textureImg;
-		viewInf.viewType = VK_IMAGE_VIEW_TYPE_3D; //view type is 3D
+		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 3D
 		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
 		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
 		viewInf.subresourceRange.baseMipLevel = 0;
@@ -643,7 +643,7 @@ private:
 		// create image:
 		VkImageCreateInfo imageInf{};
 		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInf.imageType = VK_IMAGE_TYPE_3D;
+		imageInf.imageType = VK_IMAGE_TYPE_2D;
 		imageInf.extent.width = textureWidth;
 		imageInf.extent.height = textureHeight;
 		imageInf.extent.depth = 1;
@@ -689,7 +689,7 @@ private:
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
 		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; //too tired to add this rn lol
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; /// TODO
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = textureImg;
 		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1063,6 +1063,7 @@ private:
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
+		updateUBO();
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1185,7 +1186,7 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
-		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
 			recreateSwap();
 			return;
 		}
@@ -1226,6 +1227,7 @@ private:
 		else if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to present swap chain image! " + resultStr(result));
 		}
+		printPosData(triangle1vert);
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
 	void recreateVertexBuffer() {
@@ -1240,13 +1242,11 @@ private:
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
 
-
 	void updateObjects() {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX); // 
 		for (size_t i = 0; i < objects.size(); i++) {
-			for (Vertex& vertex : objects[i]) { //move the objects
-				vertex.pos.x += formula.rng(-5, 5) * 0.0005;
-				vertex.pos.y += formula.rng(-5, 5) * 0.0005;
+			for (Vertex& vertex : objects[i]) {
+				//pos changes here
 			}
 		}
 	}
@@ -1267,6 +1267,7 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
+		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
