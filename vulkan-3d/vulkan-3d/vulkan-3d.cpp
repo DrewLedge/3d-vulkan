@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <array>
+#include <chrono>
 #include "forms.h"
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
@@ -47,9 +48,9 @@ std::vector<Vertex> triangle2vert = {
 };
 
 struct UniformBufferObject { //use later when converting to 3D
-	float model[16]; //model matrix
-	float view[16];  //view matrix
-	float projection[16];  //projection matrix
+	formulas::Matrix4 model; //model matrix
+	formulas::Matrix4 view;;  //view matrix
+	formulas::Matrix4 proj;;  //projection matrix
 };
 
 
@@ -413,7 +414,7 @@ private:
 
 		return shaderModule;
 	}
-	void createUBO() { //not needed right now
+	void createUBO() {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(UniformBufferObject);
@@ -443,23 +444,40 @@ private:
 		memcpy(data, &ubo, sizeof(UniformBufferObject));
 		vkUnmapMemory(device, uboBufferMemory);
 	}
+	void updateUBO() {
+		ubo.model = formulas::Matrix4::rotateZ(1 * 90.0f);
+		ubo.view = formulas::Matrix4::viewmatrix(2.0f, 2.0f, 2.0f);
+		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+		void* data;
+		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
+		memcpy(data, &ubo, sizeof(ubo));
+		vkUnmapMemory(device, uboBufferMemory);
+	}
+
+
 
 	void createDSLayout() {
-		VkDescriptorSetLayoutBinding isLayoutBinding{};
-		isLayoutBinding.binding = 0;
-		isLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //image view + sampler combined into one descriptor
-		isLayoutBinding.descriptorCount = 1;
-		isLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; //descriptor will be used in the fragment shader
-		isLayoutBinding.pImmutableSamplers = nullptr;
+		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
-		VkDescriptorSetLayoutCreateInfo layoutCreateInfo{};
-		layoutCreateInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutCreateInfo.bindingCount = 1;
-		layoutCreateInfo.pBindings = &isLayoutBinding;
+		bindings[0].binding = 0;
+		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[0].descriptorCount = 1;
+		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
 
-		if (vkCreateDescriptorSetLayout(device, &layoutCreateInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+		bindings[1].binding = 1;
+		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[1].descriptorCount = 1;
+		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // combned image sampler will be accessed from the fragment shader
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo{};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+		layoutInfo.pBindings = bindings.data();
+
+		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
+
 	}
 
 	void createDSPool() {
@@ -478,6 +496,12 @@ private:
 	}
 
 	void createDS() {
+		createUBO();
+		updateUBO(); //update with initial values
+		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
+		bufferInfo.buffer = uboBuffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformBufferObject);
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());
 
@@ -505,16 +529,25 @@ private:
 				throw std::runtime_error("Failed to allocate descriptor set!");
 			}
 
-			VkWriteDescriptorSet descriptorWrite{};
-			descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWrite.dstSet = descriptorSets[i]; // Write to the descriptor set for each object
-			descriptorWrite.dstBinding = 0;
-			descriptorWrite.dstArrayElement = 0;
-			descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			descriptorWrite.descriptorCount = 1; // One texture per descriptor set
-			descriptorWrite.pImageInfo = &imageInfo;
+			std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
-			vkUpdateDescriptorSets(device, 1, &descriptorWrite, 0, nullptr);
+			descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrites[0].dstSet = descriptorSets[i];
+			descriptorWrites[0].dstBinding = 0;
+			descriptorWrites[0].dstArrayElement = 0;
+			descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
+			descriptorWrites[0].descriptorCount = 1;
+			descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+			descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrites[1].dstSet = descriptorSets[i];
+			descriptorWrites[1].dstBinding = 1;
+			descriptorWrites[1].dstArrayElement = 0;
+			descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+			descriptorWrites[1].descriptorCount = 1;
+			descriptorWrites[1].pImageInfo = &imageInfo;
+
+			vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 		}
 	}
 	void setupDescriptorSets() {

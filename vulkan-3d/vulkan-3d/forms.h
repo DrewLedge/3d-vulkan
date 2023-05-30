@@ -195,7 +195,6 @@ public:
 			float z = (vec3.z + 1.0f) / 2.0f;
 			return Vector3(x, y, z);
 		}
-
 	};
 };
 
