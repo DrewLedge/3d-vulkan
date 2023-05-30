@@ -51,17 +51,16 @@ struct UniformBufferObject { //use later when converting to 3D
 	formulas::Matrix4 view;;  //view matrix
 	formulas::Matrix4 proj;;  //projection matrix
 };
+struct camData {
+	formulas::Vector3 camPos; //x, y, z
+	formulas::Vector3 camRot; //pitch, yaw, roll
+};
+camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
 
 
 UniformBufferObject ubo;
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
-void printPosData(const std::vector<Vertex>& vertices) {
-	std::cout << "---------------" << std::endl;
-	for (const Vertex& vertex : vertices) {
-		std::cout << "Position: (" << vertex.pos.x << ", " << vertex.pos.y << ", " << vertex.pos.z << ")" << std::endl;
-	}
-	std::cout << "---------------" << std::endl;
-}
+
 class Engine {
 public:
 	void run() {
@@ -126,7 +125,6 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
-	formulas::Vector3 cameraPos = { 0.0f, 0.0f, 0.0f };
 	void createInstance() {
 		VkApplicationInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
@@ -442,23 +440,22 @@ private:
 			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
 		}
 		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0);
+		updateUBO(cam); //update the UBO with the initial camera data
 		return uboBuffer;
 	}
 
-	void updateUBO() {
-		formulas::Vector3 position(2.0f, 2.0f, 2.0f);
-		formulas::Vector3 rotation(0.0f, 0.0f, 0.0f);
-
+	void updateUBO(camData cam) {
 		ubo.model = formulas::Matrix4::rotateX(1.0f).transpose();
-		ubo.view = formulas::Matrix4::viewmatrix(position, rotation).transpose();
+		ubo.view = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose();
 		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
-		ubo.proj.m[1][1] *= -1; // flipping Y coordinate due to Vulkan's coordinate system
+		ubo.proj.m[1][1] *= -1;
 
 		void* data;
 		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
 		memcpy(data, &ubo, sizeof(ubo));
 		vkUnmapMemory(device, uboBufferMemory);
 	}
+
 
 
 	void createDSLayout() {
@@ -996,7 +993,7 @@ private:
 			glfwPollEvents();
 			drawF();
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
-			updateObjects();
+			updateCam();
 			recreateVertexBuffer();
 		}
 		vkDeviceWaitIdle(device);
@@ -1069,7 +1066,7 @@ private:
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
-		updateUBO();
+		updateUBO(cam);
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1233,7 +1230,6 @@ private:
 		else if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to present swap chain image! " + resultStr(result));
 		}
-		printPosData(triangle1vert);
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
 	void recreateVertexBuffer() {
@@ -1248,13 +1244,9 @@ private:
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
 
-	void updateObjects() {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX); // 
-		for (size_t i = 0; i < objects.size(); i++) {
-			for (Vertex& vertex : objects[i]) {
-				//pos changes here
-			}
-		}
+	void updateCam() {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		cam.camRot = cam.camRot.translate(0.5, 0.0f, 0.0f); // rotate the camera by 0.01 radians around the x axis
 	}
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();
