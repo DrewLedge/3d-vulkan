@@ -446,14 +446,20 @@ private:
 	}
 
 	void updateUBO() {
-		ubo.model = formulas::Matrix4::rotateZ(90.0f);
-		ubo.view = formulas::Matrix4::viewmatrix(2.0f, 2.0f, 2.0f);
+		formulas::Vector3 position(2.0f, 2.0f, 2.0f);
+		formulas::Vector3 rotation(0.0f, 0.0f, 0.0f);
+
+		ubo.model = formulas::Matrix4::rotateZ(90.0f).transpose();
+		ubo.view = formulas::Matrix4::viewmatrix(position, rotation).transpose();
 		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+		ubo.proj.m[1][1] *= -1; // flipping Y coordinate due to Vulkan's coordinate system
+
 		void* data;
 		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
 		memcpy(data, &ubo, sizeof(ubo));
 		vkUnmapMemory(device, uboBufferMemory);
 	}
+
 
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -500,8 +506,8 @@ private:
 
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
-		bufferInfo.buffer = createUBO();;
-		bufferInfo.offset = 0;
+		bufferInfo.buffer = createUBO();
+		bufferInfo.offset = 0; //offset in the buffer where the UBO starts
 		bufferInfo.range = sizeof(UniformBufferObject);
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());

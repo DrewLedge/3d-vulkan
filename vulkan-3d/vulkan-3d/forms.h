@@ -158,42 +158,42 @@ public:
 			}
 			return Vector3(x, y, z);
 		}
-		static Matrix4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) { //perspective projection matrix
+		static Matrix4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
 			Matrix4 result;
-			float f = 1.0f / tanf(fov * 0.5f * (PI / 180.0f));
+			float f = 1.0f / tanf(fov * (PI / 360.0f));
 			result.m[0][0] = f / aspect_ratio;
 			result.m[1][1] = f;
-			result.m[2][2] = (far_clip + near_clip) / (near_clip - far_clip);
-			result.m[2][3] = (2.0f * far_clip * near_clip) / (near_clip - far_clip);
-			result.m[3][2] = -1.0f;
+			result.m[2][2] = far_clip / (far_clip - near_clip);
+			result.m[2][3] = -(far_clip * near_clip) / (far_clip - near_clip);
+			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
 			return result;
 		}
+
 		static Matrix4 worldmatrix(float tx, float ty, float tz, float rx, float ry, float rz, float sx, float sy, float sz) { //t = translation, r = rotation, s = scale
 			Matrix4 result = Matrix4::translate(tx, ty, tz).multiply(Matrix4::rotateX(rx)).multiply(Matrix4::rotateY(ry)).multiply(Matrix4::rotateZ(rz)).multiply(Matrix4::scale(sx, sy, sz));
 			return result;
 		}
-		static Matrix4 viewmatrix(float camx, float camy, float camz) {
-			Matrix4 result = Matrix4::rotateX(camx).multiply(Matrix4::rotateY(camy)).multiply(Matrix4::rotateZ(camz)).multiply(Matrix4::translate(-camx, -camy, -camz));
+		static Matrix4 viewmatrix(const Vector3& position, const Vector3& rotation) {
+			Matrix4 result;
+			result = Matrix4::rotateX(rotation.x)
+				.multiply(Matrix4::rotateY(rotation.y))
+				.multiply(Matrix4::rotateZ(rotation.z))
+				.multiply(Matrix4::translate(-position.x, -position.y, -position.z));
 			return result;
 		}
+
 		static Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) {
 			Matrix4 result = world.multiply(view).multiply(projection);
 			return result.vecmatrix(vectoroni);
 		}
-		static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) { //converts a 3D vector to 2D to display
+		static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) {
 			float halfScreenWidth = screenWidth / 2;
 			float halfScreenHeight = screenHeight / 2;
 			float zNormalized = std::max(0.001f, vec3.z + 1.0f);
 			float projectedX = vec3.x / zNormalized * halfScreenWidth + halfScreenWidth;
 			float projectedY = vec3.y / zNormalized * halfScreenHeight + halfScreenHeight;
 			return Vector2(projectedX, projectedY);
-		}
-		static Vector3 norm(const Vector3& vec3) { //normalizes a vector to NDC
-			float x = (vec3.x + 1.0f) / 2.0f;
-			float y = (vec3.y + 1.0f) / 2.0f;
-			float z = (vec3.z + 1.0f) / 2.0f;
-			return Vector3(x, y, z);
 		}
 	};
 };
