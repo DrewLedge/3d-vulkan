@@ -15,27 +15,35 @@
 #include "forms.h"
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
-struct Vertex {
-	float posX;
-	float posY;
-	float texU; // texture coordinates x
-	float texV; // texture coordinates y
-	float colR;
-	float colG;
-	float colB;
+typedef struct Vertex {
+	formulas::Vector3 pos; // position coordinates x, y, z
+	formulas::Vector2 tex; // texture coordinates u, v
+	formulas::Vector3 col; // color r, g, b
 	float alpha;
+
+	// constructor:
+	Vertex(const formulas::Vector3& position,
+		const formulas::Vector2& texture,
+		const formulas::Vector3& color,
+		float alphaValue)
+		: pos(position),
+		tex(texture),
+		col(color),
+		alpha(alphaValue)
+	{}
 };
 
+
 std::vector<Vertex> triangle1vert = {
-	{-0.2f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f}, // x, y, u, v, r, g, b, a
-	{-0.3f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 1.0f},
-	{0.0f, -1.0f, 0.5f, 1.0f, 1.0f, 0.0f, 0.0f, 1.0f}
+	Vertex(formulas::Vector3(-0.2f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 1.0f, 1.0f), 1.0f),
+	Vertex(formulas::Vector3(-0.3f, -1.0f, 1.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.0f, 1.0f), 1.0f),
+	Vertex(formulas::Vector3(0.0f, -1.0f, 0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
 };
 
 std::vector<Vertex> triangle2vert = {
-	{-1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.90f},
-	{-0.3f, -1.0f, 1.0f, 0.0f, 0.0f, 1.0f, 0.7f, 0.90f},
-	{0.3f, -0.8f, 0.5f, 1.0f, 1.0f, 0.0f, 0.2f, 0.90f}
+	Vertex(formulas::Vector3(-1.0f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), 0.60f),
+	Vertex(formulas::Vector3(-0.3f, -1.0f, 1.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.7f, 0.60f), 0.60f),
+	Vertex(formulas::Vector3(0.3f, -0.8f, 0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
 };
 
 struct UniformBufferObject { //use later when converting to 3D
@@ -374,7 +382,7 @@ private:
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 			newinfo.image = swapChainImages[i]; // assign the current swap chain image
-			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // set the image view type to 2D
+			newinfo.viewType = VK_IMAGE_VIEW_TYPE_3D; // set the image view type to 3D
 			newinfo.format = swapChainImageFormat;
 			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -542,7 +550,7 @@ private:
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = textureImg;
-		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 2D
+		viewInf.viewType = VK_IMAGE_VIEW_TYPE_3D; //view type is 3D
 		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
 		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
 		viewInf.subresourceRange.baseMipLevel = 0;
@@ -602,7 +610,7 @@ private:
 		// create image:
 		VkImageCreateInfo imageInf{};
 		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInf.imageType = VK_IMAGE_TYPE_2D;
+		imageInf.imageType = VK_IMAGE_TYPE_3D;
 		imageInf.extent.width = textureWidth;
 		imageInf.extent.height = textureHeight;
 		imageInf.extent.depth = 1;
@@ -736,12 +744,12 @@ private:
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
 		attrDesc[0].format = VK_FORMAT_R32G32_SFLOAT;
-		attrDesc[0].offset = offsetof(Vertex, posX);
+		attrDesc[0].offset = offsetof(Vertex, pos);
 
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
 		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attrDesc[1].offset = offsetof(Vertex, colR);
+		attrDesc[1].offset = offsetof(Vertex, col);
 
 		attrDesc[2].binding = 0;
 		attrDesc[2].location = 2;
@@ -751,7 +759,7 @@ private:
 		attrDesc[3].binding = 0;
 		attrDesc[3].location = 3;
 		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT;
-		attrDesc[3].offset = offsetof(Vertex, texU);
+		attrDesc[3].offset = offsetof(Vertex, tex);
 
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -784,7 +792,7 @@ private:
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
 
-		//rasterizer setup: Transforms 3D primitives into 2D fragments for display on the screen
+		//rasterizer setup: Transforms 3D primitives into 3D fragments for display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		rasterizer.depthClampEnable = VK_FALSE; //if true, fragments that are beyond the near and far planes are clamped
@@ -1021,7 +1029,7 @@ private:
 		}
 	}
 
-	void recordCommandBuffers() {
+	void recordCommandBuffers() { //records and submits the command buffers
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1201,11 +1209,11 @@ private:
 
 
 	void updateObjects() {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX); // 
 		for (size_t i = 0; i < objects.size(); i++) {
 			for (Vertex& vertex : objects[i]) { //move the objects
-				vertex.posX += formula.rng(-1, 1) * 0.0005;
-				vertex.posY += formula.rng(-1, 1) * 0.0005;
+				vertex.pos.x += formula.rng(-5, 5) * 0.0005;
+				vertex.pos.y += formula.rng(-5, 5) * 0.0005;
 			}
 		}
 	}
@@ -1292,7 +1300,7 @@ private:
 	// 14. texture image (done)
 	// 15. texture sampler (done)
 	// 16. descriptor sett (done)
-	// 17. convert to 3d
+	// 17. convert to 3d 
 	// 18. shadows
 };
 int main() {
