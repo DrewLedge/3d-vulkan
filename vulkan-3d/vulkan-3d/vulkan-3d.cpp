@@ -37,13 +37,13 @@ typedef struct Vertex {
 std::vector<Vertex> triangle1vert = {
 	Vertex(formulas::Vector3(-0.2f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 1.0f, 1.0f), 1.0f),
 	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.0f, 1.0f), 1.0f),
-	Vertex(formulas::Vector3(0.0f, -1.0f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
+	Vertex(formulas::Vector3(0.0f, -0.5f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
 };
 
 std::vector<Vertex> triangle2vert = {
 	Vertex(formulas::Vector3(-1.0f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), 0.60f),
 	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.7f, 0.60f), 0.60f),
-	Vertex(formulas::Vector3(0.3f, -0.8f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
+	Vertex(formulas::Vector3(0.3f, -0.8f, -0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
 };
 
 struct UniformBufferObject { //use later when converting to 3D
@@ -449,7 +449,7 @@ private:
 		formulas::Vector3 position(2.0f, 2.0f, 2.0f);
 		formulas::Vector3 rotation(0.0f, 0.0f, 0.0f);
 
-		ubo.model = formulas::Matrix4::rotateZ(90.0f).transpose();
+		ubo.model = formulas::Matrix4::rotateX(1.0f).transpose();
 		ubo.view = formulas::Matrix4::viewmatrix(position, rotation).transpose();
 		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 		ubo.proj.m[1][1] *= -1; // flipping Y coordinate due to Vulkan's coordinate system
@@ -915,7 +915,7 @@ private:
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = 1; //number of descriptor sets used by the pipeline such as uniform variables
+		pipelineLayoutInf.setLayoutCount = 1; //number of descriptor set layouts
 		pipelineLayoutInf.pSetLayouts = &descriptorSetLayout; //array of descriptor set layouts (a pointer to the array)
 		pipelineLayoutInf.pushConstantRangeCount = 0; //number of push constant ranges
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
@@ -1341,7 +1341,10 @@ private:
 	// 15. texture sampler (done)
 	// 16. descriptor sett (done)
 	// 17. convert to 3d 
-	// 18. shadows
+	// 18. lighting
+	// 19. levels and objects
+	// 20. switch to GLM isntead of custom formulas
+	// 21. collision detection
 };
 int main() {
 	Engine app;
