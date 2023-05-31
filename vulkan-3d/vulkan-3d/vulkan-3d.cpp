@@ -47,20 +47,47 @@ struct Vertex {
 		alpha(alphaValue)
 	{}
 };
-typedef struct {
+struct Texture {
 	VkSampler textureSampler;
 	VkImage textureImage;
 	VkDeviceMemory textureImageMemory;
 	VkImageView textureImageView;
-} Texture;
 
-typedef struct {
+	// texture file paths
+	std::string ambientTexturePath;
+	std::string diffuseTexturePath;
+	std::string specularTexturePath;
+	std::string normalMapPath;
+	std::string displacementMapPath;
+	std::string bumpMapPath;
+
+	// default constructor
+	Texture()
+		: textureSampler(VK_NULL_HANDLE),
+		textureImage(VK_NULL_HANDLE),
+		textureImageMemory(VK_NULL_HANDLE),
+		textureImageView(VK_NULL_HANDLE)
+	{}
+};
+
+
+struct model {
 	Texture texture;
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
-	std::string pathToModel; //i.e "models/cube.obj"
-} model;
-model model1 = { };
+	std::string pathObj; // i.e "models/cube.obj"
+	std::string pathTexture; // i.e "textures/cube.mtl"
+
+	// default constructor:
+	model()
+		: texture(),
+		vertices(),
+		indices(),
+		pathObj(""),
+		pathTexture("")
+	{}
+};
+model model1 = {};
 std::vector<model> objects = { model1 };
 
 struct UniformBufferObject {
@@ -141,18 +168,15 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
-	void loadModels() { //load and populate models based on their paths
+
+	void loadModels() { // loads models from .obj and .mtl files
 		for (auto& object : objects) {
-			const std::string& filePath = object.pathToModel;
-
-			tinyobj::attrib_t attrib; // vertex data
-			std::vector<tinyobj::shape_t> shapes; // shapes in the model
-			std::vector<tinyobj::material_t> materials; // materials in the model
+			const std::string& filePath = object.pathObj;
+			tinyobj::attrib_t attrib;
+			std::vector<tinyobj::shape_t> shapes;
+			std::vector<tinyobj::material_t> materials;
 			std::string warn, err;
-
-			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str()); // load the model from the struct
-
-			// error handling:
+			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str());
 			if (!warn.empty()) {
 				std::cout << "Warning: " << warn << std::endl;
 			}
@@ -164,45 +188,47 @@ private:
 			}
 			std::unordered_map<Vertex, uint32_t> uniqueVertices;
 
-			//population of the model:
-			for (const auto& shape : shapes) { // loop through all the shapes in the model
+			// load material textures:
+			for (const auto& material : materials) {
+				object.texture.diffuseTexturePath = material.diffuse_texname; //for only rendering a 3d object with a texture, only diffuse texture is needed
+				break; // only use 1 material for now
+			}
+			// load vertices and indices:
+			for (const auto& shape : shapes) {
 				for (const auto& index : shape.mesh.indices) {
 					Vertex vertex;
 
-					vertex.pos = { // x y z
+					vertex.pos = {
 						attrib.vertices[3 * index.vertex_index + 0],
 						attrib.vertices[3 * index.vertex_index + 1],
 						attrib.vertices[3 * index.vertex_index + 2]
 					};
-					vertex.tex = { //texture coordinates
+					vertex.tex = {
 						attrib.texcoords[2 * index.texcoord_index + 0],
-						1.0f - attrib.texcoords[2 * index.texcoord_index + 1] // flip y-axis for vulkan
+						1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 					};
-					vertex.col = { // color
-					attrib.colors[3 * index.vertex_index + 0], // red
-					attrib.colors[3 * index.vertex_index + 1], // green
-					attrib.colors[3 * index.vertex_index + 2]  // blue
+					vertex.col = {
+					attrib.colors[3 * index.vertex_index + 0],
+					attrib.colors[3 * index.vertex_index + 1],
+					attrib.colors[3 * index.vertex_index + 2]
 					};
-					vertex.normal = { // normals
+					vertex.normal = {
 						attrib.normals[3 * index.normal_index + 0],
 						attrib.normals[3 * index.normal_index + 1],
 						attrib.normals[3 * index.normal_index + 2]
 					};
-					vertex.alpha = 1.0f; // alpha
-
-					// find out if the vertex is unique:
-					if (uniqueVertices.count(vertex) == 0) { // if the vertex is unique, add it to the list of unique vertices!
+					vertex.alpha = 1.0f;
+					// check if vertex is unique:
+					if (uniqueVertices.count(vertex) == 0) {
 						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
-						object.vertices.push_back(vertex); // add the vertex to the list of vertices
+						object.vertices.push_back(vertex);
 					}
-					object.indices.push_back(uniqueVertices[vertex]); // add the index of the vertex to the list of indices
+					object.indices.push_back(uniqueVertices[vertex]);
 				}
 			}
-			std::cout << "Model loaded: " << filePath << std::endl;
+			std::cout << "model loaded: " << filePath << std::endl;
 		}
 	}
-
-
 	void createInstance() {
 		VkApplicationInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
@@ -1124,7 +1150,7 @@ private:
 		vertBuffers.resize(objects.size());
 		vertBufferMems.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
-			VkDeviceSize bufferSize = sizeof(objects[i][0]) * objects[i].size(); //size of the buffer. formula is: size of the data * number of vertices
+			VkDeviceSize bufferSize = sizeof(objects[i]) * objects[i].vertices.size(); //size of the buffer. formula is: size of the data * number of vertices
 			VkBufferCreateInfo bufferInf{};
 			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 			bufferInf.size = bufferSize; //size of the buffer
@@ -1147,7 +1173,7 @@ private:
 			vkBindBufferMemory(device, vertBuffers[i], vertBufferMems[i], 0); //bind the vertex buffer to the vertex buffer memory
 			void* data;
 			vkMapMemory(device, vertBufferMems[i], 0, bufferSize, 0, &data);
-			memcpy(data, objects[i].data(), bufferSize);
+			memcpy(data, objects[i].vertices.data(), bufferSize);
 			vkUnmapMemory(device, vertBufferMems[i]);
 		}
 	}
@@ -1193,7 +1219,7 @@ private:
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 
 				// ensure object size is correct:
-				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].size());
+				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].vertices.size());
 				if (objectVertexCount == 0) {
 					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
 					continue;
