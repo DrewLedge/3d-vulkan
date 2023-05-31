@@ -1,5 +1,6 @@
 #define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h" // library for loading images
+#include "ext/stb_image.h" // library for loading images
+#include "ext/tiny_obj_loader.h"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
