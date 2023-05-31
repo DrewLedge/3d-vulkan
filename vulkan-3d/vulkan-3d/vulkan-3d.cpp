@@ -46,11 +46,12 @@ std::vector<Vertex> triangle2vert = {
 	Vertex(formulas::Vector3(0.3f, -0.8f, -0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
 };
 
-struct UniformBufferObject { //use later when converting to 3D
-	formulas::Matrix4 model; //model matrix
-	formulas::Matrix4 view;;  //view matrix
-	formulas::Matrix4 proj;;  //projection matrix
+struct alignas(16) UniformBufferObject {
+	float model[16];
+	float view[16];
+	float proj[16];
 };
+
 struct camData {
 	formulas::Vector3 camPos; //x, y, z
 	formulas::Vector3 camRot; //pitch, yaw, roll
@@ -58,7 +59,6 @@ struct camData {
 camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
 
 
-UniformBufferObject ubo;
 std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
 
 class Engine {
@@ -445,18 +445,35 @@ private:
 	}
 
 	void updateUBO(camData cam) {
-		ubo.model = formulas::Matrix4::rotateX(1.0f).transpose();
-		ubo.view = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose();
-		ubo.proj = formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
-		ubo.proj.m[1][1] *= -1;
+		// convert matrices to flat arrays:
+		float modelFlat[16], viewFlat[16], projFlat[16];
+		convertMatrix(formulas::Matrix4::rotateX(1.0f).transpose(), modelFlat);
+		convertMatrix(formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose(), viewFlat);
+		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), projFlat);
+		projFlat[5] *= -1;
 
+		// create and populate the UBO:
+		UniformBufferObject ubo;
+		memcpy(ubo.model, modelFlat, sizeof(modelFlat));
+		memcpy(ubo.view, viewFlat, sizeof(viewFlat));
+		memcpy(ubo.proj, projFlat, sizeof(projFlat));
+
+		// transfer the UBO to GPU memory:
 		void* data;
 		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
 		memcpy(data, &ubo, sizeof(ubo));
 		vkUnmapMemory(device, uboBufferMemory);
 	}
 
-
+	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array
+		int index = 0;
+		for (int column = 0; column < 4; column++) {
+			for (int row = 0; row < 4; row++) {
+				destination[index] = source.m[row][column];
+				index++;
+			}
+		}
+	}
 
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -988,16 +1005,6 @@ private:
 			}
 		}
 	}
-	void mainLoop() {
-		while (!glfwWindowShouldClose(window)) {
-			glfwPollEvents();
-			drawF();
-			currentFrame = (currentFrame + 1) % swapChainImages.size();
-			updateCam();
-			recreateVertexBuffer();
-		}
-		vkDeviceWaitIdle(device);
-	}
 
 	void createCommandPool() {
 		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
@@ -1066,7 +1073,6 @@ private:
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
-		updateUBO(cam);
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -1244,9 +1250,43 @@ private:
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
 
-	void updateCam() {
+	void mainLoop() {
+		while (!glfwWindowShouldClose(window)) {
+			glfwPollEvents();
+			drawF();
+			currentFrame = (currentFrame + 1) % swapChainImages.size();
+			recreateVertexBuffer();
+			handleKeyboardInput(window);
+			updateUBO(cam);
+		}
+		vkDeviceWaitIdle(device);
+	}
+	void handleKeyboardInput(GLFWwindow* window) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		cam.camRot = cam.camRot.translate(0.5, 0.0f, 0.0f); // rotate the camera by 0.01 radians around the x axis
+		float cameraSpeed = 0.01f; // Adjust the speed as needed
+		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
+			std::cout << "moving forward" << std::endl;
+		}
+
+		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+			cam.camPos.x -= cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.z += cameraSpeed * cos(cam.camRot.y);
+			std::cout << "moving backward" << std::endl;
+		}
+
+		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
+			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
+			std::cout << "moving left" << std::endl;
+		}
+
+		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
+			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
+			std::cout << "moving right" << std::endl;
+		}
 	}
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();

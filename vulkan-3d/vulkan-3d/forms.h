@@ -38,7 +38,7 @@ public:
 		float x, y;
 		Vector2(float x, float y) : x(x), y(y) {}
 	};
-	struct alignas(64) Matrix4 {
+	struct Matrix4 {
 		float m[4][4];
 		Matrix4() {
 			for (int i = 0; i < 4; i++) {
