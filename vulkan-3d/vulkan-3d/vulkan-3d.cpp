@@ -46,7 +46,7 @@ std::vector<Vertex> triangle2vert = {
 	Vertex(formulas::Vector3(0.3f, -0.8f, -0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
 };
 
-struct alignas(16) UniformBufferObject {
+struct UniformBufferObject {
 	float model[16];
 	float view[16];
 	float proj[16];
@@ -97,8 +97,8 @@ private:
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	std::vector<VkDescriptorSet> descriptorSets;
-	VkBuffer uboBuffer;
 	VkDeviceMemory uboBufferMemory;
+	VkBuffer uboBuffer;
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -417,7 +417,7 @@ private:
 
 		return shaderModule;
 	}
-	VkBuffer createUBO() {
+	void createUBO() {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(UniformBufferObject);
@@ -439,9 +439,8 @@ private:
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &uboBufferMemory) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
 		}
-		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0);
-		updateUBO(cam); //update the UBO with the initial camera data
-		return uboBuffer;
+		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0); // bind the buffer to the memory
+		updateUBO(cam);
 	}
 
 	void updateUBO(camData cam) {
@@ -458,7 +457,7 @@ private:
 		memcpy(ubo.view, viewFlat, sizeof(viewFlat));
 		memcpy(ubo.proj, projFlat, sizeof(projFlat));
 
-		// transfer the UBO to GPU memory:
+		// transfer the ubo struct into the buffer:
 		void* data;
 		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
 		memcpy(data, &ubo, sizeof(ubo));
@@ -517,10 +516,10 @@ private:
 		}
 	}
 
-
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
-		bufferInfo.buffer = createUBO();
+		createUBO();
+		bufferInfo.buffer = uboBuffer;
 		bufferInfo.offset = 0; //offset in the buffer where the UBO starts
 		bufferInfo.range = sizeof(UniformBufferObject);
 		VkDescriptorImageInfo imageInfo;
@@ -570,11 +569,14 @@ private:
 			vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 		}
 	}
+
+
 	void setupDescriptorSets() {
 		createDSLayout();
 		createDSPool();
 		createDS(); //create the descriptor set
 	}
+
 	VkSampler createTS() { //create texture sampler
 		VkSampler textureSamp;
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
@@ -1249,6 +1251,25 @@ private:
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
+	void updateDescriptorSets() {
+		VkDescriptorBufferInfo bufferInfo{};
+		bufferInfo.buffer = uboBuffer;
+		bufferInfo.offset = 0;
+		bufferInfo.range = sizeof(UniformBufferObject);
+
+		std::vector<VkWriteDescriptorSet> descriptorWrites(descriptorSets.size());
+		for (size_t i = 0; i < descriptorSets.size(); i++) {
+			descriptorWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			descriptorWrites[i].dstSet = descriptorSets[i];
+			descriptorWrites[i].dstBinding = 0;
+			descriptorWrites[i].dstArrayElement = 0;
+			descriptorWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			descriptorWrites[i].descriptorCount = 1;
+			descriptorWrites[i].pBufferInfo = &bufferInfo;
+		}
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+	}
 
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
@@ -1256,8 +1277,10 @@ private:
 			drawF();
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
 			recreateVertexBuffer();
-			handleKeyboardInput(window);
-			updateUBO(cam);
+			handleKeyboardInput(window); //handle keyboard input to change cam position
+			updateUBO(cam); //update ubo matricies and populate the buffer
+			updateDescriptorSets();
+
 		}
 		vkDeviceWaitIdle(device);
 	}
@@ -1267,25 +1290,21 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
-			std::cout << "moving forward" << std::endl;
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * cos(cam.camRot.y);
-			std::cout << "moving backward" << std::endl;
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
 			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
-			std::cout << "moving left" << std::endl;
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
-			std::cout << "moving right" << std::endl;
 		}
 	}
 	void initVulkan() { //initializes Vulkan functions
@@ -1347,7 +1366,6 @@ private:
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-		vkDestroyBuffer(device, uboBuffer, nullptr);
 		vkFreeMemory(device, uboBufferMemory, nullptr);
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMem, nullptr);
