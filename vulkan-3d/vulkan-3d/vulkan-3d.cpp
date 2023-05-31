@@ -14,6 +14,7 @@
 #include <fstream>
 #include <array>
 #include <chrono>
+#include <unordered_map>
 #include "forms.h"
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
@@ -23,6 +24,15 @@ struct Vertex {
 	formulas::Vector3 col; // color r, g, b
 	formulas::Vector3 normal; // normal vector x, y, z
 	float alpha;
+
+	// default constructor:
+	Vertex()
+		: pos(formulas::Vector3(0.0f, 0.0f, 0.0f)),
+		tex(formulas::Vector2(0.0f, 0.0f)),
+		col(formulas::Vector3(0.0f, 0.0f, 0.0f)),
+		normal(formulas::Vector3(0.0f, 0.0f, 0.0f)),
+		alpha(0.0f)
+	{}
 
 	// constructor:
 	Vertex(const formulas::Vector3& position,
@@ -131,6 +141,68 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
+	void loadModels() { //load and populate models based on their paths
+		for (auto& object : objects) {
+			const std::string& filePath = object.pathToModel;
+
+			tinyobj::attrib_t attrib; // vertex data
+			std::vector<tinyobj::shape_t> shapes; // shapes in the model
+			std::vector<tinyobj::material_t> materials; // materials in the model
+			std::string warn, err;
+
+			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str()); // load the model from the struct
+
+			// error handling:
+			if (!warn.empty()) {
+				std::cout << "Warning: " << warn << std::endl;
+			}
+			if (!err.empty()) {
+				throw std::runtime_error(err);
+			}
+			if (!success) {
+				throw std::runtime_error("Failed to load OBJ file: " + filePath);
+			}
+			std::unordered_map<Vertex, uint32_t> uniqueVertices;
+
+			//population of the model:
+			for (const auto& shape : shapes) { // loop through all the shapes in the model
+				for (const auto& index : shape.mesh.indices) {
+					Vertex vertex;
+
+					vertex.pos = { // x y z
+						attrib.vertices[3 * index.vertex_index + 0],
+						attrib.vertices[3 * index.vertex_index + 1],
+						attrib.vertices[3 * index.vertex_index + 2]
+					};
+					vertex.tex = { //texture coordinates
+						attrib.texcoords[2 * index.texcoord_index + 0],
+						1.0f - attrib.texcoords[2 * index.texcoord_index + 1] // flip y-axis for vulkan
+					};
+					vertex.col = { // color
+					attrib.colors[3 * index.vertex_index + 0], // red
+					attrib.colors[3 * index.vertex_index + 1], // green
+					attrib.colors[3 * index.vertex_index + 2]  // blue
+					};
+					vertex.normal = { // normals
+						attrib.normals[3 * index.normal_index + 0],
+						attrib.normals[3 * index.normal_index + 1],
+						attrib.normals[3 * index.normal_index + 2]
+					};
+					vertex.alpha = 1.0f; // alpha
+
+					// find out if the vertex is unique:
+					if (uniqueVertices.count(vertex) == 0) { // if the vertex is unique, add it to the list of unique vertices!
+						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
+						object.vertices.push_back(vertex); // add the vertex to the list of vertices
+					}
+					object.indices.push_back(uniqueVertices[vertex]); // add the index of the vertex to the list of indices
+				}
+			}
+			std::cout << "Model loaded: " << filePath << std::endl;
+		}
+	}
+
+
 	void createInstance() {
 		VkApplicationInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
@@ -1295,6 +1367,7 @@ private:
 		pickDevice();
 		createLogicalDevice();
 		initQueues(); //sets the queue family indices such as graphics and presentation
+		loadModels(); //load the model data from the obj file
 		createSC(); //create swap chain
 		setupFences();
 		createSemaphores();
