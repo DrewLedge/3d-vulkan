@@ -443,7 +443,7 @@ private:
 		updateUBO(cam);
 	}
 
-	void updateUBO(camData cam) {
+	void updateUBO(camData cam) { // populate the UBO with the camera data
 		// convert matrices to flat arrays:
 		float modelFlat[16], viewFlat[16], projFlat[16];
 		convertMatrix(formulas::Matrix4::rotateX(1.0f).transpose(), modelFlat);
@@ -569,7 +569,6 @@ private:
 			vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 		}
 	}
-
 
 	void setupDescriptorSets() {
 		createDSLayout();
@@ -798,22 +797,22 @@ private:
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
-		attrDesc[0].format = VK_FORMAT_R32G32_SFLOAT;
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
 		attrDesc[0].offset = offsetof(Vertex, pos);
 
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
-		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for color
 		attrDesc[1].offset = offsetof(Vertex, col);
 
 		attrDesc[2].binding = 0;
 		attrDesc[2].location = 2;
-		attrDesc[2].format = VK_FORMAT_R32_SFLOAT;
+		attrDesc[2].format = VK_FORMAT_R32_SFLOAT; // 1 float for alpha
 		attrDesc[2].offset = offsetof(Vertex, alpha);
 
 		attrDesc[3].binding = 0;
 		attrDesc[3].location = 3;
-		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT;
+		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
 		attrDesc[3].offset = offsetof(Vertex, tex);
 
 
@@ -1132,7 +1131,6 @@ private:
 			}
 		}
 	}
-
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
@@ -1190,7 +1188,6 @@ private:
 		}
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 	}
-
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
 		//wait for the frame to be finished:
@@ -1240,6 +1237,7 @@ private:
 		}
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
+
 	void recreateVertexBuffer() {
 		vkDeviceWaitIdle(device);  // wait for all frames to finish
 		for (auto vertBuffer : vertBuffers) {
@@ -1251,25 +1249,6 @@ private:
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
-	void updateDescriptorSets() {
-		VkDescriptorBufferInfo bufferInfo{};
-		bufferInfo.buffer = uboBuffer;
-		bufferInfo.offset = 0;
-		bufferInfo.range = sizeof(UniformBufferObject);
-
-		std::vector<VkWriteDescriptorSet> descriptorWrites(descriptorSets.size());
-		for (size_t i = 0; i < descriptorSets.size(); i++) {
-			descriptorWrites[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWrites[i].dstSet = descriptorSets[i];
-			descriptorWrites[i].dstBinding = 0;
-			descriptorWrites[i].dstArrayElement = 0;
-			descriptorWrites[i].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			descriptorWrites[i].descriptorCount = 1;
-			descriptorWrites[i].pBufferInfo = &bufferInfo;
-		}
-
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-	}
 
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
@@ -1279,33 +1258,29 @@ private:
 			recreateVertexBuffer();
 			handleKeyboardInput(window); //handle keyboard input to change cam position
 			updateUBO(cam); //update ubo matricies and populate the buffer
-			updateDescriptorSets();
-
 		}
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		float cameraSpeed = 0.01f; // Adjust the speed as needed
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
 		}
-
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * cos(cam.camRot.y);
 		}
-
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
 			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
 		}
-
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
 		}
+		//mouse movement:
+		double xpos, ypos;
 	}
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();
