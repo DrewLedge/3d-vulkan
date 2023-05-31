@@ -17,35 +17,41 @@
 #include "forms.h"
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
-typedef struct Vertex {
+struct Vertex {
 	formulas::Vector3 pos; // position coordinates x, y, z
 	formulas::Vector2 tex; // texture coordinates u, v
 	formulas::Vector3 col; // color r, g, b
+	formulas::Vector3 normal; // normal vector x, y, z
 	float alpha;
 
 	// constructor:
 	Vertex(const formulas::Vector3& position,
 		const formulas::Vector2& texture,
 		const formulas::Vector3& color,
+		const formulas::Vector3& normalVector,
 		float alphaValue)
 		: pos(position),
 		tex(texture),
 		col(color),
+		normal(normalVector),
 		alpha(alphaValue)
 	{}
 };
+typedef struct {
+	VkSampler textureSampler;
+	VkImage textureImage;
+	VkDeviceMemory textureImageMemory;
+	VkImageView textureImageView;
+} Texture;
 
-std::vector<Vertex> triangle1vert = {
-	Vertex(formulas::Vector3(-0.2f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 1.0f, 1.0f), 1.0f),
-	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.0f, 1.0f), 1.0f),
-	Vertex(formulas::Vector3(0.0f, -0.5f, 0.0f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.0f, 1.0f), 1.0f)
-};
-
-std::vector<Vertex> triangle2vert = {
-	Vertex(formulas::Vector3(-1.0f, 0.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), 0.60f),
-	Vertex(formulas::Vector3(-0.3f, -1.0f, 0.0f), formulas::Vector2(0.0f, 0.0f), formulas::Vector3(1.0f, 0.7f, 0.60f), 0.60f),
-	Vertex(formulas::Vector3(0.3f, -0.8f, -0.5f), formulas::Vector2(1.0f, 1.0f), formulas::Vector3(0.0f, 0.2f, 0.60f), 0.60f)
-};
+typedef struct {
+	Texture texture;
+	std::vector<Vertex> vertices;
+	std::vector<uint32_t> indices;
+	std::string pathToModel; //i.e "models/cube.obj"
+} model;
+model model1 = { };
+std::vector<model> objects = { model1 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -60,7 +66,6 @@ struct camData {
 camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
 
 
-std::vector<std::vector<Vertex>>objects = { triangle1vert, triangle2vert };
 
 class Engine {
 public:
@@ -302,6 +307,7 @@ private:
 			details.formats.resize(formatCount);
 			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
 		}
+
 		uint32_t presentModeCount;
 		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr); //gets the number of present modes. this is the conditions for "swapping" images to the screen
 		if (presentModeCount != 0) {
