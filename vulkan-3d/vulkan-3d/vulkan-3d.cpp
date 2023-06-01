@@ -84,15 +84,13 @@ struct model {
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
-	std::string pathTexture; // i.e "textures/cube.mtl"
 
 	// default constructor:
 	model()
 		: texture(),
 		vertices(),
 		indices(),
-		pathObj("models/gear/Gear2.obj"), //default path
-		pathTexture("models/gear/Gear2.mtl")
+		pathObj("models/gear/Gear1.obj") //default path
 	{}
 };
 model model1 = {};
@@ -178,15 +176,12 @@ private:
 	void loadModels() { // loads models from .obj and .mtl files
 		for (auto& object : objects) {
 			const std::string& objFilePath = object.pathObj; // path to .obj file
-			const std::string& mtlFilePath = object.pathTexture; // path to .mtl file
-
+			const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1); // path to .mtl file
 			tinyobj::attrib_t attrib;
 			std::vector<tinyobj::shape_t> shapes;
 			std::vector<tinyobj::material_t> materials;
 			std::string warn, err;
-
-			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtlFilePath.c_str());
-
+			tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
 
 			if (!warn.empty()) {
 				std::cout << "Warning: " << warn << std::endl;
@@ -194,12 +189,8 @@ private:
 			if (!err.empty()) {
 				throw std::runtime_error(err);
 			}
-			if (!success) {
-				throw std::runtime_error("Failed to load OBJ file: " + objFilePath);
-				throw std::runtime_error("Failed to load MTL file: " + mtlFilePath);
-			}
 
-			std::vector<std::pair<Vertex, uint32_t>> uniqueVertices;
+			std::vector<std::pair<Vertex, uint32_t>> uniqueVertices; //this is way too slow, but it works for now lol
 
 			// load materials and texture data:
 			for (const auto& material : materials) {
@@ -212,7 +203,6 @@ private:
 			for (const auto& shape : shapes) {
 				for (const auto& index : shape.mesh.indices) {
 					Vertex vertex;
-
 					vertex.pos = {
 						attrib.vertices[3 * index.vertex_index + 0],
 						attrib.vertices[3 * index.vertex_index + 1],
@@ -243,7 +233,6 @@ private:
 							break;
 						}
 					}
-
 					if (isUnique) {
 						uniqueVertices.push_back({ vertex, static_cast<uint32_t>(object.vertices.size()) });
 						object.vertices.push_back(vertex);
@@ -254,6 +243,7 @@ private:
 			std::cout << "model loaded: " << objFilePath << std::endl;
 		}
 	}
+
 	void createInstance() {
 		VkApplicationInfo info{};
 		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
