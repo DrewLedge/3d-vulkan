@@ -105,7 +105,6 @@ struct Texture {
 		textureImageView(VK_NULL_HANDLE)
 	{}
 };
-
 struct model {
 	Texture texture;
 	std::vector<Vertex> vertices;
@@ -117,11 +116,13 @@ struct model {
 		: texture(),
 		vertices(),
 		indices(),
-		pathObj("models/gear/Gear1.obj") //default path
+		pathObj("")
 	{}
 };
+
 model model1 = {};
-std::vector<model> objects = { model1 };
+model model2 = {};
+std::vector<model> objects = { model1, model2 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -265,10 +266,12 @@ private:
 		}
 	}
 	void debugStruct(model stru) {
+		std::cout << " ----------------" << std::endl;
 		std::cout << "model: " << stru.pathObj << std::endl;
 		std::cout << "vertices: " << stru.vertices.size() << std::endl;
 		std::cout << "indices: " << stru.indices.size() << std::endl;
 		std::cout << "texture: " << stru.texture.diffuseTexturePath << std::endl;
+		std::cout << " ----------------" << std::endl;
 	}
 
 
@@ -1521,6 +1524,8 @@ private:
 	// 21. collision detection
 };
 int main() {
+	objects[0].pathObj = "models/gear/Gear1.obj";
+	objects[1].pathObj = "models/gear2/Gear2.obj";
 	Engine app;
 	try {
 		app.run();
