@@ -16,6 +16,7 @@
 #include <fstream> //allows to read and write files
 #include <array>
 #include <chrono> //time library
+#include <unordered_map>
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
@@ -55,6 +56,33 @@ struct Vertex {
 			std::abs(alpha - other.alpha) < epsilon;
 	}
 };
+
+struct vertHash {
+	size_t operator()(const Vertex& vertex) const {
+		size_t seed = 0;
+
+		// combine hashes for 'pos' using XOR and bit shifting:
+		seed ^= std::hash<float>()(vertex.pos.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.pos.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.pos.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+		seed ^= std::hash<float>()(vertex.tex.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.tex.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+		seed ^= std::hash<float>()(vertex.col.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.col.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.col.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+		seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+		seed ^= std::hash<float>()(vertex.alpha) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		return seed;
+	}
+};
+
+
 struct Texture {
 	VkSampler textureSampler;
 	VkImage textureImage;
@@ -77,7 +105,6 @@ struct Texture {
 		textureImageView(VK_NULL_HANDLE)
 	{}
 };
-
 
 struct model {
 	Texture texture;
@@ -173,10 +200,10 @@ private:
 	"VK_LAYER_KHRONOS_validation"
 	};
 
-	void loadModels() { // loads models from .obj and .mtl files
+	void loadModels() {
 		for (auto& object : objects) {
-			const std::string& objFilePath = object.pathObj; // path to .obj file
-			const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1); // path to .mtl file
+			const std::string& objFilePath = object.pathObj;
+			const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
 			tinyobj::attrib_t attrib;
 			std::vector<tinyobj::shape_t> shapes;
 			std::vector<tinyobj::material_t> materials;
@@ -190,16 +217,15 @@ private:
 				throw std::runtime_error(err);
 			}
 
-			std::vector<std::pair<Vertex, uint32_t>> uniqueVertices; //this is way too slow, but it works for now lol
+			// Use an unordered_map instead of a vector for storing unique vertices:
+			std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 
-			// load materials and texture data:
 			for (const auto& material : materials) {
-				object.texture.diffuseTexturePath = material.diffuse_texname; //for only rendering a 3d object with a texture, only diffuse texture is needed
+				object.texture.diffuseTexturePath = material.diffuse_texname;
 				std::cout << "Texture loaded successfully: " << object.texture.diffuseTexturePath << std::endl;
-				break; // only use 1 material for now
+				break;
 			}
 
-			// load vertices and indices:
 			for (const auto& shape : shapes) {
 				for (const auto& index : shape.mesh.indices) {
 					Vertex vertex;
@@ -213,9 +239,9 @@ private:
 						1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
 					};
 					vertex.col = {
-					attrib.colors[3 * index.vertex_index + 0],
-					attrib.colors[3 * index.vertex_index + 1],
-					attrib.colors[3 * index.vertex_index + 2]
+						attrib.colors[3 * index.vertex_index + 0],
+						attrib.colors[3 * index.vertex_index + 1],
+						attrib.colors[3 * index.vertex_index + 2]
 					};
 					vertex.normal = {
 						attrib.normals[3 * index.normal_index + 0],
@@ -224,25 +250,27 @@ private:
 					};
 					vertex.alpha = 1.0f;
 
-					// check if vertex is unique:
-					bool isUnique = true;
-					for (const auto& uniqueVertex : uniqueVertices) {
-						if (uniqueVertex.first == vertex) {
-							object.indices.push_back(uniqueVertex.second);
-							isUnique = false;
-							break;
-						}
-					}
-					if (isUnique) {
-						uniqueVertices.push_back({ vertex, static_cast<uint32_t>(object.vertices.size()) });
+					// Check if vertex is unique and add it to the map if it is:
+					if (uniqueVertices.count(vertex) == 0) {
+						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
 						object.vertices.push_back(vertex);
-						object.indices.push_back(static_cast<uint32_t>(object.vertices.size()) - 1);
 					}
+
+					object.indices.push_back(uniqueVertices[vertex]);
 				}
 			}
+
 			std::cout << "model loaded: " << objFilePath << std::endl;
+			debugStruct(object);
 		}
 	}
+	void debugStruct(model stru) {
+		std::cout << "model: " << stru.pathObj << std::endl;
+		std::cout << "vertices: " << stru.vertices.size() << std::endl;
+		std::cout << "indices: " << stru.indices.size() << std::endl;
+		std::cout << "texture: " << stru.texture.diffuseTexturePath << std::endl;
+	}
+
 
 	void createInstance() {
 		VkApplicationInfo info{};
