@@ -8,6 +8,12 @@ public:
 	struct Vector3 {
 		float x, y, z;
 		Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
+		bool operator==(const formulas::Vector3& other) const {
+			const float epsilon = 0.00001f;
+			return std::abs(x - other.x) < epsilon &&
+				std::abs(y - other.y) < epsilon &&
+				std::abs(z - other.z) < epsilon;
+		}
 		Vector3 translate(float tx, float ty, float tz) const {
 			return Vector3(x + tx, y + ty, z + tz);
 		}
@@ -36,6 +42,11 @@ public:
 	};
 	struct Vector2 {
 		float x, y;
+		bool operator==(const formulas::Vector2& other) const {
+			const float epsilon = 0.00001f;
+			return std::abs(x - other.x) < epsilon &&
+				std::abs(y - other.y) < epsilon;
+		}
 		Vector2(float x, float y) : x(x), y(y) {}
 	};
 	struct Matrix4 {

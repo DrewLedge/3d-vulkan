@@ -1,6 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "ext/stb_image.h" // library for loading images
-#include "ext/tiny_obj_loader.h"
+#include "ext/tiny_obj_loader.h" // load .obj and .mtl files
+#include "forms.h" // my header file with the math
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -11,11 +12,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
-#include <fstream>
+#include <fstream> //allows to read and write files
 #include <array>
-#include <chrono>
-#include <unordered_map>
-#include "forms.h"
+#include <chrono> //time library
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
@@ -46,6 +45,14 @@ struct Vertex {
 		normal(normalVector),
 		alpha(alphaValue)
 	{}
+	bool operator==(const Vertex& other) const {
+		const float epsilon = 0.00001f; // tolerance for floating point equality
+		return pos == other.pos &&
+			tex == other.tex &&
+			col == other.col &&
+			normal == other.normal &&
+			std::abs(alpha - other.alpha) < epsilon;
+	}
 };
 struct Texture {
 	VkSampler textureSampler;
@@ -101,8 +108,6 @@ struct camData {
 	formulas::Vector3 camRot; //pitch, yaw, roll
 };
 camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
-
-
 
 class Engine {
 public:
@@ -177,6 +182,7 @@ private:
 			std::vector<tinyobj::material_t> materials;
 			std::string warn, err;
 			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str());
+
 			if (!warn.empty()) {
 				std::cout << "Warning: " << warn << std::endl;
 			}
@@ -186,13 +192,15 @@ private:
 			if (!success) {
 				throw std::runtime_error("Failed to load OBJ file: " + filePath);
 			}
-			std::unordered_map<Vertex, uint32_t> uniqueVertices;
 
-			// load material textures:
+			std::vector<std::pair<Vertex, uint32_t>> uniqueVertices;
+
+			// load materials and texture data:
 			for (const auto& material : materials) {
 				object.texture.diffuseTexturePath = material.diffuse_texname; //for only rendering a 3d object with a texture, only diffuse texture is needed
 				break; // only use 1 material for now
 			}
+
 			// load vertices and indices:
 			for (const auto& shape : shapes) {
 				for (const auto& index : shape.mesh.indices) {
@@ -218,12 +226,22 @@ private:
 						attrib.normals[3 * index.normal_index + 2]
 					};
 					vertex.alpha = 1.0f;
+
 					// check if vertex is unique:
-					if (uniqueVertices.count(vertex) == 0) {
-						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
-						object.vertices.push_back(vertex);
+					bool isUnique = true;
+					for (const auto& uniqueVertex : uniqueVertices) {
+						if (uniqueVertex.first == vertex) {
+							object.indices.push_back(uniqueVertex.second);
+							isUnique = false;
+							break;
+						}
 					}
-					object.indices.push_back(uniqueVertices[vertex]);
+
+					if (isUnique) {
+						uniqueVertices.push_back({ vertex, static_cast<uint32_t>(object.vertices.size()) });
+						object.vertices.push_back(vertex);
+						object.indices.push_back(static_cast<uint32_t>(object.vertices.size()) - 1);
+					}
 				}
 			}
 			std::cout << "model loaded: " << filePath << std::endl;
