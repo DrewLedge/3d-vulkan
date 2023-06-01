@@ -1,4 +1,5 @@
 #define STB_IMAGE_IMPLEMENTATION
+#define TINYOBJLOADER_IMPLEMENTATION 
 #include "ext/stb_image.h" // library for loading images
 #include "ext/tiny_obj_loader.h" // load .obj and .mtl files
 #include "forms.h" // my header file with the math
@@ -90,8 +91,8 @@ struct model {
 		: texture(),
 		vertices(),
 		indices(),
-		pathObj(""),
-		pathTexture("")
+		pathObj("models/gear/Gear2.obj"), //default path
+		pathTexture("models/gear/Gear2.mtl")
 	{}
 };
 model model1 = {};
@@ -176,12 +177,16 @@ private:
 
 	void loadModels() { // loads models from .obj and .mtl files
 		for (auto& object : objects) {
-			const std::string& filePath = object.pathObj;
+			const std::string& objFilePath = object.pathObj; // path to .obj file
+			const std::string& mtlFilePath = object.pathTexture; // path to .mtl file
+
 			tinyobj::attrib_t attrib;
 			std::vector<tinyobj::shape_t> shapes;
 			std::vector<tinyobj::material_t> materials;
 			std::string warn, err;
-			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, filePath.c_str());
+
+			bool success = tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtlFilePath.c_str());
+
 
 			if (!warn.empty()) {
 				std::cout << "Warning: " << warn << std::endl;
@@ -190,7 +195,8 @@ private:
 				throw std::runtime_error(err);
 			}
 			if (!success) {
-				throw std::runtime_error("Failed to load OBJ file: " + filePath);
+				throw std::runtime_error("Failed to load OBJ file: " + objFilePath);
+				throw std::runtime_error("Failed to load MTL file: " + mtlFilePath);
 			}
 
 			std::vector<std::pair<Vertex, uint32_t>> uniqueVertices;
@@ -198,6 +204,7 @@ private:
 			// load materials and texture data:
 			for (const auto& material : materials) {
 				object.texture.diffuseTexturePath = material.diffuse_texname; //for only rendering a 3d object with a texture, only diffuse texture is needed
+				std::cout << "Texture loaded successfully: " << object.texture.diffuseTexturePath << std::endl;
 				break; // only use 1 material for now
 			}
 
@@ -244,7 +251,7 @@ private:
 					}
 				}
 			}
-			std::cout << "model loaded: " << filePath << std::endl;
+			std::cout << "model loaded: " << objFilePath << std::endl;
 		}
 	}
 	void createInstance() {
