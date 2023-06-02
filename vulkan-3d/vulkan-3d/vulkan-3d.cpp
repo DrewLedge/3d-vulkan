@@ -115,6 +115,8 @@ struct model {
 	formulas::Vector3 rotation;  // rotation of the model
 	formulas::Vector3 scale;     // scale of the model
 	float modelMatrix[16];
+	float projectionMatrix[16];
+	float viewMatrix[16];
 
 	// default constructor:
 	model()
@@ -229,11 +231,8 @@ private:
 
 			// Use an unordered_map instead of a vector for storing unique vertices:
 			std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-
 			for (const auto& material : materials) {
 				object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname;
-
-				std::cout << "Texture loaded successfully: " << object.texture.diffuseTexturePath << std::endl;
 				break;
 			}
 
@@ -271,7 +270,6 @@ private:
 				}
 			}
 
-			std::cout << "model loaded: " << objFilePath << std::endl;
 		}
 		for (auto& object : objects) {
 			debugStruct(object);
@@ -414,6 +412,7 @@ private:
 			}
 			i++;
 		}
+
 		return indices; //return the indices/position of the queue family that supports graphics
 	}
 
@@ -580,48 +579,54 @@ private:
 		return shaderModule;
 	}
 	void createUBO() {
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(UniformBufferObject);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &uboBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create UBO buffer!");
-		}
-
-		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, uboBuffer, &memoryRequirements);
-
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //find a memory type that is host visible and coherent
-
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &uboBufferMemory) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
-		}
-		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0); // bind the buffer to the memory
-	}
-	void calcModelMatrix(model& o) {
-		formulas::Matrix4 translation = formulas::Matrix4::translate(o.position.x, o.position.y, o.position.z);
-		formulas::Matrix4 rotation = formulas::Matrix4::rotate(o.rotation.x, o.rotation.y, o.rotation.z);
-		formulas::Matrix4 scale = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
-		formulas::Matrix4 modelMatrix = translation.multiply(rotation).multiply(scale);
-		convertMatrix(modelMatrix.transpose(), o.modelMatrix);
-	}
-	void updateUBO(const camData& cam, model& object) { // needs optimization later
+		uboBuffers.resize(objects.size());
+		uboBufferMemories.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
-			float viewFlat[16], projFlat[16];
-			convertMatrix(formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose(), viewFlat);
-			convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), projFlat);
-			projFlat[5] *= -1;
+			VkBufferCreateInfo bufferCreateInfo{};
+			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			bufferCreateInfo.size = sizeof(UniformBufferObject);
+			bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
+			if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &uboBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to create UBO buffer!");
+			}
+
+			VkMemoryRequirements memoryRequirements;
+			vkGetBufferMemoryRequirements(device, uboBuffers[i], &memoryRequirements);
+
+			VkMemoryAllocateInfo allocateInfo{};
+			allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			allocateInfo.allocationSize = memoryRequirements.size;
+			allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //find a memory type that is host visible and coherent
+
+			if (vkAllocateMemory(device, &allocateInfo, nullptr, &uboBufferMemories[i]) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to allocate memory for UBO buffer!");
+			}
+			vkBindBufferMemory(device, uboBuffers[i], uboBufferMemories[i], 0); // bind the buffer to the memory
+		}
+	}
+
+	void calcMatrixes(model& o) {
+		formulas::Matrix4 scale = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
+		formulas::Matrix4 rotation = formulas::Matrix4::rotate(o.rotation.x, o.rotation.y, o.rotation.z);
+		formulas::Matrix4 translation = formulas::Matrix4::translate(o.position.x, o.position.y, o.position.z);
+		formulas::Matrix4 modelMatrix = scale.multiply(rotation).multiply(translation); // scale * rotation * translation
+		convertMatrix(modelMatrix, o.modelMatrix); //convert to 1d array
+
+		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot);
+		convertMatrix(viewMatrix, o.viewMatrix);
+		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), o.projectionMatrix);
+		o.projectionMatrix[5] *= -1; //flip the y for vulkan
+	}
+	void updateUBO(const camData& cam) { // needs optimization later
+		for (size_t i = 0; i < objects.size(); i++) {
+			calcMatrixes(objects[i]);
 			// create and populate the UBO:
 			UniformBufferObject ubo;
-			memcpy(ubo.model, object.modelMatrix, sizeof(object.modelMatrix));
-			memcpy(ubo.view, viewFlat, sizeof(viewFlat));
-			memcpy(ubo.proj, projFlat, sizeof(projFlat));
+			memcpy(ubo.model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+			memcpy(ubo.view, objects[i].viewMatrix, sizeof(objects[i].viewMatrix));
+			memcpy(ubo.proj, objects[i].projectionMatrix, sizeof(objects[i].projectionMatrix));
 
 			// transfer the ubo struct into the buffer:
 			void* data;
@@ -630,7 +635,6 @@ private:
 			vkUnmapMemory(device, uboBufferMemories[i]);
 		}
 	}
-
 
 	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array
 		int index = 0;
@@ -1411,11 +1415,11 @@ private:
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			drawF();
-			currentFrame = (currentFrame + 1) % swapChainImages.size();
-			recreateVertexBuffer();
-			handleKeyboardInput(window); //handle keyboard input to change cam position
-			updateUBO(cam); //update ubo matricies and populate the buffer
+			//drawF();
+			//currentFrame = (currentFrame + 1) % swapChainImages.size();
+			//recreateVertexBuffer();
+			//handleKeyboardInput(window); //handle keyboard input to change cam position
+			//updateUBO(cam); //update ubo matricies and populate the buffer
 		}
 		vkDeviceWaitIdle(device);
 	}
@@ -1454,8 +1458,8 @@ private:
 		createVertexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
-		/*createGraphicsPipeline();
-		createFrameBuffer();
+		createGraphicsPipeline();
+		/*createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
 		*/
@@ -1501,7 +1505,6 @@ private:
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-		vkFreeMemory(device, uboBufferMemory, nullptr);
 		vkDestroyBuffer(device, stagingBuffer, nullptr);
 		vkFreeMemory(device, stagingBufferMem, nullptr);
 	}
