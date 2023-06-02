@@ -121,33 +121,34 @@ public:
 			result.m[3][3] = 1.0f;
 			return result;
 		}
-		static Matrix4 rotateX(float angle) {
+		static Matrix4 rotate(float angleX, float angleY, float angleZ) {
 			Matrix4 result;
-			float radians = angle * (PI / 180.0f);
-			result.m[1][1] = cosf(radians);
-			result.m[1][2] = -sinf(radians);
-			result.m[2][1] = sinf(radians);
-			result.m[2][2] = cosf(radians);
+			float radX = angleX * (PI / 180.0f);
+			float radY = angleY * (PI / 180.0f);
+			float radZ = angleZ * (PI / 180.0f);
+
+			Matrix4 rotX;
+			rotX.m[1][1] = cosf(radX);
+			rotX.m[1][2] = -sinf(radX);
+			rotX.m[2][1] = sinf(radX);
+			rotX.m[2][2] = cosf(radX);
+
+			Matrix4 rotY;
+			rotY.m[0][0] = cosf(radY);
+			rotY.m[0][2] = sinf(radY);
+			rotY.m[2][0] = -sinf(radY);
+			rotY.m[2][2] = cosf(radY);
+
+			Matrix4 rotZ;
+			rotZ.m[0][0] = cosf(radZ);
+			rotZ.m[0][1] = -sinf(radZ);
+			rotZ.m[1][0] = sinf(radZ);
+			rotZ.m[1][1] = cosf(radZ);
+
+			result = rotZ.multiply(rotY).multiply(rotX);
 			return result;
 		}
-		static Matrix4 rotateY(float angle) {
-			Matrix4 result;
-			float radians = angle * (PI / 180.0f);
-			result.m[0][0] = cosf(radians);
-			result.m[0][2] = sinf(radians);
-			result.m[2][0] = -sinf(radians);
-			result.m[2][2] = cosf(radians);
-			return result;
-		}
-		static Matrix4 rotateZ(float angle) {
-			Matrix4 result;
-			float radians = angle * (PI / 180.0f);
-			result.m[0][0] = cosf(radians);
-			result.m[0][1] = -sinf(radians);
-			result.m[1][0] = sinf(radians);
-			result.m[1][1] = cosf(radians);
-			return result;
-		}
+
 		Matrix4 transpose() const {
 			Matrix4 result;
 			for (int i = 0; i < 4; i++) {
@@ -181,18 +182,21 @@ public:
 			return result;
 		}
 
-		static Matrix4 worldmatrix(float tx, float ty, float tz, float rx, float ry, float rz, float sx, float sy, float sz) { //t = translation, r = rotation, s = scale
-			Matrix4 result = Matrix4::translate(tx, ty, tz).multiply(Matrix4::rotateX(rx)).multiply(Matrix4::rotateY(ry)).multiply(Matrix4::rotateZ(rz)).multiply(Matrix4::scale(sx, sy, sz));
+		static Matrix4 worldmatrix(float tx, float ty, float tz, float rx, float ry, float rz, float sx, float sy, float sz) {
+			// t = translation, r = rotation, s = scale
+			Matrix4 result = Matrix4::translate(tx, ty, tz)
+				.multiply(Matrix4::rotate(rx, ry, rz))
+				.multiply(Matrix4::scale(sx, sy, sz));
 			return result;
 		}
+
 		static Matrix4 viewmatrix(const Vector3& position, const Vector3& rotation) {
 			Matrix4 result;
-			result = Matrix4::rotateX(rotation.x)
-				.multiply(Matrix4::rotateY(rotation.y))
-				.multiply(Matrix4::rotateZ(rotation.z))
+			result = Matrix4::rotate(rotation.x, rotation.y, rotation.z)
 				.multiply(Matrix4::translate(-position.x, -position.y, -position.z));
 			return result;
 		}
+
 
 		static Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) {
 			Matrix4 result = world.multiply(view).multiply(projection);

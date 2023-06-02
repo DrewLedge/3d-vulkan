@@ -111,14 +111,25 @@ struct model {
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
 
+	formulas::Vector3 position;  // position of the model
+	formulas::Vector3 rotation;  // rotation of the model
+	formulas::Vector3 scale;     // scale of the model
+	float modelMatrix[16];
+
 	// default constructor:
 	model()
 		: texture(),
 		vertices(),
 		indices(),
-		pathObj("")
-	{}
+		pathObj(""),
+		position(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default position to origin
+		rotation(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+		scale(formulas::Vector3(1.0f, 1.0f, 1.0f))      // set default scale to 1 (original size)
+	{
+		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
+	}
 };
+
 
 model model1 = {};
 model model2 = {};
@@ -170,8 +181,8 @@ private:
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	std::vector<VkDescriptorSet> descriptorSets;
-	VkDeviceMemory uboBufferMemory;
-	VkBuffer uboBuffer;
+	std::vector<VkBuffer> uboBuffers;
+	std::vector<VkDeviceMemory> uboBufferMemories;
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -274,7 +285,6 @@ private:
 		std::cout << "texture: " << stru.texture.diffuseTexturePath << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
-
 
 	void createInstance() {
 		VkApplicationInfo info{};
@@ -592,29 +602,35 @@ private:
 			throw std::runtime_error("Failed to allocate memory for UBO buffer!");
 		}
 		vkBindBufferMemory(device, uboBuffer, uboBufferMemory, 0); // bind the buffer to the memory
-		updateUBO(cam);
+	}
+	void calcModelMatrix(model& o) {
+		formulas::Matrix4 translation = formulas::Matrix4::translate(o.position.x, o.position.y, o.position.z);
+		formulas::Matrix4 rotation = formulas::Matrix4::rotate(o.rotation.x, o.rotation.y, o.rotation.z);
+		formulas::Matrix4 scale = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
+		formulas::Matrix4 modelMatrix = translation.multiply(rotation).multiply(scale);
+		convertMatrix(modelMatrix.transpose(), o.modelMatrix);
+	}
+	void updateUBO(const camData& cam, model& object) { // needs optimization later
+		for (size_t i = 0; i < objects.size(); i++) {
+			float viewFlat[16], projFlat[16];
+			convertMatrix(formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose(), viewFlat);
+			convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), projFlat);
+			projFlat[5] *= -1;
+
+			// create and populate the UBO:
+			UniformBufferObject ubo;
+			memcpy(ubo.model, object.modelMatrix, sizeof(object.modelMatrix));
+			memcpy(ubo.view, viewFlat, sizeof(viewFlat));
+			memcpy(ubo.proj, projFlat, sizeof(projFlat));
+
+			// transfer the ubo struct into the buffer:
+			void* data;
+			vkMapMemory(device, uboBufferMemories[i], 0, sizeof(ubo), 0, &data);
+			memcpy(data, &ubo, sizeof(ubo));
+			vkUnmapMemory(device, uboBufferMemories[i]);
+		}
 	}
 
-	void updateUBO(camData cam) { // populate the UBO with the camera data
-		// convert matrices to flat arrays:
-		float modelFlat[16], viewFlat[16], projFlat[16];
-		convertMatrix(formulas::Matrix4::rotateX(1.0f).transpose(), modelFlat);
-		convertMatrix(formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot).transpose(), viewFlat);
-		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), projFlat);
-		projFlat[5] *= -1;
-
-		// create and populate the UBO:
-		UniformBufferObject ubo;
-		memcpy(ubo.model, modelFlat, sizeof(modelFlat));
-		memcpy(ubo.view, viewFlat, sizeof(viewFlat));
-		memcpy(ubo.proj, projFlat, sizeof(projFlat));
-
-		// transfer the ubo struct into the buffer:
-		void* data;
-		vkMapMemory(device, uboBufferMemory, 0, sizeof(ubo), 0, &data);
-		memcpy(data, &ubo, sizeof(ubo));
-		vkUnmapMemory(device, uboBufferMemory);
-	}
 
 	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array
 		int index = 0;
@@ -671,9 +687,6 @@ private:
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
 		createUBO();
-		bufferInfo.buffer = uboBuffer;
-		bufferInfo.offset = 0; //offset in the buffer where the UBO starts
-		bufferInfo.range = sizeof(UniformBufferObject);
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());
 
@@ -681,7 +694,9 @@ private:
 			createTexturedImage(objects[i].texture.diffuseTexturePath, objects[i]); // create the texture image from the diffuse texture path
 			createTextureImgView(objects[i]); // create the texture image view
 			createTS(objects[i]); // create the texture sampler
-
+			bufferInfo.buffer = uboBuffers[i];
+			bufferInfo.offset = 0; //offset in the buffer where the UBO starts
+			bufferInfo.range = sizeof(UniformBufferObject);
 			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfo.imageView = objects[i].texture.textureImageView;
 			imageInfo.sampler = objects[i].texture.textureSampler;
@@ -1188,7 +1203,7 @@ private:
 		vertBuffers.resize(objects.size());
 		vertBufferMems.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
-			VkDeviceSize bufferSize = sizeof(objects[i]) * objects[i].vertices.size(); //size of the buffer. formula is: size of the data * number of vertices
+			VkDeviceSize bufferSize = sizeof(Vertex) * objects[i].vertices.size(); //size of the buffer. formula is: size of the data * number of vertices
 			VkBufferCreateInfo bufferInf{};
 			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 			bufferInf.size = bufferSize; //size of the buffer
@@ -1436,7 +1451,7 @@ private:
 		setupFences();
 		createSemaphores();
 		createCommandPool();
-		//createVertexBuffer();
+		createVertexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		/*createGraphicsPipeline();
