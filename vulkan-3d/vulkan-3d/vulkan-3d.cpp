@@ -178,8 +178,13 @@ private:
 	uint32_t textureWidth = 512;
 	uint32_t textureHeight = 512;
 	unsigned char* imageData;
-	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 
+	VkImage depthImage;
+	VkDeviceMemory depthImageMemory;
+	VkImageView depthImageView;
+	VkFormat depthFormat;
+
+	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	std::vector<VkDescriptorSet> descriptorSets;
@@ -538,6 +543,75 @@ private:
 		}
 		return VK_PRESENT_MODE_FIFO_KHR;
 	}
+	VkFormat findDepthFormat() {
+		std::vector<VkFormat> candidates = {
+			VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT //the formats that are supported
+		};
+
+		for (VkFormat format : candidates) {
+			VkFormatProperties props;
+			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props); //get the format properties
+
+			if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) { // if the format has the depth stencil attachment bit
+				return format;
+			}
+		}
+		throw std::runtime_error("failed to find suitable depth format! :(");
+	}
+	void setupDepthResources() {
+		depthFormat = findDepthFormat();
+		createDepthImage();
+		depthImageView = createDepthView();
+	}
+	void createDepthImage() { //create the depth image and allocate memory for it
+		VkImageCreateInfo imageInfo{};
+		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		imageInfo.imageType = VK_IMAGE_TYPE_2D;  //2d image
+		imageInfo.extent.width = swapChainExtent.width;
+		imageInfo.extent.height = swapChainExtent.height;
+		imageInfo.extent.depth = 1;
+		imageInfo.mipLevels = 1; //no mip mapping for now lol
+		imageInfo.arrayLayers = 1;
+		imageInfo.format = depthFormat;
+		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //intiial layout doesn't matter
+		imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; //dstencil attachment
+		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; //no multisampling
+		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //only one queue family can access the image at a time
+
+		if (vkCreateImage(device, &imageInfo, nullptr, &depthImage) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create depth image!");
+		}
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, depthImage, &memRequirements);
+		VkMemoryAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &depthImageMemory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate depth image memory!");
+		}
+		vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+	}
+	VkImageView createDepthView() {
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image = depthImage;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = depthFormat;
+		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT; // only depth aspect of the image
+		viewInfo.subresourceRange.baseMipLevel = 0; //no mip mapping
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = 0;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		VkImageView imageView;
+		if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create depth image view!");
+		}
+
+		return imageView;
+	}
 	void createImageViews() {
 		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -575,6 +649,7 @@ private:
 
 		return shaderModule;
 	}
+
 	void createUBOs() {
 		uboBuffers.resize(objects.size());
 		uboBufferMemories.resize(objects.size());
@@ -832,8 +907,8 @@ private:
 		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
 		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		imageInf.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
+		imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
 		imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 		if (vkCreateImage(device, &imageInf, nullptr, &m.texture.textureImage) != VK_SUCCESS) {
@@ -1113,16 +1188,33 @@ private:
 		colorAttachmentRef.attachment = 0; //index of the attachment description in the attachment descriptions array
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; //layout to use for the attachment during the subpass
 
+		// define depth attachment:
+		VkAttachmentDescription depthAttachment{};
+		depthAttachment.format = depthFormat;
+		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference depthAttachmentRef{};
+		depthAttachmentRef.attachment = 1;
+		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; //type of pipeline to bind to
 		subpass.colorAttachmentCount = 1; //number of color attachments
 		subpass.pColorAttachments = &colorAttachmentRef; //array of color attachment references
+		subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
 		//define the render pass
+		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInf.attachmentCount = 1; //number of attachments
-		renderPassInf.pAttachments = &colorAttachment; //array of attachments
+		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1; //number of subpasses
 		renderPassInf.pSubpasses = &subpass; //array of subpasses
 		VkResult RenderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
@@ -1282,9 +1374,14 @@ private:
 			renderPassInfo.framebuffer = swapChainFramebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
-			VkClearValue clearColor = { 0.68f, 0.85f, 0.90f, 1.0f }; //light blue
-			renderPassInfo.clearValueCount = 1; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
-			renderPassInfo.pClearValues = &clearColor;
+			std::array<VkClearValue, 2> clearValues = {
+		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
+		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
+			};
+
+			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+			renderPassInfo.pClearValues = clearValues.data();
+
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
@@ -1330,12 +1427,15 @@ private:
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-			VkImageView attachments[] = { swapChainImageViews[i] }; //array of attachments
+			std::array<VkImageView, 2> attachments = {
+				swapChainImageViews[i],
+				depthImageView
+			}; //array of attachments
 			VkFramebufferCreateInfo framebufferInf{};
 			framebufferInf.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 			framebufferInf.renderPass = renderPass; //render pass that this framebuffer will be compatible with
-			framebufferInf.attachmentCount = 1; //attachment is the image from swap chain
-			framebufferInf.pAttachments = attachments; //array of attachments
+			framebufferInf.attachmentCount = static_cast<uint32_t>(attachments.size()); //attachment count now includes color and depth attachments
+			framebufferInf.pAttachments = attachments.data(); //array of attachments
 			framebufferInf.width = swapChainExtent.width; //width of the framebuffer
 			framebufferInf.height = swapChainExtent.height; //height of the framebuffer
 			framebufferInf.layers = 1; //1 means that each image only has one layer and there is no stereoscopic 3D
@@ -1345,6 +1445,7 @@ private:
 			}
 		}
 	}
+
 	void createSemaphores() {
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -1507,6 +1608,7 @@ private:
 		createIndexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
+		setupDepthResources();
 		createGraphicsPipeline();
 		createFrameBuffer();
 		createCommandBuffer();
@@ -1574,11 +1676,12 @@ private:
 	// 14. texture image (done)
 	// 15. texture sampler (done)
 	// 16. descriptor sett (done)
-	// 17. convert to 3d 
-	// 18. lighting
-	// 19. levels and objects
-	// 20. switch to GLM isntead of custom formulas
-	// 21. collision detection
+	// 17. convert to 3d  (done)
+	// 18. mip mapping and optimizations
+	// 19. lighting
+	// 20. shadows
+	// 21. skybox
+	// 22. collision detection
 };
 int main() {
 	objects[0].pathObj = "models/gear/Gear1.obj";
