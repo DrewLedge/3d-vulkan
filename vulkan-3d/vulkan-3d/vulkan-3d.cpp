@@ -135,7 +135,7 @@ struct model {
 
 model model1 = {};
 model model2 = {};
-std::vector<model> objects = { model1, model2 };
+std::vector<model> objects = { model1 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -221,21 +221,18 @@ private:
 			std::vector<tinyobj::material_t> materials;
 			std::string warn, err;
 			tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
-
 			if (!warn.empty()) {
 				std::cout << "Warning: " << warn << std::endl;
 			}
 			if (!err.empty()) {
 				throw std::runtime_error(err);
 			}
-
 			// Use an unordered_map instead of a vector for storing unique vertices:
 			std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 			for (const auto& material : materials) {
 				object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname;
 				break;
 			}
-
 			for (const auto& shape : shapes) {
 				for (const auto& index : shape.mesh.indices) {
 					Vertex vertex;
@@ -259,13 +256,11 @@ private:
 						attrib.normals[3 * index.normal_index + 2]
 					};
 					vertex.alpha = 1.0f;
-
 					// Check if vertex is unique and add it to the map if it is:
 					if (uniqueVertices.count(vertex) == 0) {
 						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
 						object.vertices.push_back(vertex);
 					}
-
 					object.indices.push_back(uniqueVertices[vertex]);
 				}
 			}
@@ -578,7 +573,7 @@ private:
 
 		return shaderModule;
 	}
-	void createUBO() {
+	void createUBOs() {
 		uboBuffers.resize(objects.size());
 		uboBufferMemories.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -608,10 +603,10 @@ private:
 	}
 
 	void calcMatrixes(model& o) {
-		formulas::Matrix4 scale = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
+		formulas::Matrix4 s = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
 		formulas::Matrix4 rotation = formulas::Matrix4::rotate(o.rotation.x, o.rotation.y, o.rotation.z);
 		formulas::Matrix4 translation = formulas::Matrix4::translate(o.position.x, o.position.y, o.position.z);
-		formulas::Matrix4 modelMatrix = scale.multiply(rotation).multiply(translation); // scale * rotation * translation
+		formulas::Matrix4 modelMatrix = s.multiply(rotation).multiply(translation); // scale * rotation * translation
 		convertMatrix(modelMatrix, o.modelMatrix); //convert to 1d array
 
 		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot);
@@ -622,6 +617,7 @@ private:
 	void updateUBO(const camData& cam) { // needs optimization later
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcMatrixes(objects[i]);
+
 			// create and populate the UBO:
 			UniformBufferObject ubo;
 			memcpy(ubo.model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
@@ -635,8 +631,7 @@ private:
 			vkUnmapMemory(device, uboBufferMemories[i]);
 		}
 	}
-
-	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array
+	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		int index = 0;
 		for (int column = 0; column < 4; column++) {
 			for (int row = 0; row < 4; row++) {
@@ -678,7 +673,7 @@ private:
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; //free the descriptor sets when the pool is destroyed
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
 		poolInfo.maxSets = static_cast<uint32_t>(objects.size());
@@ -690,7 +685,7 @@ private:
 
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
-		createUBO();
+		createUBOs();
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());
 
@@ -1049,9 +1044,9 @@ private:
 		dStencil.front.compareMask = 0; // 0 means don't compare against anything
 		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
 		dStencil.front.reference = 0; //reference value to use for the stencil test
-		dStencil.back.failOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.failOp = VK_STENCIL_OP_KEEP; // what to do if the stencil test fails
 		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP; //what to do if the stencil test passes, but the depth test fails
 		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
 		dStencil.back.compareMask = 0;
 		dStencil.back.writeMask = 0;
@@ -1132,7 +1127,6 @@ private:
 		if (RenderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
 		}
-		std::cout << " Render pass created successfully" << std::endl;
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -1256,7 +1250,7 @@ private:
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
 			VkClearValue clearColor = { 0.68f, 0.85f, 0.90f, 1.0f }; //light blue
-			renderPassInfo.clearValueCount = 2; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
+			renderPassInfo.clearValueCount = 1; // 1=clear value is a color, 2 = clear value is a depth/stencil buffer, 0 = no attachments to clear
 			renderPassInfo.pClearValues = &clearColor;
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -1415,16 +1409,19 @@ private:
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			//drawF();
-			//currentFrame = (currentFrame + 1) % swapChainImages.size();
-			//recreateVertexBuffer();
-			//handleKeyboardInput(window); //handle keyboard input to change cam position
-			//updateUBO(cam); //update ubo matricies and populate the buffer
+			drawF();
+			currentFrame = (currentFrame + 1) % swapChainImages.size();
+			recreateVertexBuffer();
+			handleKeyboardInput(window); //handle keyboard input to change cam position
+			updateUBO(cam); //update ubo matricies and populate the buffer
 		}
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.01f; // Adjust the speed as needed
+		float cameraSpeed = 0.003f; // Adjust the speed as needed
+		float cameraRotationSpeed = 0.01f;
+
+		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
@@ -1441,8 +1438,19 @@ private:
 			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
 		}
-		//mouse movement:
-		double xpos, ypos;
+		// camera rotation
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+			cam.camRot.x -= cameraRotationSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+			cam.camRot.x += cameraRotationSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+			cam.camRot.y += cameraRotationSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+			cam.camRot.y -= cameraRotationSpeed;
+		}
 	}
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();
@@ -1459,10 +1467,9 @@ private:
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		createGraphicsPipeline();
-		/*createFrameBuffer();
+		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
-		*/
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 	void cleanup() { //FIX
@@ -1534,7 +1541,6 @@ private:
 };
 int main() {
 	objects[0].pathObj = "models/gear/Gear1.obj";
-	objects[1].pathObj = "models/gear2/Gear2.obj";
 	Engine app;
 	try {
 		app.run();
