@@ -126,7 +126,7 @@ struct model {
 		pathObj(""),
 		position(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default position to origin
 		rotation(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-		scale(formulas::Vector3(1.0f, 1.0f, 1.0f))      // set default scale to 1 (original size)
+		scale(formulas::Vector3(0.1f, 0.1f, 0.1f))
 	{
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
@@ -135,7 +135,7 @@ struct model {
 
 model model1 = {};
 model model2 = {};
-std::vector<model> objects = { model1 };
+std::vector<model> objects = { model1, model2 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -198,6 +198,8 @@ private:
 	VkSemaphore renderFinishedSemaphore;
 	std::vector<VkBuffer> vertBuffers;
 	std::vector<VkDeviceMemory> vertBufferMems;
+	std::vector<VkBuffer> indBuffers;
+	std::vector<VkDeviceMemory> indBufferMems;
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	formulas formula;
@@ -1228,6 +1230,37 @@ private:
 			vkUnmapMemory(device, vertBufferMems[i]);
 		}
 	}
+	void createIndexBuffer() {
+		indBuffers.resize(objects.size());
+		indBufferMems.resize(objects.size());
+		for (size_t i = 0; i < objects.size(); i++) {
+			VkDeviceSize bufferSize = sizeof(uint32_t) * objects[i].indices.size(); //size of the buffer. formula is: size of the data * number of indices
+			VkBufferCreateInfo bufferInf{};
+			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			bufferInf.size = bufferSize; //size of the buffer
+			bufferInf.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT; //buffer will be used as a index buffer
+			bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
+			if (vkCreateBuffer(device, &bufferInf, nullptr, &indBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create index buffer!");
+			}
+			VkMemoryRequirements memRequirements;
+			vkGetBufferMemoryRequirements(device, indBuffers[i], &memRequirements); //get the memory requirements for the index buffer
+			VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
+			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			allocInf.allocationSize = memRequirements.size;
+
+			//params are: memory requirements, properties of the memory, and the memory type we are looking for
+			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //bitwise OR the memory properties to find the memory type
+			if (vkAllocateMemory(device, &allocInf, nullptr, &indBufferMems[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to allocate index buffer memory!");
+			}
+			vkBindBufferMemory(device, indBuffers[i], indBufferMems[i], 0); //bind the index buffer to the index buffer memory
+			void* data;
+			vkMapMemory(device, indBufferMems[i], 0, bufferSize, 0, &data);
+			memcpy(data, objects[i].indices.data(), bufferSize);
+			vkUnmapMemory(device, indBufferMems[i]);
+		}
+	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
@@ -1269,6 +1302,13 @@ private:
 				VkDeviceSize offsets[] = { 0 };
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 
+				if (j >= indBuffers.size()) {
+					std::cerr << "Warning: missing index buffer for object " << j + 1 << std::endl;
+					continue;
+				}
+				VkBuffer indexBuffersArray[] = { indBuffers[j] };
+				vkCmdBindIndexBuffer(commandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
+
 				// ensure object size is correct:
 				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].vertices.size());
 				if (objectVertexCount == 0) {
@@ -1276,8 +1316,8 @@ private:
 					continue;
 				}
 
+				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
 
-				vkCmdDraw(commandBuffers[i], objectVertexCount, 1, 0, 0);
 			}
 
 			vkCmdEndRenderPass(commandBuffers[i]);
@@ -1423,12 +1463,12 @@ private:
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
-			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
-		}
-		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * sin(cam.camRot.y);
 			cam.camPos.z += cameraSpeed * cos(cam.camRot.y);
+		}
+		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
@@ -1464,6 +1504,7 @@ private:
 		createSemaphores();
 		createCommandPool();
 		createVertexBuffer();
+		createIndexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		createGraphicsPipeline();
@@ -1541,6 +1582,7 @@ private:
 };
 int main() {
 	objects[0].pathObj = "models/gear/Gear1.obj";
+	objects[1].pathObj = "models/gear2/Gear2.obj";
 	Engine app;
 	try {
 		app.run();
