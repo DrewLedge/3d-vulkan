@@ -393,6 +393,21 @@ private:
 		case VK_ERROR_OUT_OF_DATE_KHR: return "VK_ERROR_OUT_OF_DATE_KHR";
 		case VK_ERROR_SURFACE_LOST_KHR: return "VK_ERROR_SURFACE_LOST_KHR";
 		case VK_SUBOPTIMAL_KHR: return "VK_SUBOPTIMAL_KHR";
+		case VK_ERROR_NATIVE_WINDOW_IN_USE_KHR: return "VK_ERROR_NATIVE_WINDOW_IN_USE_KHR";
+		case VK_ERROR_VALIDATION_FAILED_EXT: return "VK_ERROR_VALIDATION_FAILED_EXT";
+		case VK_ERROR_INVALID_SHADER_NV: return "VK_ERROR_INVALID_SHADER_NV";
+		case VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT: return "VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT";
+		case VK_ERROR_FRAGMENTATION_EXT: return "VK_ERROR_FRAGMENTATION_EXT";
+		case VK_ERROR_NOT_PERMITTED_EXT: return "VK_ERROR_NOT_PERMITTED_EXT";
+		case VK_ERROR_INVALID_DEVICE_ADDRESS_EXT: return "VK_ERROR_INVALID_DEVICE_ADDRESS_EXT";
+		case VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT: return "VK_ERROR_FULL_SCREEN_EXCLUSIVE_MODE_LOST_EXT";
+		case VK_THREAD_IDLE_KHR: return "VK_THREAD_IDLE_KHR";
+		case VK_THREAD_DONE_KHR: return "VK_THREAD_DONE_KHR";
+		case VK_OPERATION_DEFERRED_KHR: return "VK_OPERATION_DEFERRED_KHR";
+		case VK_OPERATION_NOT_DEFERRED_KHR: return "VK_OPERATION_NOT_DEFERRED_KHR";
+		case VK_PIPELINE_COMPILE_REQUIRED_EXT: return "VK_PIPELINE_COMPILE_REQUIRED_EXT";
+		case VK_RESULT_MAX_ENUM: return "VK_RESULT_MAX_ENUM";
+
 		default: return "Unknown VkResult";
 		}
 	}
@@ -1358,14 +1373,11 @@ private:
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 			beginInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
-
 			vkResetCommandBuffer(commandBuffers[i], 0);
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-
 			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport to already existing viewport state from the pipeline
-
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = renderPass;
@@ -1376,14 +1388,10 @@ private:
 		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
 		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
 			};
-
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
-
-
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
-
 			for (size_t j = 0; j < objects.size(); j++) {
 				// bind the descriptor set for each object (each set is a different object):
 				VkDescriptorSet dSets[] = { descriptorSets[j] };
@@ -1392,7 +1400,6 @@ private:
 					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
 					continue;
 				}
-
 				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
 				VkDeviceSize offsets[] = { 0 };
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
@@ -1410,13 +1417,9 @@ private:
 					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
 					continue;
 				}
-
 				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
-
 			}
-
 			vkCmdEndRenderPass(commandBuffers[i]);
-
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
@@ -1474,7 +1477,6 @@ private:
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
-		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
@@ -1485,11 +1487,11 @@ private:
 	}
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
-		//wait for the frame to be finished:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
+			vkDeviceWaitIdle(device);
 			recreateSwap();
 			return;
 		}
@@ -1525,6 +1527,7 @@ private:
 		result = vkQueuePresentKHR(presentQueue, &presentInf);
 		//check if the swap chain is out of date (window was resized, etc):
 		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+			vkDeviceWaitIdle(device);
 			recreateSwap();
 		}
 		else if (result != VK_SUCCESS) {

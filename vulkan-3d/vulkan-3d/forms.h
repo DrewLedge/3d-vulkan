@@ -17,28 +17,6 @@ public:
 		Vector3 translate(float tx, float ty, float tz) const {
 			return Vector3(x + tx, y + ty, z + tz);
 		}
-		Vector3 add(const Vector3& other) const { //add two vectors
-			return Vector3(x + other.x, y + other.y, z + other.z);
-		}
-		Vector3 subtract(const Vector3& other) const {
-			return Vector3(x - other.x, y - other.y, z - other.z);
-		}
-		float dotproduct(const Vector3& other) const {
-			return x * other.x + y * other.y + z * other.z;
-		}
-		Vector3 scalarmult(float scalar) const { //multiplies a vector by a scalar
-			return Vector3(x * scalar, y * scalar, z * scalar);
-		}
-		Vector3 crossproduct(const Vector3& other) const { //cross product of two vectors
-			return Vector3(y * other.z - z * other.y, z * other.x - x * other.z, x * other.y - y * other.x);
-		}
-		float length() const {
-			return sqrtf(x * x + y * y + z * z);
-		}
-		Vector3 normalize() const {
-			float len = length();
-			return Vector3(x / len, y / len, z / len);
-		}
 	};
 	struct Vector2 {
 		float x, y;
