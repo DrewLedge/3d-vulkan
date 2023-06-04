@@ -11,12 +11,13 @@
 #include <vector>
 #include <string>
 #include <iostream>
-#include <stdexcept>
 #include <cstdlib>
 #include <fstream> //allows to read and write files
 #include <array>
 #include <chrono> //time library
 #include <unordered_map>
+#include <mutex>
+
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
@@ -32,7 +33,7 @@ struct Vertex {
 		tex(formulas::Vector2(0.0f, 0.0f)),
 		col(formulas::Vector3(0.0f, 0.0f, 0.0f)),
 		normal(formulas::Vector3(0.0f, 0.0f, 0.0f)),
-		alpha(1.0f)
+		alpha(0.95f)
 	{}
 
 	// constructor:
@@ -192,7 +193,9 @@ private:
 	std::vector<VkDeviceMemory> uboBufferMemories;
 
 	VkPipelineLayout pipelineLayout;
-	VkPipeline graphicsPipeline;
+	VkPipeline opaquePipeline;
+	VkPipeline transparentPipeline;
+
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
 	VkRenderPass renderPass;
@@ -220,61 +223,86 @@ private:
 	};
 
 	void loadModels() {
+		std::vector<std::thread> threads;
+		std::mutex mtx;
+
+		// parallel loading using multiple threads:
 		for (auto& object : objects) {
-			const std::string& objFilePath = object.pathObj;
-			const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
-			tinyobj::attrib_t attrib;
-			std::vector<tinyobj::shape_t> shapes;
-			std::vector<tinyobj::material_t> materials;
-			std::string warn, err;
-			tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
-			if (!warn.empty()) {
-				std::cout << "Warning: " << warn << std::endl;
-			}
-			if (!err.empty()) {
-				throw std::runtime_error(err);
-			}
-			// Use an unordered_map instead of a vector for storing unique vertices:
-			std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-			for (const auto& material : materials) {
-				object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname;
-				break;
-			}
-			for (const auto& shape : shapes) {
-				for (const auto& index : shape.mesh.indices) {
-					Vertex vertex;
-					vertex.pos = {
-						attrib.vertices[3 * index.vertex_index + 0],
-						attrib.vertices[3 * index.vertex_index + 1],
-						attrib.vertices[3 * index.vertex_index + 2]
-					};
-					vertex.tex = {
-						attrib.texcoords[2 * index.texcoord_index + 0],
-						1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-					};
-					vertex.col = {
-						attrib.colors[3 * index.vertex_index + 0],
-						attrib.colors[3 * index.vertex_index + 1],
-						attrib.colors[3 * index.vertex_index + 2]
-					};
-					vertex.normal = {
-						attrib.normals[3 * index.normal_index + 0],
-						attrib.normals[3 * index.normal_index + 1],
-						attrib.normals[3 * index.normal_index + 2]
-					};
-					// Check if vertex is unique and add it to the map if it is:
-					if (uniqueVertices.count(vertex) == 0) {
-						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
-						object.vertices.push_back(vertex);
-					}
-					object.indices.push_back(uniqueVertices[vertex]);
+			threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
+				const std::string& objFilePath = object.pathObj;
+				const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
+				tinyobj::attrib_t attrib;
+				std::vector<tinyobj::shape_t> shapes;
+				std::vector<tinyobj::material_t> materials;
+				std::string warn, err;
+				tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
+				if (!warn.empty()) {
+					std::cout << "Warning: " << warn << std::endl;
 				}
-			}
+				if (!err.empty()) {
+					throw std::runtime_error(err);
+				}
+				// Use an unordered_map instead of a vector for storing unique vertices:
+				std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
+
+				std::vector<Vertex> tempVertices;
+				std::vector<uint32_t> tempIndices;
+
+				// reserve memory for vectors:
+				tempVertices.reserve(attrib.vertices.size() / 3);
+				tempIndices.reserve(attrib.vertices.size() / 3);
+
+				for (const auto& material : materials) {
+					object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname; //only diffuse texture is needed for now
+					break;
+				}
+				for (const auto& shape : shapes) {
+					for (const auto& index : shape.mesh.indices) {
+						Vertex vertex;
+						vertex.pos = {
+							attrib.vertices[3 * index.vertex_index + 0],
+							attrib.vertices[3 * index.vertex_index + 1],
+							attrib.vertices[3 * index.vertex_index + 2]
+						};
+						vertex.tex = {
+							attrib.texcoords[2 * index.texcoord_index + 0],
+							1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+						};
+						vertex.col = {
+							attrib.colors[3 * index.vertex_index + 0],
+							attrib.colors[3 * index.vertex_index + 1],
+							attrib.colors[3 * index.vertex_index + 2]
+						};
+						vertex.normal = {
+							attrib.normals[3 * index.normal_index + 0],
+							attrib.normals[3 * index.normal_index + 1],
+							attrib.normals[3 * index.normal_index + 2]
+						};
+						// Check if vertex is unique and add it to the map if it is:
+						if (uniqueVertices.count(vertex) == 0) {
+							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+							tempVertices.push_back(std::move(vertex));
+						}
+						tempIndices.push_back(uniqueVertices[vertex]);
+					}
+				}
+
+				// batch insert vertices and indices into object:
+				mtx.lock();
+				object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
+				object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
+				mtx.unlock();
+				}));
 		}
+		for (auto& t : threads) {
+			t.join();
+		}
+
 		for (auto& object : objects) {
 			debugStruct(object);
 		}
 	}
+
 	void debugStruct(model stru) {
 		std::cout << " ----------------" << std::endl;
 		std::cout << "model: " << stru.pathObj << std::endl;
@@ -1020,7 +1048,7 @@ private:
 		fragShaderModule = createShaderModule(fragShaderCode);
 	}
 
-	void createGraphicsPipeline() {
+	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects :)
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1249,15 +1277,94 @@ private:
 		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = pipelineLayout;
 		pipelineInf.renderPass = renderPass;
-		pipelineInf.subpass = 0; // Index of the subpass where this graphics pipeline is to be used
-		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // says there is no base pipeline
+		pipelineInf.subpass = 0;
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &opaquePipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
-		std::cout << "Graphics Pipeline Created Successfully!" << std::endl;
+		std::cout << "Opaque Graphics Pipeline Created Successfully!" << std::endl;
+		createGraphicsPipelineTransparent(device, vertexInputInfo, inputAssem, vpState, rasterizer, multiSamp, dynamicState, pipelineLayout, renderPass, stages);
+
 	}
+
+	void createGraphicsPipelineTransparent(VkDevice device,
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo, VkPipelineInputAssemblyStateCreateInfo inputAssem, VkPipelineViewportStateCreateInfo vpState,
+		VkPipelineRasterizationStateCreateInfo rasterizer, VkPipelineMultisampleStateCreateInfo multiSamp,
+		VkPipelineDynamicStateCreateInfo dynamicState, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkPipelineShaderStageCreateInfo shaderStages[])
+	{
+		//transparent depth stencil setup
+		VkPipelineDepthStencilStateCreateInfo dStencil{};
+		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		dStencil.depthTestEnable = VK_TRUE;
+		dStencil.depthWriteEnable = VK_FALSE; //no depth writing for transparent objects
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //comparison operator that allows for overwriting of new depth values
+		dStencil.depthBoundsTestEnable = VK_FALSE; //if true, depth values are clamped to min and max depth bounds
+		dStencil.minDepthBounds = 0.0f; //min depth bound
+		dStencil.maxDepthBounds = 1.0f;
+		dStencil.stencilTestEnable = VK_FALSE; //enable stencil testing
+		dStencil.front.failOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test fails
+		dStencil.front.passOp = VK_STENCIL_OP_KEEP; // stencil operation to perform if the stencil test passes
+		dStencil.front.depthFailOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test passes, but the depth test fails
+		dStencil.front.compareOp = VK_COMPARE_OP_ALWAYS; //comparison operator to use for the stencil test
+		dStencil.front.compareMask = 0; // 0 means don't compare against anything
+		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
+		dStencil.front.reference = 0; //reference value to use for the stencil test
+		dStencil.back.failOp = VK_STENCIL_OP_KEEP; // what to do if the stencil test fails
+		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
+		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP; //what to do if the stencil test passes, but the depth test fails
+		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
+		dStencil.back.compareMask = 0;
+		dStencil.back.writeMask = 0;
+		dStencil.back.reference = 0;
+
+		//transparent color blending setup
+		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
+		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		colorBA.blendEnable = VK_TRUE; //enable blending
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for color channels
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
+		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for alpha channel
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.alphaBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
+		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
+		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBS.logicOpEnable = VK_FALSE; //doesnt apply bitwise operation to blending
+		colorBS.logicOp = VK_LOGIC_OP_COPY;
+		colorBS.attachmentCount = 1; //number of color blend attachments
+		colorBS.pAttachments = &colorBA; //array of color blend attachments
+		colorBS.blendConstants[0] = 0.0f; //constant values to use in blending operations
+		colorBS.blendConstants[1] = 0.0f;
+		colorBS.blendConstants[2] = 0.0f;
+		colorBS.blendConstants[3] = 0.0f;
+
+		VkGraphicsPipelineCreateInfo pipelineInf{};
+		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInf.stageCount = 2; // Vertex and fragment shaders
+		pipelineInf.pStages = shaderStages;
+		pipelineInf.pVertexInputState = &vertexInputInfo;
+		pipelineInf.pInputAssemblyState = &inputAssem;
+		pipelineInf.pViewportState = &vpState;
+		pipelineInf.pRasterizationState = &rasterizer;
+		pipelineInf.pMultisampleState = &multiSamp;
+		pipelineInf.pDepthStencilState = &dStencil;
+		pipelineInf.pColorBlendState = &colorBS;
+		pipelineInf.pDynamicState = &dynamicState;
+		pipelineInf.layout = pipelineLayout;
+		pipelineInf.renderPass = renderPass;
+		pipelineInf.subpass = 0;
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE;
+		pipelineInf.basePipelineIndex = -1;
+
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &transparentPipeline) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create transparent graphics pipeline!");
+		}
+		std::cout << "Transparent Graphics Pipeline Created Successfully!" << std::endl;
+	}
+
+
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
 		VkFenceCreateInfo fenceInfo{};
@@ -1377,6 +1484,7 @@ private:
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
+
 			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport to already existing viewport state from the pipeline
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1384,14 +1492,18 @@ private:
 			renderPassInfo.framebuffer = swapChainFramebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
+
 			std::array<VkClearValue, 2> clearValues = {
 		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
 		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
 			};
+
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
+
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline); // bind the graphics pipeline to the command buffer
+
 			for (size_t j = 0; j < objects.size(); j++) {
 				// bind the descriptor set for each object (each set is a different object):
 				VkDescriptorSet dSets[] = { descriptorSets[j] };
@@ -1400,6 +1512,7 @@ private:
 					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
 					continue;
 				}
+
 				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
 				VkDeviceSize offsets[] = { 0 };
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
@@ -1408,6 +1521,7 @@ private:
 					std::cerr << "Warning: missing index buffer for object " << j + 1 << std::endl;
 					continue;
 				}
+
 				VkBuffer indexBuffersArray[] = { indBuffers[j] };
 				vkCmdBindIndexBuffer(commandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
 
@@ -1417,9 +1531,11 @@ private:
 					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
 					continue;
 				}
+
 				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
 			}
 			vkCmdEndRenderPass(commandBuffers[i]);
+
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
@@ -1469,7 +1585,7 @@ private:
 		cleanupSwapChain();
 		createSC();
 		createImageViews();
-		createGraphicsPipeline();
+		createGraphicsPipelineOpaque();
 		createFrameBuffer();
 		recordCommandBuffers();
 	}
@@ -1477,7 +1593,7 @@ private:
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipeline(device, opaquePipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 		for (auto imageView : swapChainImageViews) {
@@ -1613,7 +1729,7 @@ private:
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		setupDepthResources();
-		createGraphicsPipeline();
+		createGraphicsPipelineOpaque();
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
@@ -1634,7 +1750,7 @@ private:
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
+		vkDestroyPipeline(device, opaquePipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 
