@@ -193,8 +193,7 @@ private:
 	std::vector<VkDeviceMemory> uboBufferMemories;
 
 	VkPipelineLayout pipelineLayout;
-	VkPipeline opaquePipeline;
-	VkPipeline transparentPipeline;
+	VkPipeline graphicsPipeline;
 
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
@@ -1280,89 +1279,14 @@ private:
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &opaquePipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
 		std::cout << "Opaque Graphics Pipeline Created Successfully!" << std::endl;
-		createGraphicsPipelineTransparent(device, vertexInputInfo, inputAssem, vpState, rasterizer, multiSamp, dynamicState, pipelineLayout, renderPass, stages);
 
 	}
 
-	void createGraphicsPipelineTransparent(VkDevice device,
-		VkPipelineVertexInputStateCreateInfo vertexInputInfo, VkPipelineInputAssemblyStateCreateInfo inputAssem, VkPipelineViewportStateCreateInfo vpState,
-		VkPipelineRasterizationStateCreateInfo rasterizer, VkPipelineMultisampleStateCreateInfo multiSamp,
-		VkPipelineDynamicStateCreateInfo dynamicState, VkPipelineLayout pipelineLayout, VkRenderPass renderPass, VkPipelineShaderStageCreateInfo shaderStages[])
-	{
-		//transparent depth stencil setup
-		VkPipelineDepthStencilStateCreateInfo dStencil{};
-		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		dStencil.depthTestEnable = VK_TRUE;
-		dStencil.depthWriteEnable = VK_FALSE; //no depth writing for transparent objects
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //comparison operator that allows for overwriting of new depth values
-		dStencil.depthBoundsTestEnable = VK_FALSE; //if true, depth values are clamped to min and max depth bounds
-		dStencil.minDepthBounds = 0.0f; //min depth bound
-		dStencil.maxDepthBounds = 1.0f;
-		dStencil.stencilTestEnable = VK_FALSE; //enable stencil testing
-		dStencil.front.failOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test fails
-		dStencil.front.passOp = VK_STENCIL_OP_KEEP; // stencil operation to perform if the stencil test passes
-		dStencil.front.depthFailOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test passes, but the depth test fails
-		dStencil.front.compareOp = VK_COMPARE_OP_ALWAYS; //comparison operator to use for the stencil test
-		dStencil.front.compareMask = 0; // 0 means don't compare against anything
-		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
-		dStencil.front.reference = 0; //reference value to use for the stencil test
-		dStencil.back.failOp = VK_STENCIL_OP_KEEP; // what to do if the stencil test fails
-		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP; //what to do if the stencil test passes, but the depth test fails
-		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
-		dStencil.back.compareMask = 0;
-		dStencil.back.writeMask = 0;
-		dStencil.back.reference = 0;
-
-		//transparent color blending setup
-		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
-		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		colorBA.blendEnable = VK_TRUE; //enable blending
-		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for color channels
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
-		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
-		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE; //blending factors for alpha channel
-		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
-		colorBA.alphaBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
-		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
-		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		colorBS.logicOpEnable = VK_FALSE; //doesnt apply bitwise operation to blending
-		colorBS.logicOp = VK_LOGIC_OP_COPY;
-		colorBS.attachmentCount = 1; //number of color blend attachments
-		colorBS.pAttachments = &colorBA; //array of color blend attachments
-		colorBS.blendConstants[0] = 0.0f; //constant values to use in blending operations
-		colorBS.blendConstants[1] = 0.0f;
-		colorBS.blendConstants[2] = 0.0f;
-		colorBS.blendConstants[3] = 0.0f;
-
-		VkGraphicsPipelineCreateInfo pipelineInf{};
-		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineInf.stageCount = 2; // Vertex and fragment shaders
-		pipelineInf.pStages = shaderStages;
-		pipelineInf.pVertexInputState = &vertexInputInfo;
-		pipelineInf.pInputAssemblyState = &inputAssem;
-		pipelineInf.pViewportState = &vpState;
-		pipelineInf.pRasterizationState = &rasterizer;
-		pipelineInf.pMultisampleState = &multiSamp;
-		pipelineInf.pDepthStencilState = &dStencil;
-		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.pDynamicState = &dynamicState;
-		pipelineInf.layout = pipelineLayout;
-		pipelineInf.renderPass = renderPass;
-		pipelineInf.subpass = 0;
-		pipelineInf.basePipelineHandle = VK_NULL_HANDLE;
-		pipelineInf.basePipelineIndex = -1;
-
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &transparentPipeline) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create transparent graphics pipeline!");
-		}
-		std::cout << "Transparent Graphics Pipeline Created Successfully!" << std::endl;
-	}
 
 
 	void setupFences() {
@@ -1502,7 +1426,7 @@ private:
 			renderPassInfo.pClearValues = clearValues.data();
 
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, opaquePipeline); // bind the graphics pipeline to the command buffer
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
 			for (size_t j = 0; j < objects.size(); j++) {
 				// bind the descriptor set for each object (each set is a different object):
@@ -1593,7 +1517,7 @@ private:
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
-		vkDestroyPipeline(device, opaquePipeline, nullptr);
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 		for (auto imageView : swapChainImageViews) {
@@ -1750,7 +1674,7 @@ private:
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-		vkDestroyPipeline(device, opaquePipeline, nullptr);
+		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
 
