@@ -32,7 +32,7 @@ struct Vertex {
 		tex(formulas::Vector2(0.0f, 0.0f)),
 		col(formulas::Vector3(0.0f, 0.0f, 0.0f)),
 		normal(formulas::Vector3(0.0f, 0.0f, 0.0f)),
-		alpha(0.0f)
+		alpha(1.0f)
 	{}
 
 	// constructor:
@@ -262,7 +262,6 @@ private:
 						attrib.normals[3 * index.normal_index + 1],
 						attrib.normals[3 * index.normal_index + 2]
 					};
-					vertex.alpha = 1.0f;
 					// Check if vertex is unique and add it to the map if it is:
 					if (uniqueVertices.count(vertex) == 0) {
 						uniqueVertices[vertex] = static_cast<uint32_t>(object.vertices.size());
@@ -271,7 +270,6 @@ private:
 					object.indices.push_back(uniqueVertices[vertex]);
 				}
 			}
-
 		}
 		for (auto& object : objects) {
 			debugStruct(object);
@@ -688,7 +686,7 @@ private:
 
 		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot);
 		convertMatrix(viewMatrix, o.viewMatrix);
-		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f), o.projectionMatrix);
+		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 	void updateUBO(const camData& cam) { // needs optimization later
@@ -1559,8 +1557,8 @@ private:
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.003f; // Adjust the speed as needed
-		float cameraRotationSpeed = 0.01f;
+		float cameraSpeed = 0.001f; // Adjust the speed as needed. on the laptop 0.003f is good
+		float cameraRotationSpeed = 0.05f;
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
@@ -1573,18 +1571,19 @@ private:
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
 			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
-			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
-			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
 		}
+
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.camRot.x -= cameraRotationSpeed;
+			cam.camRot.x += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.camRot.x += cameraRotationSpeed;
+			cam.camRot.x -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
 			cam.camRot.y += cameraRotationSpeed;
@@ -1593,6 +1592,8 @@ private:
 			cam.camRot.y -= cameraRotationSpeed;
 		}
 	}
+
+
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();
 		createSurface();
@@ -1685,6 +1686,7 @@ private:
 };
 int main() {
 	objects[0].pathObj = "models/gear/Gear1.obj";
+	objects[0].rotation = { 0.0f, 70.0f, 0.0f };
 	objects[1].pathObj = "models/gear2/Gear2.obj";
 	Engine app;
 	try {
