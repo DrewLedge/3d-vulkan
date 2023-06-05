@@ -111,6 +111,8 @@ struct model {
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMem;
 
 	formulas::Vector3 position;  // position of the model
 	formulas::Vector3 rotation;  // rotation of the model
@@ -130,7 +132,9 @@ struct model {
 		position(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default position to origin
 		rotation(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 		scale(formulas::Vector3(0.1f, 0.1f, 0.1f)),
-		isLoaded(false)
+		isLoaded(false),
+		stagingBuffer(VK_NULL_HANDLE),
+		stagingBufferMem(VK_NULL_HANDLE)
 	{
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
@@ -176,9 +180,6 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 
-	VkBuffer stagingBuffer; // buffer that is accessible by both CPU and GPU
-	VkDeviceMemory stagingBufferMem; // memory for the staging buffer
-
 	uint32_t textureWidth = 512;
 	uint32_t textureHeight = 512;
 	unsigned char* imageData;
@@ -202,18 +203,22 @@ private:
 	VkShaderModule vertShaderModule;
 	VkRenderPass renderPass;
 	VkCommandPool commandPool;
+
 	std::vector<VkCommandBuffer> commandBuffers;
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
+
 	std::vector<VkBuffer> vertBuffers;
 	std::vector<VkDeviceMemory> vertBufferMems;
 	std::vector<VkBuffer> indBuffers;
 	std::vector<VkDeviceMemory> indBufferMems;
+
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	formulas formula;
-	std::mutex mtx;
+	std::mutex modelMtx;
+	std::mutex descMtx;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -291,11 +296,11 @@ private:
 					}
 
 					// batch insert vertices and indices into object:
-					mtx.lock();
+					modelMtx.lock();
 					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
 					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
 					object.isLoaded = true;
-					mtx.unlock();
+					modelMtx.unlock();
 					}));
 			}
 		}
@@ -764,7 +769,6 @@ private:
 			}
 		}
 	}
-
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
@@ -875,13 +879,13 @@ private:
 		model m;
 		m.position = cam.camPos.multiply(10, 10, 10);
 		m.pathObj = p;
-		m.scale = { 0.1f, 0.1f, 0.1f };
+		m.scale = { 0.05f, 0.05f, 0.05f };
 		objects.push_back(m);
 		loadModels();
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		setupDescriptorSets();
-
 	}
+
 
 	void createTS(model& m) { //create texture sampler
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
@@ -926,43 +930,51 @@ private:
 			throw std::runtime_error("failed to load image!");
 		}
 	}
-	void createStagingBuffer() { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void createStagingBuffer(model& m) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		if (vkCreateBuffer(device, &bufferInf, nullptr, &stagingBuffer) != VK_SUCCESS) {
+		if (vkCreateBuffer(device, &bufferInf, nullptr, &m.stagingBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create staging buffer!");
 		}
 		// get mem requirements;
 		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, stagingBuffer, &memRequirements);
+		vkGetBufferMemoryRequirements(device, m.stagingBuffer, &memRequirements);
 		VkMemoryAllocateInfo allocInf{};
 		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInf.allocationSize = memRequirements.size;
 		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (vkAllocateMemory(device, &allocInf, nullptr, &stagingBufferMem) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocInf, nullptr, &m.stagingBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate staging buffer memory!");
 		}
 
 		// bind the memory to the buffer:
-		vkBindBufferMemory(device, stagingBuffer, stagingBufferMem, 0);
+		vkBindBufferMemory(device, m.stagingBuffer, m.stagingBufferMem, 0);
 		void* data;
-		if (vkMapMemory(device, stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
+		if (vkMapMemory(device, m.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("failed to map staging buffer memory!");
 		}
 
 		// copy imageData to the staging buffer
-		std::memcpy(data, imageData, imageSize); //takes in the data, the data to copy, and the size of the data and outputs the data to the buffer.
-		vkUnmapMemory(device, stagingBufferMem); //unmap the staging buffer memory
+		std::memcpy(data, imageData, imageSize); 
+		vkUnmapMemory(device, m.stagingBufferMem); //memory access violation here. FIX lol
 	}
 	void createTexturedImage(std::string path, model& m) {
-		stagingBuffer = nullptr;
+		// reset the staging buffer and memory:
+		if (m.stagingBuffer != VK_NULL_HANDLE) {
+			vkDestroyBuffer(device, m.stagingBuffer, nullptr);
+			m.stagingBuffer = VK_NULL_HANDLE;
+		}
+		if (m.stagingBufferMem != VK_NULL_HANDLE) {
+			vkFreeMemory(device, m.stagingBufferMem, nullptr);
+			m.stagingBufferMem = VK_NULL_HANDLE;
+		}
 		getImageData(path);
-		createStagingBuffer();
+		createStagingBuffer(m);
 		{
-			std::lock_guard<std::mutex> lock(mtx); //when the thread is done, unlock the mutex
+			std::lock_guard<std::mutex> lock(descMtx); //when the thread is done, unlock the mutex
 
 			// create image:
 			VkImageCreateInfo imageInf{};
@@ -1029,7 +1041,7 @@ private:
 			// transition image to suitable layout for receiving data:
 			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
 
-			vkCmdCopyBufferToImage(tempBuffer, stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer, m.stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			// transition image to be shader readable:
 			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -1739,8 +1751,6 @@ private:
 	void cleanupTextures() { // cleanup textures, samplers and descriptors
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-		vkDestroyBuffer(device, stagingBuffer, nullptr);
-		vkFreeMemory(device, stagingBufferMem, nullptr);
 	}
 
 
