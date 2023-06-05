@@ -119,6 +119,8 @@ struct model {
 	float projectionMatrix[16];
 	float viewMatrix[16];
 
+	bool isLoaded;
+
 	// default constructor:
 	model()
 		: texture(),
@@ -127,7 +129,8 @@ struct model {
 		pathObj(""),
 		position(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default position to origin
 		rotation(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-		scale(formulas::Vector3(0.1f, 0.1f, 0.1f))
+		scale(formulas::Vector3(0.1f, 0.1f, 0.1f)),
+		isLoaded(false)
 	{
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
@@ -210,6 +213,7 @@ private:
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	formulas formula;
+	std::mutex mtx;
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -220,88 +224,91 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
-
 	void loadModels() {
 		std::vector<std::thread> threads;
-		std::mutex mtx;
 
 		// parallel loading using multiple threads:
 		for (auto& object : objects) {
-			threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
-				const std::string& objFilePath = object.pathObj;
-				const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
-				tinyobj::attrib_t attrib;
-				std::vector<tinyobj::shape_t> shapes;
-				std::vector<tinyobj::material_t> materials;
-				std::string warn, err;
-				tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
-				if (!warn.empty()) {
-					std::cout << "Warning: " << warn << std::endl;
-				}
-				if (!err.empty()) {
-					throw std::runtime_error(err);
-				}
-				// Use an unordered_map instead of a vector for storing unique vertices:
-				std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-
-				std::vector<Vertex> tempVertices;
-				std::vector<uint32_t> tempIndices;
-
-				// reserve memory for vectors:
-				tempVertices.reserve(attrib.vertices.size() / 3);
-				tempIndices.reserve(attrib.vertices.size() / 3);
-
-				for (const auto& material : materials) {
-					object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname; //only diffuse texture is needed for now
-					break;
-				}
-				for (const auto& shape : shapes) {
-					for (const auto& index : shape.mesh.indices) {
-						Vertex vertex;
-						vertex.pos = {
-							attrib.vertices[3 * index.vertex_index + 0],
-							attrib.vertices[3 * index.vertex_index + 1],
-							attrib.vertices[3 * index.vertex_index + 2]
-						};
-						vertex.tex = {
-							attrib.texcoords[2 * index.texcoord_index + 0],
-							1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-						};
-						vertex.col = {
-							attrib.colors[3 * index.vertex_index + 0],
-							attrib.colors[3 * index.vertex_index + 1],
-							attrib.colors[3 * index.vertex_index + 2]
-						};
-						vertex.normal = {
-							attrib.normals[3 * index.normal_index + 0],
-							attrib.normals[3 * index.normal_index + 1],
-							attrib.normals[3 * index.normal_index + 2]
-						};
-						// Check if vertex is unique and add it to the map if it is:
-						if (uniqueVertices.count(vertex) == 0) {
-							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-							tempVertices.push_back(std::move(vertex));
-						}
-						tempIndices.push_back(uniqueVertices[vertex]);
+			if (!object.isLoaded) {
+				threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
+					std::cout << "loading model: " << object.pathObj << std::endl;
+					const std::string& objFilePath = object.pathObj;
+					const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
+					tinyobj::attrib_t attrib;
+					std::vector<tinyobj::shape_t> shapes;
+					std::vector<tinyobj::material_t> materials;
+					std::string warn, err;
+					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
+					if (!warn.empty()) {
+						std::cout << "Warning: " << warn << std::endl;
 					}
-				}
+					if (!err.empty()) {
+						throw std::runtime_error(err);
+					}
+					// Use an unordered_map instead of a vector for storing unique vertices:
+					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 
-				// batch insert vertices and indices into object:
-				mtx.lock();
-				object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
-				object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
-				mtx.unlock();
-				}));
+					std::vector<Vertex> tempVertices;
+					std::vector<uint32_t> tempIndices;
+
+					// reserve memory for vectors:
+					tempVertices.reserve(attrib.vertices.size() / 3);
+					tempIndices.reserve(attrib.vertices.size() / 3);
+
+					for (const auto& material : materials) {
+						object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname; //only diffuse texture is needed for now
+						break;
+					}
+					for (const auto& shape : shapes) {
+						for (const auto& index : shape.mesh.indices) {
+							Vertex vertex;
+							vertex.pos = {
+								attrib.vertices[3 * index.vertex_index + 0],
+								attrib.vertices[3 * index.vertex_index + 1],
+								attrib.vertices[3 * index.vertex_index + 2]
+							};
+							vertex.tex = {
+								attrib.texcoords[2 * index.texcoord_index + 0],
+								1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+							};
+							vertex.col = {
+								attrib.colors[3 * index.vertex_index + 0],
+								attrib.colors[3 * index.vertex_index + 1],
+								attrib.colors[3 * index.vertex_index + 2]
+							};
+							vertex.normal = {
+								attrib.normals[3 * index.normal_index + 0],
+								attrib.normals[3 * index.normal_index + 1],
+								attrib.normals[3 * index.normal_index + 2]
+							};
+							// Check if vertex is unique and add it to the map if it is:
+							if (uniqueVertices.count(vertex) == 0) {
+								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+								tempVertices.push_back(std::move(vertex));
+							}
+							tempIndices.push_back(uniqueVertices[vertex]);
+						}
+					}
+
+					// batch insert vertices and indices into object:
+					mtx.lock();
+					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
+					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
+					object.isLoaded = true;
+					mtx.unlock();
+					}));
+			}
 		}
 		for (auto& t : threads) {
 			t.join();
 		}
 
 		for (auto& object : objects) {
-			debugStruct(object);
+			if (object.isLoaded) {
+				debugStruct(object);
+			}
 		}
 	}
-
 	void debugStruct(model stru) {
 		std::cout << " ----------------" << std::endl;
 		std::cout << "model: " << stru.pathObj << std::endl;
@@ -805,9 +812,18 @@ private:
 		createUBOs();
 		VkDescriptorImageInfo imageInfo;
 		descriptorSets.resize(objects.size());
+		std::vector<std::thread> threads;
 
 		for (int i = 0; i < objects.size(); i++) {
-			createTexturedImage(objects[i].texture.diffuseTexturePath, objects[i]); // create the texture image from the diffuse texture path
+			threads.push_back(std::thread(&Engine::createTexturedImage, this, objects[i].texture.diffuseTexturePath, std::ref(objects[i])));
+		}
+
+		for (auto& thread : threads) {
+			if (thread.joinable()) {
+				thread.join();
+			}
+		}
+		for (int i = 0; i < objects.size(); i++) {
 			createTextureImgView(objects[i]); // create the texture image view
 			createTS(objects[i]); // create the texture sampler
 			bufferInfo.buffer = uboBuffers[i];
@@ -854,6 +870,17 @@ private:
 		createDSLayout();
 		createDSPool();
 		createDS(); //create the descriptor set
+	}
+	void realtimeLoad(std::string p) {
+		model m;
+		m.position = cam.camPos.multiply(10, 10, 10);
+		m.pathObj = p;
+		m.scale = { 0.1f, 0.1f, 0.1f };
+		objects.push_back(m);
+		loadModels();
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+		setupDescriptorSets();
+
 	}
 
 	void createTS(model& m) { //create texture sampler
@@ -934,85 +961,88 @@ private:
 		stagingBuffer = nullptr;
 		getImageData(path);
 		createStagingBuffer();
+		{
+			std::lock_guard<std::mutex> lock(mtx); //when the thread is done, unlock the mutex
 
-		// create image:
-		VkImageCreateInfo imageInf{};
-		imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInf.imageType = VK_IMAGE_TYPE_2D;
-		imageInf.extent.width = textureWidth;
-		imageInf.extent.height = textureHeight;
-		imageInf.extent.depth = 1;
-		imageInf.mipLevels = 1;
-		imageInf.arrayLayers = 1;
-		imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
-		imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
-		imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
-		imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
-		imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+			// create image:
+			VkImageCreateInfo imageInf{};
+			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+			imageInf.imageType = VK_IMAGE_TYPE_2D;
+			imageInf.extent.width = textureWidth;
+			imageInf.extent.height = textureHeight;
+			imageInf.extent.depth = 1;
+			imageInf.mipLevels = 1;
+			imageInf.arrayLayers = 1;
+			imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
+			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
+			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
+			imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
+			imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-		if (vkCreateImage(device, &imageInf, nullptr, &m.texture.textureImage) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image!");
+			if (vkCreateImage(device, &imageInf, nullptr, &m.texture.textureImage) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create texture image!");
+			}
+
+			VkMemoryRequirements memRequirements;
+			vkGetImageMemoryRequirements(device, m.texture.textureImage, &memRequirements);
+
+			VkMemoryAllocateInfo allocInf{};
+			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			allocInf.allocationSize = memRequirements.size;
+			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+			if (vkAllocateMemory(device, &allocInf, nullptr, &m.texture.textureImageMemory) != VK_SUCCESS) {
+				throw std::runtime_error("failed to allocate texture image memory!!!");
+			}
+			vkBindImageMemory(device, m.texture.textureImage, m.texture.textureImageMemory, 0); // bind the memory to the image through TIM (texture image memory) and the image
+
+			// initialize img and barrier data before buffer copy:
+			VkBufferImageCopy region{};
+			region.bufferOffset = 0;
+			region.bufferRowLength = 0;
+			region.bufferImageHeight = 0;
+			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //specifies the aspect of the image to copy
+			region.imageSubresource.mipLevel = 0;
+			region.imageSubresource.baseArrayLayer = 0;
+			region.imageSubresource.layerCount = 1;
+			region.imageOffset = { 0, 0, 0 };
+			region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; //gets the 2d image extent
+
+			VkImageMemoryBarrier barrier{};
+			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
+			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; /// TODO
+			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+			barrier.image = m.texture.textureImage;
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			barrier.subresourceRange.baseMipLevel = 0;
+			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.baseArrayLayer = 0;
+			barrier.subresourceRange.layerCount = 1;
+			barrier.srcAccessMask = 0; //specifies the type of access that must be available in the old layout in order to transition to the new layout
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+			VkCommandBuffer tempBuffer = beginSingleTimeCommands(); //transition image to suitable layout for receiving data:
+
+			// transition image to suitable layout for receiving data:
+			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
+
+			vkCmdCopyBufferToImage(tempBuffer, stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+
+			// transition image to be shader readable:
+			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
+			endSingleTimeCommands(tempBuffer);
+
+			// free data:
+			stbi_image_free(imageData);
+			imageData = nullptr;
 		}
-
-		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, m.texture.textureImage, &memRequirements);
-
-		VkMemoryAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		if (vkAllocateMemory(device, &allocInf, nullptr, &m.texture.textureImageMemory) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate texture image memory!!!");
-		}
-		vkBindImageMemory(device, m.texture.textureImage, m.texture.textureImageMemory, 0); // bind the memory to the image through TIM (texture image memory) and the image
-
-		// initialize img and barrier data before buffer copy:
-		VkBufferImageCopy region{};
-		region.bufferOffset = 0;
-		region.bufferRowLength = 0;
-		region.bufferImageHeight = 0;
-		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //specifies the aspect of the image to copy
-		region.imageSubresource.mipLevel = 0;
-		region.imageSubresource.baseArrayLayer = 0;
-		region.imageSubresource.layerCount = 1;
-		region.imageOffset = { 0, 0, 0 };
-		region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; //gets the 2d image extent
-
-		VkImageMemoryBarrier barrier{};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
-		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; /// TODO
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = m.texture.textureImage;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
-		barrier.srcAccessMask = 0; //specifies the type of access that must be available in the old layout in order to transition to the new layout
-		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-		VkCommandBuffer tempBuffer = beginSingleTimeCommands(); //transition image to suitable layout for receiving data:
-
-		// transition image to suitable layout for receiving data:
-		vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
-
-		vkCmdCopyBufferToImage(tempBuffer, stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
-
-		// transition image to be shader readable:
-		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-		vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
-		endSingleTimeCommands(tempBuffer);
-
-		// free data:
-		stbi_image_free(imageData);
-		imageData = nullptr;
 	}
 	VkCommandBuffer beginSingleTimeCommands() {
 		VkCommandBufferAllocateInfo allocInfo{};
@@ -1576,7 +1606,7 @@ private:
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
 
-	void recreateVertexBuffer() {
+	void recreateObjectBuffers() {
 		vkDeviceWaitIdle(device);  // wait for all frames to finish
 		for (auto vertBuffer : vertBuffers) {
 			vkDestroyBuffer(device, vertBuffer, nullptr);
@@ -1584,6 +1614,13 @@ private:
 		for (auto vertBufferMemory : vertBufferMems) {
 			vkFreeMemory(device, vertBufferMemory, nullptr);
 		}
+		for (auto indexBuffer : indBuffers) {
+			vkDestroyBuffer(device, indexBuffer, nullptr);
+		}
+		for (auto indexBufferMemory : indBufferMems) {
+			vkFreeMemory(device, indexBufferMemory, nullptr);
+		}
+		createIndexBuffer();
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
@@ -1593,15 +1630,15 @@ private:
 			glfwPollEvents();
 			drawF();
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
-			recreateVertexBuffer();
 			handleKeyboardInput(window); //handle keyboard input to change cam position
+			recreateObjectBuffers();
 			updateUBO(cam); //update ubo matricies and populate the buffer
 		}
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.001f; // Adjust the speed as needed. on the laptop 0.003f is good
-		float cameraRotationSpeed = 0.05f;
+		float cameraSpeed = 0.005f; // Adjust the speed as needed. on the laptop 0.012f is good
+		float cameraRotationSpeed = 0.5f;
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
@@ -1633,6 +1670,9 @@ private:
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
 			cam.camRot.y -= cameraRotationSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+			realtimeLoad("models/gear2/Gear2.obj");
 		}
 	}
 

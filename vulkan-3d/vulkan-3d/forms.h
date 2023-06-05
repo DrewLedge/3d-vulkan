@@ -17,6 +17,9 @@ public:
 		Vector3 translate(float tx, float ty, float tz) const {
 			return Vector3(x + tx, y + ty, z + tz);
 		}
+		Vector3 multiply(float sx, float sy, float sz) const {
+			return Vector3(x * sx, y * sy, z * sz);
+		}
 	};
 	struct Vector2 {
 		float x, y;
