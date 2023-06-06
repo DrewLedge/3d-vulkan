@@ -121,7 +121,8 @@ struct model {
 	float projectionMatrix[16];
 	float viewMatrix[16];
 
-	bool isLoaded;
+	bool isLoaded; // if object is loaded or not to prevent reloading
+	bool startObj; // wether is loaded at the start of the program or not
 
 	// default constructor:
 	model()
@@ -134,7 +135,8 @@ struct model {
 		scale(formulas::Vector3(0.1f, 0.1f, 0.1f)),
 		isLoaded(false),
 		stagingBuffer(VK_NULL_HANDLE),
-		stagingBufferMem(VK_NULL_HANDLE)
+		stagingBufferMem(VK_NULL_HANDLE),
+		startObj(true)
 	{
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
@@ -156,7 +158,6 @@ struct camData {
 	formulas::Vector3 camRot; //pitch, yaw, roll
 };
 camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
-
 class Engine {
 public:
 	void run() {
@@ -877,9 +878,10 @@ private:
 	}
 	void realtimeLoad(std::string p) {
 		model m;
-		m.position = cam.camPos.multiply(10, 10, 10);
+		m.scale = { 0.01f, 0.01f, 0.01f };
+		m.position = cam.camPos.multiply(10 * (0.1 / m.scale.x), 10 * (0.1 / m.scale.y), 10 * (0.1 / m.scale.z));
 		m.pathObj = p;
-		m.scale = { 0.05f, 0.05f, 0.05f };
+		m.startObj = false;
 		objects.push_back(m);
 		loadModels();
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -1080,7 +1082,7 @@ private:
 		fragShaderModule = createShaderModule(fragShaderCode);
 	}
 
-	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects :)
+	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
