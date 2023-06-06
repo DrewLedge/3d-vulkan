@@ -155,7 +155,7 @@ struct UniformBufferObject {
 
 struct camData {
 	formulas::Vector3 camPos; //x, y, z
-	formulas::Vector3 camRot; //pitch, yaw, roll
+	formulas::Vector3 camDir; //pitch, yaw, roll
 };
 camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
 class Engine {
@@ -739,7 +739,7 @@ private:
 		formulas::Matrix4 modelMatrix = s.multiply(rotation).multiply(translation); // scale * rotation * translation
 		convertMatrix(modelMatrix, o.modelMatrix); //convert to 1d array
 
-		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camRot);
+		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camDir);
 		convertMatrix(viewMatrix, o.viewMatrix);
 		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
@@ -877,11 +877,12 @@ private:
 		createDS(); //create the descriptor set
 	}
 	void realtimeLoad(std::string p) {
-		model m;
+		model m = objects[0];
+		// modify the copied model
 		m.scale = { 0.01f, 0.01f, 0.01f };
 		m.position = cam.camPos.multiply(10 * (0.1 / m.scale.x), 10 * (0.1 / m.scale.y), 10 * (0.1 / m.scale.z));
-		m.pathObj = p;
 		m.startObj = false;
+
 		objects.push_back(m);
 		loadModels();
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
@@ -1647,39 +1648,40 @@ private:
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			cam.camPos.x -= cameraSpeed * sin(cam.camRot.y);
-			cam.camPos.z += cameraSpeed * cos(cam.camRot.y);
+			cam.camPos.x -= cameraSpeed * sin(cam.camDir.y);
+			cam.camPos.z += cameraSpeed * cos(cam.camDir.y);
 		}
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-			cam.camPos.x += cameraSpeed * sin(cam.camRot.y);
-			cam.camPos.z -= cameraSpeed * cos(cam.camRot.y);
+			cam.camPos.x += cameraSpeed * sin(cam.camDir.y);
+			cam.camPos.z -= cameraSpeed * cos(cam.camDir.y);
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			cam.camPos.x -= cameraSpeed * cos(cam.camRot.y);
-			cam.camPos.z += cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.x -= cameraSpeed * cos(cam.camDir.y);
+			cam.camPos.z += cameraSpeed * sin(cam.camDir.y);
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			cam.camPos.x += cameraSpeed * cos(cam.camRot.y);
-			cam.camPos.z -= cameraSpeed * sin(cam.camRot.y);
+			cam.camPos.x += cameraSpeed * cos(cam.camDir.y);
+			cam.camPos.z -= cameraSpeed * sin(cam.camDir.y);
 		}
 
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.camRot.x += cameraRotationSpeed;
+			cam.camDir.x += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.camRot.x -= cameraRotationSpeed;
+			cam.camDir.x -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.camRot.y += cameraRotationSpeed;
+			cam.camDir.y += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.camRot.y -= cameraRotationSpeed;
+			cam.camDir.y -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
 	}
+
 
 
 	void initVulkan() { //initializes Vulkan functions
