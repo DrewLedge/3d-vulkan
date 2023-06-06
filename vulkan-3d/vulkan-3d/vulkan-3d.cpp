@@ -956,23 +956,15 @@ private:
 		if (vkMapMemory(device, m.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("failed to map staging buffer memory!");
 		}
-
-		// copy imageData to the staging buffer
-		std::memcpy(data, imageData, imageSize); 
-		vkUnmapMemory(device, m.stagingBufferMem); //memory access violation here. FIX lol
+		memcpy(data, imageData, imageSize);
+		vkUnmapMemory(device, m.stagingBufferMem);
 	}
 	void createTexturedImage(std::string path, model& m) {
 		// reset the staging buffer and memory:
-		if (m.stagingBuffer != VK_NULL_HANDLE) {
-			vkDestroyBuffer(device, m.stagingBuffer, nullptr);
-			m.stagingBuffer = VK_NULL_HANDLE;
+		if (m.stagingBuffer == VK_NULL_HANDLE) {
+			getImageData(path);
+			createStagingBuffer(m);
 		}
-		if (m.stagingBufferMem != VK_NULL_HANDLE) {
-			vkFreeMemory(device, m.stagingBufferMem, nullptr);
-			m.stagingBufferMem = VK_NULL_HANDLE;
-		}
-		getImageData(path);
-		createStagingBuffer(m);
 		{
 			std::lock_guard<std::mutex> lock(descMtx); //when the thread is done, unlock the mutex
 
@@ -1051,7 +1043,6 @@ private:
 			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
 			endSingleTimeCommands(tempBuffer);
 
-			// free data:
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}
