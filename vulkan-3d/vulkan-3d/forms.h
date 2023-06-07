@@ -170,6 +170,47 @@ public:
 				.multiply(Matrix4::scale(sx, sy, sz));
 			return result;
 		}
+		static Matrix4 inverseMatrix(Matrix4 m) {
+			//formula from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
+			Matrix4 result;
+
+			// det=a(ei−fh)−b(di−fg)+c(dh−eg)
+			float cofactor0 = m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1];
+			float cofactor1 = m.m[1][2] * m.m[2][0] - m.m[1][0] * m.m[2][2];
+			float cofactor2 = m.m[1][0] * m.m[2][1] - m.m[1][1] * m.m[2][0];
+			float det = m.m[0][0] * cofactor0 + m.m[0][1] * cofactor1 + m.m[0][2] * cofactor2;
+
+			// check if the determinant is non-zero
+			if (det != 0.0f) { // if not zero, then the matrix is invertible
+				float invDet = 1.0f / det;
+
+				// calculate the inverse of the upper-left 3x3 submatrix
+				result.m[0][0] = invDet * cofactor0;
+				result.m[1][0] = invDet * cofactor1;
+				result.m[2][0] = invDet * cofactor2;
+				result.m[0][1] = invDet * (m.m[0][2] * m.m[2][1] - m.m[0][1] * m.m[2][2]);
+				result.m[1][1] = invDet * (m.m[0][0] * m.m[2][2] - m.m[0][2] * m.m[2][0]);
+				result.m[2][1] = invDet * (m.m[0][1] * m.m[2][0] - m.m[0][0] * m.m[2][1]);
+				result.m[0][2] = invDet * (m.m[0][1] * m.m[1][2] - m.m[0][2] * m.m[1][1]);
+				result.m[1][2] = invDet * (m.m[0][2] * m.m[1][0] - m.m[0][0] * m.m[1][2]);
+				result.m[2][2] = invDet * (m.m[0][0] * m.m[1][1] - m.m[0][1] * m.m[1][0]);
+
+				// calculate the inverse translation vector
+				result.m[3][0] = -result.m[0][0] * m.m[3][0] - result.m[1][0] * m.m[3][1] - result.m[2][0] * m.m[3][2];
+				result.m[3][1] = -result.m[0][1] * m.m[3][0] - result.m[1][1] * m.m[3][1] - result.m[2][1] * m.m[3][2];
+				result.m[3][2] = -result.m[0][2] * m.m[3][0] - result.m[1][2] * m.m[3][1] - result.m[2][2] * m.m[3][2];
+			}
+			else {
+				return m; //if not invertible, return original matrix
+			}
+			result.m[0][3] = 0.0f;
+			result.m[1][3] = 0.0f;
+			result.m[2][3] = 0.0f;
+			result.m[3][3] = 1.0f;
+
+			return result;
+		}
+
 
 		static Matrix4 viewmatrix(const Vector3& position, const Vector3& rotation) {
 			Matrix4 result;
@@ -178,19 +219,6 @@ public:
 			return result;
 		}
 
-
-		static Vector3 projectVector(const Vector3& vectoroni, const Matrix4& world, const Matrix4& view, const Matrix4& projection) {
-			Matrix4 result = world.multiply(view).multiply(projection);
-			return result.vecmatrix(vectoroni);
-		}
-		static Vector2 project2D(const Vector3& vec3, float screenWidth, float screenHeight) {
-			float halfScreenWidth = screenWidth / 2;
-			float halfScreenHeight = screenHeight / 2;
-			float zNormalized = std::max(0.001f, vec3.z + 1.0f);
-			float projectedX = vec3.x / zNormalized * halfScreenWidth + halfScreenWidth;
-			float projectedY = vec3.y / zNormalized * halfScreenHeight + halfScreenHeight;
-			return Vector2(projectedX, projectedY);
-		}
 	};
 };
 
