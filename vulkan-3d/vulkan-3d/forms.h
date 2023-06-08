@@ -129,16 +129,6 @@ public:
 			result = rotZ.multiply(rotY).multiply(rotX);
 			return result;
 		}
-
-		Matrix4 transpose() const {
-			Matrix4 result;
-			for (int i = 0; i < 4; i++) {
-				for (int j = 0; j < 4; j++) {
-					result.m[i][j] = m[j][i];
-				}
-			}
-			return result;
-		}
 		Vector3 vecmatrix(const Vector3& vec) const {
 			float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector
 			float y = m[1][0] * vec.x + m[1][1] * vec.y + m[1][2] * vec.z + m[1][3];

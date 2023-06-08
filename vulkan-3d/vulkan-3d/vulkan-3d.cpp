@@ -770,6 +770,19 @@ private:
 			}
 		}
 	}
+	formulas::Matrix4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
+		formulas::Matrix4 destination;
+		int index = 0;
+		for (int column = 0; column < 4; column++) {
+			for (int row = 0; row < 4; row++) {
+				destination.m[row][column] = source[index];
+				index++;
+			}
+		}
+		return destination;
+	}
+
+
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
@@ -878,15 +891,24 @@ private:
 	}
 	void realtimeLoad(std::string p) {
 		model m = objects[0];
+		formulas::Matrix4 test;
 		// modify the copied model
+		formulas::Vector3 worldPos = { 0.0f, 0.0f, 0.0f };
+		worldPos = formulas::Matrix4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecmatrix(cam.camPos);
 		m.scale = { 0.01f, 0.01f, 0.01f };
-		m.position = cam.camPos.multiply(10 * (0.1 / m.scale.x), 10 * (0.1 / m.scale.y), 10 * (0.1 / m.scale.z));
+		m.position = worldPos.multiply(10, 10, 10);
 		m.startObj = false;
-
 		objects.push_back(m);
-		loadModels();
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		setupDescriptorSets();
+	}
+	void printMatrix(formulas::Matrix4 mat) {
+		for (int row = 0; row < 4; ++row) {
+			for (int col = 0; col < 4; ++col) {
+				std::cout << mat.m[row][col] << "\t";
+			}
+			std::cout << std::endl;
+		}
 	}
 
 
@@ -1643,8 +1665,8 @@ private:
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.005f; // Adjust the speed as needed. on the laptop 0.012f is good
-		float cameraRotationSpeed = 0.5f;
+		float cameraSpeed = 0.01f; // Adjust the speed as needed. on the laptop 0.012f is good
+		float cameraRotationSpeed = 1.0f;
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
