@@ -3,6 +3,7 @@
 #include "ext/stb_image.h" // library for loading images
 #include "ext/tiny_obj_loader.h" // load .obj and .mtl files
 #include "forms.h" // my header file with the math
+#include <glm/glm.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
