@@ -8,6 +8,32 @@ public:
 	struct Vector3 {
 		float x, y, z;
 		Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
+		Vector3 operator+(const Vector3& other) const {
+			return Vector3(x + other.x, y + other.y, z + other.z);
+		}
+
+		Vector3 operator-(const Vector3& other) const {
+			return Vector3(x - other.x, y - other.y, z - other.z);
+		}
+
+		Vector3 operator*(float scalar) const {
+			return Vector3(x * scalar, y * scalar, z * scalar);
+		}
+		friend Vector3 operator*(float scalar, const Vector3& v) {
+			return Vector3(v.x * scalar, v.y * scalar, v.z * scalar);
+		}
+		Vector3& operator+=(const Vector3& other) {
+			x += other.x;
+			y += other.y;
+			z += other.z;
+			return *this;
+		}
+		Vector3& operator-=(const Vector3& other) {
+			x -= other.x;
+			y -= other.y;
+			z -= other.z;
+			return *this;
+		}
 		bool operator==(const formulas::Vector3& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
@@ -19,6 +45,23 @@ public:
 		}
 		Vector3 multiply(float sx, float sy, float sz) const {
 			return Vector3(x * sx, y * sy, z * sz);
+		}
+		Vector3 getForward(Vector3 camData) const {
+			float pitch = camData.x;
+			float yaw = camData.y;
+			return Vector3(cos(yaw) * cos(pitch), sin(pitch), sin(yaw) * cos(pitch));
+		}
+		Vector3 getRight(Vector3 camData) const {
+			Vector3 forward = getForward(camData);
+			Vector3 up(0.0f, 1.0f, 0.0f);
+			return forward.crossProd(up);
+		}
+		Vector3 crossProd(Vector3 v) const {
+			return Vector3(
+				y * v.z - z * v.y,
+				z * v.x - x * v.z,
+				x * v.y - y * v.x
+			);
 		}
 	};
 	struct Vector2 {
