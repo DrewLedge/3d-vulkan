@@ -735,12 +735,8 @@ private:
 	}
 
 	void calcMatrixes(model& o) {
-		formulas::Matrix4 s = formulas::Matrix4::scale(o.scale.x, o.scale.y, o.scale.z);
-		formulas::Matrix4 rotation = formulas::Matrix4::rotate(o.rotation.x, o.rotation.y, o.rotation.z);
-		formulas::Matrix4 translation = formulas::Matrix4::translate(o.position.x, o.position.y, o.position.z);
-		formulas::Matrix4 modelMatrix = s.multiply(rotation).multiply(translation); // scale * rotation * translation
-		convertMatrix(modelMatrix, o.modelMatrix); //convert to 1d array
-
+		formulas::Matrix4 modelMatrix = formulas::Matrix4::modelMatrix(o.position, o.rotation, o.scale); // scale * rotation * translation
+		convertMatrix(modelMatrix, o.modelMatrix);
 		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camDir);
 		convertMatrix(viewMatrix, o.viewMatrix);
 		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
@@ -1680,7 +1676,6 @@ private:
 		}
 
 		cam.camRads = formulas::Vector3::toRads(cam.camDir); //camDir is originally in degrees, convert to rads
-
 		formulas::Vector3 forward = cam.camPos.getForward(cam.camRads);
 		formulas::Vector3 right = cam.camPos.getRight(cam.camRads);
 

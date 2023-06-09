@@ -56,28 +56,33 @@ public:
 			);
 		}
 
-		static Vector3 getUp(const Vector3& camData) {
-			float roll = camData.z;
-			return Vector3(
-				std::sin(roll),
-				std::cos(roll),
-				0.0f
-			);
-		}
-
 		static Vector3 getRight(const Vector3& camData) {
 			Vector3 forward = getForward(camData);
-			return forward.crossProd(getUp(camData));
+			Vector3 up(0.0f, 1.0f, 0.0f);
+			return forward.crossProd(up);
+		}
+		static Vector3 getUp(const Vector3& camData) {
+			Vector3 forward = getForward(camData);
+			Vector3 right = getRight(camData);
+			return right.crossProd(forward);
 		}
 
-
-		Vector3 crossProd(Vector3 v) const {
+		Vector3 crossProd(Vector3& v) const {
 			return Vector3(
 				y * v.z - z * v.y,
 				z * v.x - x * v.z,
 				x * v.y - y * v.x
 			);
 		}
+		float dotProd(const Vector3& v) const {
+			return x * v.x + y * v.y + z * v.z;
+		}
+
+		Vector3 normalize() const {
+			float length = std::sqrt(x * x + y * y + z * z);
+			return Vector3(x / length, y / length, z / length);
+		}
+
 		static Vector3 toRads(const Vector3& v) {
 			return Vector3(
 				v.x * PI / 180.0f,
@@ -218,11 +223,10 @@ public:
 			return result;
 		}
 
-		static Matrix4 worldmatrix(float tx, float ty, float tz, float rx, float ry, float rz, float sx, float sy, float sz) {
-			// t = translation, r = rotation, s = scale
-			Matrix4 result = Matrix4::translate(tx, ty, tz)
-				.multiply(Matrix4::rotate(rx, ry, rz))
-				.multiply(Matrix4::scale(sx, sy, sz));
+		static Matrix4 modelMatrix(Vector3 trans, Vector3 rot, Vector3 s) {
+			Matrix4 result = Matrix4::scale(s.x, s.y, s.z)
+				.multiply(Matrix4::rotate(rot.x, rot.y, rot.z))
+				.multiply(Matrix4::translate(trans.x, trans.y, trans.z));
 			return result;
 		}
 		static Matrix4 inverseMatrix(Matrix4 m) {
@@ -265,7 +269,6 @@ public:
 
 			return result;
 		}
-
 
 		static Matrix4 viewmatrix(const Vector3& position, const Vector3& rotation) {
 			Matrix4 result;
