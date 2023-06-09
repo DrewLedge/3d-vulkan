@@ -744,15 +744,13 @@ private:
 			vkBindBufferMemory(device, uboBuffers[i], uboBufferMemories[i], 0); // bind the buffer to the memory
 		}
 	}
-
 	void calcMatrixes(model& o) {
-		forms::mat4 modelMatrix = forms::mat4::modelMatrix(o.position, o.rotation, o.scale); // scale * rotation * translation
-		convertMatrix(modelMatrix, o.modelMatrix);
-		forms::mat4 viewMatrix = forms::mat4::viewMatrix(cam.camPos, cam.camAngle);
-		convertMatrix(viewMatrix, o.viewMatrix);
+		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
+		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
 		convertMatrix(forms::mat4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
+
 	void updateUBO(const camData& cam) { // needs optimization later
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcMatrixes(objects[i]);
@@ -1680,10 +1678,9 @@ private:
 		vkDeviceWaitIdle(device);
 	}
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.01f; // Adjust the speed as needed. on the laptop 0.012f is good
-		float cameraRotationSpeed = 1.0f;
+		float cameraSpeed = 0.004f; // Adjust the speed as needed. on the laptop 0.012f is good
+		float cameraRotationSpeed = 0.4f;
 
-		// restrict camDir between 0 and 360
 		cam.camAngle.y = fmod(cam.camAngle.y + 360.0f, 360.0f);
 		if (cam.camAngle.x > 90) {
 			cam.camAngle.x = 90;
@@ -1692,9 +1689,10 @@ private:
 			cam.camAngle.x = -90;
 		}
 
-		cam.camRads = forms::vec3::toRads(cam.camAngle); //camDir is originally in degrees, convert to rads
+		cam.camRads = forms::vec3::toRads(cam.camAngle);
 		forms::vec3 forward = cam.camPos.getForward(cam.camRads);
 		forms::vec3 right = cam.camPos.getRight(cam.camRads);
+		forward.y *= -1; //for vulkan
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {

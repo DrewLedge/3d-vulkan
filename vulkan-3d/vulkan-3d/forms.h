@@ -7,15 +7,15 @@ public:
 	int rng(int m, int mm);
 	struct vec3 {
 		float x, y, z;
+		vec3() : x(0.0f), y(0.0f), z(0.0f) {}
 		vec3(float x, float y, float z) : x(x), y(y), z(z) {}
+
 		vec3 operator+(const vec3& other) const {
 			return vec3(x + other.x, y + other.y, z + other.z);
 		}
-
 		vec3 operator-(const vec3& other) const {
 			return vec3(x - other.x, y - other.y, z - other.z);
 		}
-
 		vec3 operator*(float scalar) const {
 			return vec3(x * scalar, y * scalar, z * scalar);
 		}
@@ -40,6 +40,7 @@ public:
 				std::abs(y - other.y) < epsilon &&
 				std::abs(z - other.z) < epsilon;
 		}
+
 		vec3 translate(float tx, float ty, float tz) const {
 			return vec3(x + tx, y + ty, z + tz);
 		}
@@ -116,26 +117,17 @@ public:
 				}
 			}
 		}
-
-		mat4 add(const mat4& other) const { //add two matrices together
-			mat4 result;
+		bool operator==(const mat4& other) const {
+			const float epsilon = 0.00001f;
+			bool equal = true;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					result.m[i][j] = m[i][j] + other.m[i][j];
+					equal = equal && std::abs(m[i][j] - other.m[i][j]) < epsilon;
 				}
 			}
-			return result;
+			return equal;
 		}
-		mat4 subtract(const mat4& other) const {
-			mat4 result;
-			for (int i = 0; i < 4; i++) {
-				for (int j = 0; j < 4; j++) {
-					result.m[i][j] = m[i][j] - other.m[i][j];
-				}
-			}
-			return result;
-		}
-		mat4 multiply(const mat4& other) const { //multiply two matrices together
+		mat4 operator*(const mat4& other) const {
 			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
@@ -147,6 +139,20 @@ public:
 			}
 			return result;
 		}
+		mat4& operator *=(const mat4& other) {
+			mat4 temp;
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
+					temp.m[i][j] = 0;
+					for (int k = 0; k < 4; k++) {
+						temp.m[i][j] += m[i][k] * other.m[k][j];
+					}
+				}
+			}
+			*this = temp;
+			return *this;
+		}
+
 		static mat4 translate(float tx, float ty, float tz) {
 			mat4 result;
 			for (int i = 0; i < 4; i++) {
@@ -196,7 +202,7 @@ public:
 			rotZ.m[1][0] = sinf(radZ);
 			rotZ.m[1][1] = cosf(radZ);
 
-			result = rotZ.multiply(rotY).multiply(rotX);
+			result = rotZ * rotY * rotX;
 			return result;
 		}
 		vec3 vecMatrix(const vec3& vec) const {
@@ -225,8 +231,8 @@ public:
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s.x, s.y, s.z)
-				.multiply(mat4::rotate(rot.x, rot.y, rot.z))
-				.multiply(mat4::translate(trans.x, trans.y, trans.z));
+				* mat4::rotate(rot.x, rot.y, rot.z)
+				* mat4::translate(trans.x, trans.y, trans.z);
 			return result;
 		}
 		static mat4 inverseMatrix(mat4 m) {
@@ -273,7 +279,7 @@ public:
 		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
 			mat4 result;
 			result = mat4::rotate(rotation.x, rotation.y, rotation.z)
-				.multiply(mat4::translate(-position.x, -position.y, -position.z));
+				* mat4::translate(-position.x, -position.y, -position.z);
 			return result;
 		}
 
