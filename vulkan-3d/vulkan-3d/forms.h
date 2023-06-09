@@ -2,114 +2,114 @@
 #ifndef FORMULAS_H
 #define FORMULAS_H
 const float PI = 3.14159f;
-class formulas {
+class forms {
 public:
 	int rng(int m, int mm);
-	struct Vector3 {
+	struct vec3 {
 		float x, y, z;
-		Vector3(float x, float y, float z) : x(x), y(y), z(z) {}
-		Vector3 operator+(const Vector3& other) const {
-			return Vector3(x + other.x, y + other.y, z + other.z);
+		vec3(float x, float y, float z) : x(x), y(y), z(z) {}
+		vec3 operator+(const vec3& other) const {
+			return vec3(x + other.x, y + other.y, z + other.z);
 		}
 
-		Vector3 operator-(const Vector3& other) const {
-			return Vector3(x - other.x, y - other.y, z - other.z);
+		vec3 operator-(const vec3& other) const {
+			return vec3(x - other.x, y - other.y, z - other.z);
 		}
 
-		Vector3 operator*(float scalar) const {
-			return Vector3(x * scalar, y * scalar, z * scalar);
+		vec3 operator*(float scalar) const {
+			return vec3(x * scalar, y * scalar, z * scalar);
 		}
-		friend Vector3 operator*(float scalar, const Vector3& v) {
-			return Vector3(v.x * scalar, v.y * scalar, v.z * scalar);
+		friend vec3 operator*(float scalar, const vec3& v) {
+			return vec3(v.x * scalar, v.y * scalar, v.z * scalar);
 		}
-		Vector3& operator+=(const Vector3& other) {
+		vec3& operator+=(const vec3& other) {
 			x += other.x;
 			y += other.y;
 			z += other.z;
 			return *this;
 		}
-		Vector3& operator-=(const Vector3& other) {
+		vec3& operator-=(const vec3& other) {
 			x -= other.x;
 			y -= other.y;
 			z -= other.z;
 			return *this;
 		}
-		bool operator==(const formulas::Vector3& other) const {
+		bool operator==(const forms::vec3& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
 				std::abs(y - other.y) < epsilon &&
 				std::abs(z - other.z) < epsilon;
 		}
-		Vector3 translate(float tx, float ty, float tz) const {
-			return Vector3(x + tx, y + ty, z + tz);
+		vec3 translate(float tx, float ty, float tz) const {
+			return vec3(x + tx, y + ty, z + tz);
 		}
-		Vector3 multiply(float sx, float sy, float sz) const {
-			return Vector3(x * sx, y * sy, z * sz);
+		vec3 multiply(float sx, float sy, float sz) const {
+			return vec3(x * sx, y * sy, z * sz);
 		}
-		static Vector3 getForward(const Vector3& camData) { //camdata in radians
+		static vec3 getForward(const vec3& camData) { //camdata in radians
 			float pitch = camData.x;
 			float yaw = camData.y;
-			return Vector3(
+			return vec3(
 				-std::sin(yaw) * std::cos(pitch),
 				-std::sin(pitch),
 				std::cos(yaw) * std::cos(pitch)
 			);
 		}
 
-		static Vector3 getRight(const Vector3& camData) {
-			Vector3 forward = getForward(camData);
-			Vector3 up(0.0f, 1.0f, 0.0f);
+		static vec3 getRight(const vec3& camData) {
+			vec3 forward = getForward(camData);
+			vec3 up(0.0f, 1.0f, 0.0f);
 			return forward.crossProd(up);
 		}
-		static Vector3 getUp(const Vector3& camData) {
-			Vector3 forward = getForward(camData);
-			Vector3 right = getRight(camData);
+		static vec3 getUp(const vec3& camData) {
+			vec3 forward = getForward(camData);
+			vec3 right = getRight(camData);
 			return right.crossProd(forward);
 		}
 
-		Vector3 crossProd(Vector3& v) const {
-			return Vector3(
+		vec3 crossProd(vec3& v) const {
+			return vec3(
 				y * v.z - z * v.y,
 				z * v.x - x * v.z,
 				x * v.y - y * v.x
 			);
 		}
-		float dotProd(const Vector3& v) const {
+		float dotProd(const vec3& v) const {
 			return x * v.x + y * v.y + z * v.z;
 		}
 
-		Vector3 normalize() const {
+		vec3 normalize() const {
 			float length = std::sqrt(x * x + y * y + z * z);
-			return Vector3(x / length, y / length, z / length);
+			return vec3(x / length, y / length, z / length);
 		}
 
-		static Vector3 toRads(const Vector3& v) {
-			return Vector3(
+		static vec3 toRads(const vec3& v) {
+			return vec3(
 				v.x * PI / 180.0f,
 				v.y * PI / 180.0f,
 				v.z * PI / 180.0f
 			);
 		}
 	};
-	struct Vector2 {
+	struct vec2 {
 		float x, y;
-		bool operator==(const formulas::Vector2& other) const {
+		bool operator==(const forms::vec2& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
 				std::abs(y - other.y) < epsilon;
 		}
-		Vector2(float x, float y) : x(x), y(y) {}
+		vec2(float x, float y) : x(x), y(y) {}
 	};
-	struct Matrix4 {
+	struct mat4 {
 		float m[4][4];
-		Matrix4() {
+		mat4() {
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					m[i][j] = (i == j) ? 1.0f : 0.0f;
 				}
 			}
 		}
-		Matrix4(const Matrix4& other) {
+		mat4(const mat4& other) {
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					m[i][j] = other.m[i][j];
@@ -117,8 +117,8 @@ public:
 			}
 		}
 
-		Matrix4 add(const Matrix4& other) const { //add two matrices together
-			Matrix4 result;
+		mat4 add(const mat4& other) const { //add two matrices together
+			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					result.m[i][j] = m[i][j] + other.m[i][j];
@@ -126,8 +126,8 @@ public:
 			}
 			return result;
 		}
-		Matrix4 subtract(const Matrix4& other) const {
-			Matrix4 result;
+		mat4 subtract(const mat4& other) const {
+			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					result.m[i][j] = m[i][j] - other.m[i][j];
@@ -135,8 +135,8 @@ public:
 			}
 			return result;
 		}
-		Matrix4 multiply(const Matrix4& other) const { //multiply two matrices together
-			Matrix4 result;
+		mat4 multiply(const mat4& other) const { //multiply two matrices together
+			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					result.m[i][j] = 0;
@@ -147,8 +147,8 @@ public:
 			}
 			return result;
 		}
-		static Matrix4 translate(float tx, float ty, float tz) {
-			Matrix4 result;
+		static mat4 translate(float tx, float ty, float tz) {
+			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
 					if (i == j) { //diagonal
@@ -164,33 +164,33 @@ public:
 			result.m[2][3] = tz;
 			return result;
 		}
-		static Matrix4 scale(float sx, float sy, float sz) {
-			Matrix4 result;
+		static mat4 scale(float sx, float sy, float sz) {
+			mat4 result;
 			result.m[0][0] = sx;
 			result.m[1][1] = sy;
 			result.m[2][2] = sz;
 			result.m[3][3] = 1.0f;
 			return result;
 		}
-		static Matrix4 rotate(float angleX, float angleY, float angleZ) {
-			Matrix4 result;
+		static mat4 rotate(float angleX, float angleY, float angleZ) {
+			mat4 result;
 			float radX = angleX * (PI / 180.0f);
 			float radY = angleY * (PI / 180.0f);
 			float radZ = angleZ * (PI / 180.0f);
 
-			Matrix4 rotX;
+			mat4 rotX;
 			rotX.m[1][1] = cosf(radX);
 			rotX.m[1][2] = -sinf(radX);
 			rotX.m[2][1] = sinf(radX);
 			rotX.m[2][2] = cosf(radX);
 
-			Matrix4 rotY;
+			mat4 rotY;
 			rotY.m[0][0] = cosf(radY);
 			rotY.m[0][2] = sinf(radY);
 			rotY.m[2][0] = -sinf(radY);
 			rotY.m[2][2] = cosf(radY);
 
-			Matrix4 rotZ;
+			mat4 rotZ;
 			rotZ.m[0][0] = cosf(radZ);
 			rotZ.m[0][1] = -sinf(radZ);
 			rotZ.m[1][0] = sinf(radZ);
@@ -199,7 +199,7 @@ public:
 			result = rotZ.multiply(rotY).multiply(rotX);
 			return result;
 		}
-		Vector3 vecmatrix(const Vector3& vec) const {
+		vec3 vecMatrix(const vec3& vec) const {
 			float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector
 			float y = m[1][0] * vec.x + m[1][1] * vec.y + m[1][2] * vec.z + m[1][3];
 			float z = m[2][0] * vec.x + m[2][1] * vec.y + m[2][2] * vec.z + m[2][3];
@@ -209,10 +209,10 @@ public:
 				y /= w;
 				z /= w;
 			}
-			return Vector3(x, y, z);
+			return vec3(x, y, z);
 		}
-		static Matrix4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
-			Matrix4 result;
+		static mat4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
+			mat4 result;
 			float f = 1.0f / tanf(fov * (PI / 360.0f));
 			result.m[0][0] = f / aspect_ratio;
 			result.m[1][1] = f;
@@ -223,15 +223,15 @@ public:
 			return result;
 		}
 
-		static Matrix4 modelMatrix(Vector3 trans, Vector3 rot, Vector3 s) {
-			Matrix4 result = Matrix4::scale(s.x, s.y, s.z)
-				.multiply(Matrix4::rotate(rot.x, rot.y, rot.z))
-				.multiply(Matrix4::translate(trans.x, trans.y, trans.z));
+		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
+			mat4 result = mat4::scale(s.x, s.y, s.z)
+				.multiply(mat4::rotate(rot.x, rot.y, rot.z))
+				.multiply(mat4::translate(trans.x, trans.y, trans.z));
 			return result;
 		}
-		static Matrix4 inverseMatrix(Matrix4 m) {
+		static mat4 inverseMatrix(mat4 m) {
 			//formula from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
-			Matrix4 result;
+			mat4 result;
 
 			// det=a(ei−fh)−b(di−fg)+c(dh−eg)
 			float cofactor0 = m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1];
@@ -270,10 +270,10 @@ public:
 			return result;
 		}
 
-		static Matrix4 viewmatrix(const Vector3& position, const Vector3& rotation) {
-			Matrix4 result;
-			result = Matrix4::rotate(rotation.x, rotation.y, rotation.z)
-				.multiply(Matrix4::translate(-position.x, -position.y, -position.z));
+		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
+			mat4 result;
+			result = mat4::rotate(rotation.x, rotation.y, rotation.z)
+				.multiply(mat4::translate(-position.x, -position.y, -position.z));
 			return result;
 		}
 

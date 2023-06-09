@@ -131,7 +131,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="formulas.cpp" />
     <ClCompile Include="vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>

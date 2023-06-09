@@ -18,30 +18,34 @@
 #include <chrono> //time library
 #include <unordered_map>
 #include <mutex>
+#include <random>
+#include <ctime> //random seed based on time
+#include <chrono> // random seed based on time
+#include <cmath>
 
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 struct Vertex {
-	formulas::Vector3 pos; // position coordinates x, y, z
-	formulas::Vector2 tex; // texture coordinates u, v
-	formulas::Vector3 col; // color r, g, b
-	formulas::Vector3 normal; // normal vector x, y, z
+	forms::vec3 pos; // position coordinates x, y, z
+	forms::vec2 tex; // texture coordinates u, v
+	forms::vec3 col; // color r, g, b
+	forms::vec3 normal; // normal vector x, y, z
 	float alpha;
 
 	// default constructor:
 	Vertex()
-		: pos(formulas::Vector3(0.0f, 0.0f, 0.0f)),
-		tex(formulas::Vector2(0.0f, 0.0f)),
-		col(formulas::Vector3(0.0f, 0.0f, 0.0f)),
-		normal(formulas::Vector3(0.0f, 0.0f, 0.0f)),
+		: pos(forms::vec3(0.0f, 0.0f, 0.0f)),
+		tex(forms::vec2(0.0f, 0.0f)),
+		col(forms::vec3(0.0f, 0.0f, 0.0f)),
+		normal(forms::vec3(0.0f, 0.0f, 0.0f)),
 		alpha(0.95f)
 	{}
 
 	// constructor:
-	Vertex(const formulas::Vector3& position,
-		const formulas::Vector2& texture,
-		const formulas::Vector3& color,
-		const formulas::Vector3& normalVector,
+	Vertex(const forms::vec3& position,
+		const forms::vec2& texture,
+		const forms::vec3& color,
+		const forms::vec3& normalVector,
 		float alphaValue)
 		: pos(position),
 		tex(texture),
@@ -115,9 +119,9 @@ struct model {
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMem;
 
-	formulas::Vector3 position;  // position of the model
-	formulas::Vector3 rotation;  // rotation of the model
-	formulas::Vector3 scale;     // scale of the model
+	forms::vec3 position;  // position of the model
+	forms::vec3 rotation;  // rotation of the model
+	forms::vec3 scale;     // scale of the model
 	float modelMatrix[16];
 	float projectionMatrix[16];
 	float viewMatrix[16];
@@ -131,9 +135,9 @@ struct model {
 		vertices(),
 		indices(),
 		pathObj(""),
-		position(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default position to origin
-		rotation(formulas::Vector3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-		scale(formulas::Vector3(0.1f, 0.1f, 0.1f)),
+		position(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
+		rotation(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+		scale(forms::vec3(0.1f, 0.1f, 0.1f)),
 		isLoaded(false),
 		stagingBuffer(VK_NULL_HANDLE),
 		stagingBufferMem(VK_NULL_HANDLE),
@@ -155,11 +159,11 @@ struct UniformBufferObject {
 };
 
 struct camData {
-	formulas::Vector3 camPos; //x, y, z
-	formulas::Vector3 camDir; //angle of the camera is facing
-	formulas::Vector3 camRads;
+	forms::vec3 camPos; //x, y, z
+	forms::vec3 camAngle; //angle of the camera is facing
+	forms::vec3 camRads;
 };
-camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
+camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 class Engine {
 public:
 	void run() {
@@ -219,7 +223,7 @@ private:
 
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
-	formulas formula;
+	forms formula;
 	std::mutex modelMtx;
 	std::mutex descMtx;
 	void initWindow() {
@@ -232,6 +236,13 @@ private:
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
 	};
+	int rng(int min, int max) {
+		static std::random_device rd;
+		static std::mt19937 gen(rd());
+		std::uniform_int_distribution<int> dist(min, max);
+		return dist(gen);
+	};
+
 	void loadModels() {
 		std::vector<std::thread> threads;
 
@@ -735,11 +746,11 @@ private:
 	}
 
 	void calcMatrixes(model& o) {
-		formulas::Matrix4 modelMatrix = formulas::Matrix4::modelMatrix(o.position, o.rotation, o.scale); // scale * rotation * translation
+		forms::mat4 modelMatrix = forms::mat4::modelMatrix(o.position, o.rotation, o.scale); // scale * rotation * translation
 		convertMatrix(modelMatrix, o.modelMatrix);
-		formulas::Matrix4 viewMatrix = formulas::Matrix4::viewmatrix(cam.camPos, cam.camDir);
+		forms::mat4 viewMatrix = forms::mat4::viewMatrix(cam.camPos, cam.camAngle);
 		convertMatrix(viewMatrix, o.viewMatrix);
-		convertMatrix(formulas::Matrix4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
+		convertMatrix(forms::mat4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 	void updateUBO(const camData& cam) { // needs optimization later
@@ -759,7 +770,7 @@ private:
 			vkUnmapMemory(device, uboBufferMemories[i]);
 		}
 	}
-	void convertMatrix(const formulas::Matrix4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
+	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		int index = 0;
 		for (int column = 0; column < 4; column++) {
 			for (int row = 0; row < 4; row++) {
@@ -768,8 +779,8 @@ private:
 			}
 		}
 	}
-	formulas::Matrix4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
-		formulas::Matrix4 destination;
+	forms::mat4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
+		forms::mat4 destination;
 		int index = 0;
 		for (int column = 0; column < 4; column++) {
 			for (int row = 0; row < 4; row++) {
@@ -889,10 +900,10 @@ private:
 	}
 	void realtimeLoad(std::string p) {
 		model m = objects[0];
-		formulas::Matrix4 test;
+		forms::mat4 test;
 		// modify the copied model
-		formulas::Vector3 worldPos = { 0.0f, 0.0f, 0.0f };
-		worldPos = formulas::Matrix4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecmatrix(cam.camPos);
+		forms::vec3 worldPos = { 0.0f, 0.0f, 0.0f };
+		worldPos = forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos);
 		m.scale = { 0.01f, 0.01f, 0.01f };
 		m.position = worldPos.multiply(10, 10, 10);
 		m.startObj = false;
@@ -900,7 +911,7 @@ private:
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		setupDescriptorSets();
 	}
-	void printMatrix(formulas::Matrix4 mat) {
+	void printMatrix(forms::mat4 mat) {
 		for (int row = 0; row < 4; ++row) {
 			for (int col = 0; col < 4; ++col) {
 				std::cout << mat.m[row][col] << "\t";
@@ -908,7 +919,6 @@ private:
 			std::cout << std::endl;
 		}
 	}
-
 
 	void createTS(model& m) { //create texture sampler
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
@@ -1561,10 +1571,17 @@ private:
 			glfwGetFramebufferSize(window, &width, &height);
 			glfwWaitEvents();
 		}
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkDeviceWaitIdle(device); // Wait for device idle
 		cleanupSwapChain();
 		createSC();
 		createImageViews();
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+		setupDescriptorSets();
+		vkDestroyImageView(device, depthImageView, nullptr);
+		vkDestroyImage(device, depthImage, nullptr);
+		vkFreeMemory(device, depthImageMemory, nullptr);
+		setupDepthResources();
 		createGraphicsPipelineOpaque();
 		createFrameBuffer();
 		recordCommandBuffers();
@@ -1667,17 +1684,17 @@ private:
 		float cameraRotationSpeed = 1.0f;
 
 		// restrict camDir between 0 and 360
-		cam.camDir.y = fmod(cam.camDir.y + 360.0f, 360.0f);
-		if (cam.camDir.x > 90) {
-			cam.camDir.x = 90;
+		cam.camAngle.y = fmod(cam.camAngle.y + 360.0f, 360.0f);
+		if (cam.camAngle.x > 90) {
+			cam.camAngle.x = 90;
 		}
-		if (cam.camDir.x < -90) {
-			cam.camDir.x = -90;
+		if (cam.camAngle.x < -90) {
+			cam.camAngle.x = -90;
 		}
 
-		cam.camRads = formulas::Vector3::toRads(cam.camDir); //camDir is originally in degrees, convert to rads
-		formulas::Vector3 forward = cam.camPos.getForward(cam.camRads);
-		formulas::Vector3 right = cam.camPos.getRight(cam.camRads);
+		cam.camRads = forms::vec3::toRads(cam.camAngle); //camDir is originally in degrees, convert to rads
+		forms::vec3 forward = cam.camPos.getForward(cam.camRads);
+		forms::vec3 right = cam.camPos.getRight(cam.camRads);
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
@@ -1695,21 +1712,21 @@ private:
 
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.camDir.x += cameraRotationSpeed;
+			cam.camAngle.x += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.camDir.x -= cameraRotationSpeed;
+			cam.camAngle.x -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.camDir.y += cameraRotationSpeed;
+			cam.camAngle.y += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.camDir.y -= cameraRotationSpeed;
+			cam.camAngle.y -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
-		cam.camDir.z = 0.0f;
+		cam.camAngle.z = 0.0f;
 	}
 
 
