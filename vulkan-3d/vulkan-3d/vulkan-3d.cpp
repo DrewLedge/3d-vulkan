@@ -156,9 +156,10 @@ struct UniformBufferObject {
 
 struct camData {
 	formulas::Vector3 camPos; //x, y, z
-	formulas::Vector3 camDir; //pitch, yaw, roll
+	formulas::Vector3 camDir; //angle of the camera is facing
+	formulas::Vector3 camRads;
 };
-camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
+camData cam = { formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f), formulas::Vector3(0.0f, 0.0f, 0.0f) };
 class Engine {
 public:
 	void run() {
@@ -1669,22 +1670,32 @@ private:
 		float cameraSpeed = 0.01f; // Adjust the speed as needed. on the laptop 0.012f is good
 		float cameraRotationSpeed = 1.0f;
 
+		// restrict camDir between 0 and 360
+		cam.camDir.y = fmod(cam.camDir.y + 360.0f, 360.0f);
+		if (cam.camDir.x > 90) {
+			cam.camDir.x = 90;
+		}
+		if (cam.camDir.x < -90) {
+			cam.camDir.x = -90;
+		}
+
+		cam.camRads = formulas::Vector3::toRads(cam.camDir); //camDir is originally in degrees, convert to rads
+
+		formulas::Vector3 forward = cam.camPos.getForward(cam.camRads);
+		formulas::Vector3 right = cam.camPos.getRight(cam.camRads);
+
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			cam.camPos.x -= cameraSpeed * sin(cam.camDir.y);
-			cam.camPos.z += cameraSpeed * cos(cam.camDir.y);
+			cam.camPos += forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
-			cam.camPos.x += cameraSpeed * sin(cam.camDir.y);
-			cam.camPos.z -= cameraSpeed * cos(cam.camDir.y);
+			cam.camPos -= forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			cam.camPos.x -= cameraSpeed * cos(cam.camDir.y);
-			cam.camPos.z += cameraSpeed * sin(cam.camDir.y);
+			cam.camPos += right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			cam.camPos.x += cameraSpeed * cos(cam.camDir.y);
-			cam.camPos.z -= cameraSpeed * sin(cam.camDir.y);
+			cam.camPos -= right * cameraSpeed;
 		}
 
 		// camera rotation
@@ -1703,7 +1714,9 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
+		cam.camDir.z = 0.0f;
 	}
+
 
 
 

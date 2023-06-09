@@ -46,21 +46,43 @@ public:
 		Vector3 multiply(float sx, float sy, float sz) const {
 			return Vector3(x * sx, y * sy, z * sz);
 		}
-		Vector3 getForward(Vector3 camData) const {
+		static Vector3 getForward(const Vector3& camData) { //camdata in radians
 			float pitch = camData.x;
 			float yaw = camData.y;
-			return Vector3(cos(yaw) * cos(pitch), sin(pitch), sin(yaw) * cos(pitch));
+			return Vector3(
+				-std::sin(yaw) * std::cos(pitch),
+				-std::sin(pitch),
+				std::cos(yaw) * std::cos(pitch)
+			);
 		}
-		Vector3 getRight(Vector3 camData) const {
+
+		static Vector3 getUp(const Vector3& camData) {
+			float roll = camData.z;
+			return Vector3(
+				std::sin(roll),
+				std::cos(roll),
+				0.0f
+			);
+		}
+
+		static Vector3 getRight(const Vector3& camData) {
 			Vector3 forward = getForward(camData);
-			Vector3 up(0.0f, 1.0f, 0.0f);
-			return forward.crossProd(up);
+			return forward.crossProd(getUp(camData));
 		}
+
+
 		Vector3 crossProd(Vector3 v) const {
 			return Vector3(
 				y * v.z - z * v.y,
 				z * v.x - x * v.z,
 				x * v.y - y * v.x
+			);
+		}
+		static Vector3 toRads(const Vector3& v) {
+			return Vector3(
+				v.x * PI / 180.0f,
+				v.y * PI / 180.0f,
+				v.z * PI / 180.0f
 			);
 		}
 	};
