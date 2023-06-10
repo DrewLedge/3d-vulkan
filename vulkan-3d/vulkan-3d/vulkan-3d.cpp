@@ -4,6 +4,9 @@
 #include "ext/tiny_obj_loader.h" // load .obj and .mtl files
 #include "forms.h" // my header file with the math
 #include <glm/glm.hpp>
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <imgui_impl_vulkan.h>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -182,6 +185,7 @@ private:
 	std::vector<VkImage> swapChainImages;
 	VkFormat swapChainImageFormat;
 	VkExtent2D swapChainExtent;
+	uint32_t imageCount;
 	std::vector<VkFence> inFlightFences;
 	size_t currentFrame = 0;
 	std::vector<VkImageView> swapChainImageViews;
@@ -199,6 +203,9 @@ private:
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
+	VkDescriptorSetLayout imguiDescriptorSetLayout;
+	VkDescriptorPool imguiDescriptorPool;
+
 	std::vector<VkDescriptorSet> descriptorSets;
 	std::vector<VkBuffer> uboBuffers;
 	std::vector<VkDeviceMemory> uboBufferMemories;
@@ -557,7 +564,7 @@ private:
 		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
 		VkPresentModeKHR present = chooseSwapPresentMode(swapChainSupport.presentModes);
 		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-		uint32_t imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
+		imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
 		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
 			imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
@@ -812,17 +819,53 @@ private:
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
 	}
+	void guiDSLayout() { //descriptor set layout for imgui
+		VkDescriptorSetLayoutBinding imguiBinding{};
+		imguiBinding.binding = 0;
+		imguiBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		imguiBinding.descriptorCount = 1;
+		imguiBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // access through the fragment shader
+
+		VkDescriptorSetLayoutCreateInfo imguiLayoutInfo{};
+		imguiLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		imguiLayoutInfo.bindingCount = 1;
+		imguiLayoutInfo.pBindings = &imguiBinding;
+
+		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, &imguiDescriptorSetLayout) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
+		}
+	}
+	void guiDSPool() { // descriptor pool for imgui
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = 1;
+
+		VkDescriptorPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; // descriptor sets can be freed individually
+		poolInfo.maxSets = 1;
+		poolInfo.poolSizeCount = 1;
+		poolInfo.pPoolSizes = &poolSize;
+
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create Imgui descriptor pool!");
+		}
+	}
 
 	void createDSPool() {
 		std::array<VkDescriptorPoolSize, 2> poolSizes{};
+
+		// matrix ubo descriptor set:
 		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
+
+		// texture data descriptor set:
 		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; //free the descriptor sets when the pool is destroyed
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
 		poolInfo.maxSets = static_cast<uint32_t>(objects.size());
@@ -831,6 +874,7 @@ private:
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
+
 
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
@@ -989,6 +1033,7 @@ private:
 		memcpy(data, imageData, imageSize);
 		vkUnmapMemory(device, m.stagingBufferMem);
 	}
+
 	void createTexturedImage(std::string path, model& m) {
 		// reset the staging buffer and memory:
 		if (m.stagingBuffer == VK_NULL_HANDLE) {
@@ -1152,6 +1197,12 @@ private:
 		fragShaderModule = createShaderModule(fragShaderCode);
 	}
 
+	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
+		if (err == 0)
+			return;
+		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
+		assert(err == 0); //if true, continue, if false, throw error
+	}
 	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
@@ -1367,6 +1418,10 @@ private:
 			throw std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
 		}
 
+		// imgui initialization:
+		uint32_t graphicsQueueFamily = findQueueFamiliesG(physicalDevice).graphicsFamily.value();
+		//implement here
+
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		pipelineInf.stageCount = 2; // Vertex and fragment shaders
@@ -1513,7 +1568,6 @@ private:
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-
 			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport to already existing viewport state from the pipeline
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1564,7 +1618,6 @@ private:
 				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
 			}
 			vkCmdEndRenderPass(commandBuffers[i]);
-
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
@@ -1706,6 +1759,24 @@ private:
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
+	void drawText(const char* text, float x, float y) {
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
+
+		ImGui::Begin("TextWindow", nullptr,
+			ImGuiWindowFlags_NoTitleBar |
+			ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoScrollbar |
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoInputs |
+			ImGuiWindowFlags_NoBackground |
+			ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+		ImGui::TextUnformatted(text);
+		ImGui::End();
+	}
+
 
 	void mainLoop() {
 		while (!glfwWindowShouldClose(window)) {
@@ -1811,6 +1882,9 @@ private:
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
+		ImGui_ImplVulkan_Shutdown();
+		ImGui_ImplGlfw_Shutdown();
+		ImGui::DestroyContext();
 
 		// clean up vertex buffer and its memory
 		for (int i = 0; i < vertBuffers.size(); i++) {

@@ -104,7 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>C:\VulkanSDK\1.3.246.1\Include;$(ProjectDir)\ext\GLFW\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)\ext\imgui;$(ProjectDir)\ext\GLFW\include;C:\VulkanSDK\1.3.246.1\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -131,13 +131,27 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ext\imgui\imgui.cpp" />
+    <ClCompile Include="ext\imgui\imgui_demo.cpp" />
+    <ClCompile Include="ext\imgui\imgui_draw.cpp" />
+    <ClCompile Include="ext\imgui\imgui_impl_glfw.cpp" />
+    <ClCompile Include="ext\imgui\imgui_impl_vulkan.cpp" />
+    <ClCompile Include="ext\imgui\imgui_tables.cpp" />
+    <ClCompile Include="ext\imgui\imgui_widgets.cpp" />
     <ClCompile Include="vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="engine.frag" />
     <None Include="engine.vert" />
+    <None Include="glsl_shader.frag.u32" />
+    <None Include="glsl_shader.vert.u32" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="ext\imgui\imconfig.h" />
+    <ClInclude Include="ext\imgui\imgui.h" />
+    <ClInclude Include="ext\imgui\imgui_impl_glfw.h" />
+    <ClInclude Include="ext\imgui\imgui_impl_vulkan.h" />
+    <ClInclude Include="ext\imgui\imgui_internal.h" />
     <ClInclude Include="forms.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
