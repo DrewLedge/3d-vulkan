@@ -94,7 +94,7 @@ struct Texture {
 	VkImage textureImage;
 	VkDeviceMemory textureImageMemory;
 	VkImageView textureImageView;
-
+	uint32_t mipLevels;
 	// texture file paths
 	std::string ambientTexturePath;
 	std::string diffuseTexturePath;
@@ -187,8 +187,8 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 
-	uint32_t textureWidth = 512;
-	uint32_t textureHeight = 512;
+	uint32_t texWidth = 512;
+	uint32_t texHeight = 512;
 	unsigned char* imageData;
 
 	VkImage depthImage;
@@ -196,7 +196,7 @@ private:
 	VkImageView depthImageView;
 	VkFormat depthFormat;
 
-	VkDeviceSize imageSize = static_cast<VkDeviceSize>(textureWidth) * textureHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
+	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
 	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
 	VkDescriptorPool descriptorPool; // descriptor pool object
 	std::vector<VkDescriptorSet> descriptorSets;
@@ -624,6 +624,7 @@ private:
 		}
 		throw std::runtime_error("failed to find suitable depth format! :(");
 	}
+	//
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
 		createDepthImage();
@@ -671,14 +672,14 @@ private:
 		viewInfo.subresourceRange.baseArrayLayer = 0;
 		viewInfo.subresourceRange.layerCount = 1;
 
-		VkImageView imageView;
-		if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+		VkImageView depthView;
+		if (vkCreateImageView(device, &viewInfo, nullptr, &depthView) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create depth image view!");
 		}
 
-		return imageView;
+		return depthView;
 	}
-	void createImageViews() {
+	void createImageViews() { //create the image views for the swap chain images
 		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			VkImageViewCreateInfo newinfo{};
@@ -747,7 +748,7 @@ private:
 	void calcMatrixes(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(forms::mat4::perspective(45.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
+		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
@@ -788,7 +789,6 @@ private:
 		}
 		return destination;
 	}
-
 
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
@@ -931,10 +931,9 @@ private:
 		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
 		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
 		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
-		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR; //linear mipmap mode (GPU will interpolate between mipmap levels)
-		samplerInf.mipLodBias = 0.0f;
+		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = 0.0f; // implement soon
+		samplerInf.maxLod = static_cast<float>(m.texture.mipLevels); // set the maximum level-of-detail value to the number of mip levels
 		if (vkCreateSampler(device, &samplerInf, nullptr, &m.texture.textureSampler) != VK_SUCCESS) { // create sampler
 			throw std::runtime_error("failed to create texture sampler!");
 		}
@@ -947,7 +946,7 @@ private:
 		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
 		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
 		viewInf.subresourceRange.baseMipLevel = 0;
-		viewInf.subresourceRange.levelCount = 1;
+		viewInf.subresourceRange.levelCount = m.texture.mipLevels - viewInf.subresourceRange.baseMipLevel; //miplevel is influenced by the base 
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		if (vkCreateImageView(device, &viewInf, nullptr, &m.texture.textureImageView) != VK_SUCCESS) {
@@ -998,20 +997,22 @@ private:
 		}
 		{
 			std::lock_guard<std::mutex> lock(descMtx); //when the thread is done, unlock the mutex
-
+			m.texture.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
 			// create image:
 			VkImageCreateInfo imageInf{};
 			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 			imageInf.imageType = VK_IMAGE_TYPE_2D;
-			imageInf.extent.width = textureWidth;
-			imageInf.extent.height = textureHeight;
+			imageInf.extent.width = texWidth;
+			imageInf.extent.height = texHeight;
 			imageInf.extent.depth = 1;
-			imageInf.mipLevels = 1;
+			imageInf.mipLevels = m.texture.mipLevels;
 			imageInf.arrayLayers = 1;
 			imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT; // transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
+			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+			// transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
+
 			imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
 			imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -1042,7 +1043,9 @@ private:
 			region.imageSubresource.baseArrayLayer = 0;
 			region.imageSubresource.layerCount = 1;
 			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { static_cast<uint32_t>(textureWidth), static_cast<uint32_t>(textureHeight), 1 }; //gets the 2d image extent
+			region.imageExtent = { static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1 }; //gets the 2d image extent
+
+			VkCommandBuffer tempBuffer = beginSingleTimeCommands();
 
 			VkImageMemoryBarrier barrier{};
 			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1053,27 +1056,65 @@ private:
 			barrier.image = m.texture.textureImage;
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = 1;
+			barrier.subresourceRange.levelCount = m.texture.mipLevels;
 			barrier.subresourceRange.baseArrayLayer = 0;
 			barrier.subresourceRange.layerCount = 1;
-			barrier.srcAccessMask = 0; //specifies the type of access that must be available in the old layout in order to transition to the new layout
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-
-			VkCommandBuffer tempBuffer = beginSingleTimeCommands(); //transition image to suitable layout for receiving data:
-
-			// transition image to suitable layout for receiving data:
-			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be ready to receive data from barrier object
+			barrier.srcAccessMask = 0;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
+			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //from the top of the pipeline to the transfer stage
 
 			vkCmdCopyBufferToImage(tempBuffer, m.stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
-			// transition image to be shader readable:
-			barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
-			barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //transition image to be shader readable from barrier object
-			endSingleTimeCommands(tempBuffer);
+			int mipWidth = texWidth;
+			int mipHeight = texHeight;
 
+			for (uint32_t i = 0; i < m.texture.mipLevels; i++) {
+				VkImageMemoryBarrier barrierToSrc{};
+				barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				barrierToSrc.image = m.texture.textureImage;
+				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //this means that the image is a color image not a depth or stencil image
+				barrierToSrc.subresourceRange.baseMipLevel = i;
+				barrierToSrc.subresourceRange.levelCount = 1;
+				barrierToSrc.subresourceRange.baseArrayLayer = 0;
+				barrierToSrc.subresourceRange.layerCount = 1;
+				barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
+				barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
+
+				//iterate through all but the last mip level to blit from the previous mip level to the next mip level:
+				if (i < m.texture.mipLevels - 1) {
+					VkImageBlit blit{};
+					blit.srcOffsets[0] = { 0, 0, 0 };
+					blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+					blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					blit.srcSubresource.mipLevel = i;
+					blit.srcSubresource.baseArrayLayer = 0;
+					blit.srcSubresource.layerCount = 1;
+					blit.dstOffsets[0] = { 0, 0, 0 };
+					blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 }; //if the mip level is greater than 1, divide by 2, otherwise set to 1
+					blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					blit.dstSubresource.mipLevel = i + 1;
+					blit.dstSubresource.baseArrayLayer = 0;
+					blit.dstSubresource.layerCount = 1;
+					vkCmdBlitImage(tempBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+				}
+
+				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+				barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //mip levels are read by the fragment shader
+
+				//for the next mip level, divide the width and height by 2, unless they are already 1
+				if (mipWidth > 1) mipWidth /= 2;
+				if (mipHeight > 1) mipHeight /= 2;
+			}
+			endSingleTimeCommands(tempBuffer);
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}

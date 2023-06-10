@@ -11,9 +11,10 @@ layout(location = 3) in vec2 inTexCoord; // Input texture coordinates from verte
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    vec4 sampled = texture(texSampler, inTexCoord); // Sample the texture
-    outColor = sampled * vec4(fragColor.rgb, inAlpha); // Multiply by incoming color and alpha
+    vec4 sampled = texture(texSampler, inTexCoord); // sample the texture with automatic mip level selection
+    outColor = sampled * vec4(fragColor.rgb, inAlpha);
 }
+
 
 
 
