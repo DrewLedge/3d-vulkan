@@ -41,7 +41,7 @@ struct Vertex {
 		tex(forms::vec2(0.0f, 0.0f)),
 		col(forms::vec3(0.0f, 0.0f, 0.0f)),
 		normal(forms::vec3(0.0f, 0.0f, 0.0f)),
-		alpha(0.95f)
+		alpha(1.0f)
 	{}
 
 	// constructor:
@@ -239,6 +239,11 @@ private:
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
 
 		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+		IMGUI_CHECKVERSION();
+		ImGui::CreateContext();
+		ImGui::StyleColorsDark();
+		ImGui_ImplGlfw_InitForVulkan(window, true);
+
 	}
 	const std::vector<const char*> validationLayers = {
 	"VK_LAYER_KHRONOS_validation"
@@ -1090,7 +1095,7 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1 }; //gets the 2d image extent
 
-			VkCommandBuffer tempBuffer = beginSingleTimeCommands();
+			VkCommandBuffer tempBuffer = beginSingleTimeCommands(commandPool);
 
 			VkImageMemoryBarrier barrier{};
 			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1159,16 +1164,16 @@ private:
 				if (mipWidth > 1) mipWidth /= 2;
 				if (mipHeight > 1) mipHeight /= 2;
 			}
-			endSingleTimeCommands(tempBuffer);
+			endSingleTimeCommands(tempBuffer, commandPool);
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}
 	}
-	VkCommandBuffer beginSingleTimeCommands() {
+	VkCommandBuffer beginSingleTimeCommands(VkCommandPool cPool) {
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //specifies if the command buffer is primary or secondary
-		allocInfo.commandPool = commandPool;
+		allocInfo.commandPool = cPool;
 		allocInfo.commandBufferCount = 1;
 		VkCommandBuffer commandBuffer;
 		vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
@@ -1179,15 +1184,15 @@ private:
 		return commandBuffer;
 	}
 
-	void endSingleTimeCommands(VkCommandBuffer commandBuffer) {
-		vkEndCommandBuffer(commandBuffer);
+	void endSingleTimeCommands(VkCommandBuffer cBuffer, VkCommandPool cPool) {
+		vkEndCommandBuffer(cBuffer);
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &commandBuffer;
+		submitInfo.pCommandBuffers = &cBuffer;
 		vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
 		vkQueueWaitIdle(graphicsQueue); //wait for the queue to be idle
-		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer); //free the command buffer
+		vkFreeCommandBuffers(device, cPool, 1, &cBuffer); //free the command buffer
 	}
 
 	void setupShaders() {
@@ -1418,10 +1423,7 @@ private:
 			throw std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
 		}
 
-		// imgui initialization:
-		uint32_t graphicsQueueFamily = findQueueFamiliesG(physicalDevice).graphicsFamily.value();
-		//implement here
-
+		//pipeline setup: Describes the pipeline to be created
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		pipelineInf.stageCount = 2; // Vertex and fragment shaders
@@ -1447,7 +1449,34 @@ private:
 
 	}
 
+	void imguiSetup() {
+		// descriptor set creation for the gui:
+		guiDSLayout();
+		guiDSPool();
 
+		// imgui setup:
+		uint32_t graphicsQueueFamily = findQueueFamiliesG(physicalDevice).graphicsFamily.value();
+		ImGui_ImplVulkan_InitInfo init_info = {};
+		init_info.Instance = instance;
+		init_info.PhysicalDevice = physicalDevice;
+		init_info.Device = device;
+		init_info.QueueFamily = graphicsQueueFamily;
+		init_info.Queue = graphicsQueue;
+		init_info.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
+		init_info.DescriptorPool = imguiDescriptorPool;
+		init_info.Allocator = VK_NULL_HANDLE;
+		init_info.MinImageCount = imageCount;
+		init_info.ImageCount = imageCount;
+		init_info.CheckVkResultFn = check_vk_result; // function to check vulkan results
+		ImGui_ImplVulkan_Init(&init_info, renderPass);
+
+		// upload fonts, etc:
+		VkCommandPool guiCommandPool = createCommandPool();
+		VkCommandBuffer guiCommandBuffer = beginSingleTimeCommands(guiCommandPool);
+		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
+		endSingleTimeCommands(guiCommandBuffer, guiCommandPool);
+		ImGui_ImplVulkan_DestroyFontUploadObjects();
+	}
 
 	void setupFences() {
 		inFlightFences.resize(swapChainImages.size());
@@ -1461,16 +1490,18 @@ private:
 		}
 	}
 
-	void createCommandPool() {
+	VkCommandPool createCommandPool() {
+		VkCommandPool cPool;
 		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); //the queue family that will be using this command pool
 		poolInf.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // enable reset command buffer flag
-		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &commandPool);
+		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &cPool);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool! " + resultStr(result));
 		}
+		return cPool;
 	}
 
 	void createCommandBuffer() {
@@ -1617,6 +1648,19 @@ private:
 
 				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
 			}
+			// prepare for next frame in ImGui:
+			ImGui_ImplVulkan_NewFrame();
+			ImGui_ImplGlfw_NewFrame();
+			ImGui::NewFrame();
+
+			// draw the imgui text
+			const char* text = "vulkan hurt my brain";
+			drawText(text, 600, 600);
+
+			// render the imgui frame and draw imgui's commands into the command buffer:
+			ImGui::Render();
+			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), commandBuffers[i]);
+
 			vkCmdEndRenderPass(commandBuffers[i]);
 			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
@@ -1759,9 +1803,10 @@ private:
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
+
 	void drawText(const char* text, float x, float y) {
-		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always); //set the position of the window
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always); //set the size of the window
 
 		ImGui::Begin("TextWindow", nullptr,
 			ImGuiWindowFlags_NoTitleBar |
@@ -1773,7 +1818,13 @@ private:
 			ImGuiWindowFlags_NoBackground |
 			ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-		ImGui::TextUnformatted(text);
+		//center text:
+		float font_size = ImGui::GetFontSize();
+		float text_width = ImGui::CalcTextSize(text).x;
+		float window_width = ImGui::GetWindowSize().x;
+		float centered_start_position = (window_width - text_width) / 2.0f;
+
+		ImGui::TextUnformatted(text); // dont format the text
 		ImGui::End();
 	}
 
@@ -1839,9 +1890,6 @@ private:
 		cam.camAngle.z = 0.0f;
 	}
 
-
-
-
 	void initVulkan() { //initializes Vulkan functions
 		createInstance();
 		createSurface();
@@ -1852,13 +1900,14 @@ private:
 		createSC(); //create swap chain
 		setupFences();
 		createSemaphores();
-		createCommandPool();
+		commandPool = createCommandPool();
 		createVertexBuffer();
 		createIndexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		setupDepthResources();
 		createGraphicsPipelineOpaque();
+		imguiSetup();
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
