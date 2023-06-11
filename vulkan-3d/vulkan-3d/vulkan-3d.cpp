@@ -228,6 +228,10 @@ private:
 	std::vector<VkBuffer> indBuffers;
 	std::vector<VkDeviceMemory> indBufferMems;
 
+	uint32_t fps;
+	ImFont* font_small;
+	ImFont* font_large;
+
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	forms formula;
@@ -243,6 +247,8 @@ private:
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
+
+		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF("Fonts/OpenSans/OpenSans-Italic-VariableFont_wdth,wght.ttf", 50.0f);
 
 	}
 	const std::vector<const char*> validationLayers = {
@@ -1654,8 +1660,9 @@ private:
 			ImGui::NewFrame();
 
 			// draw the imgui text
-			const char* text = "vulkan hurt my brain";
-			drawText(text, 600, 600);
+			std::string str = std::to_string(fps);
+			std::string text = "fps: " + str;
+			drawText(text.c_str(), swapChainExtent.width / 2, 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
 
 			// render the imgui frame and draw imgui's commands into the command buffer:
 			ImGui::Render();
@@ -1804,9 +1811,13 @@ private:
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
 
-	void drawText(const char* text, float x, float y) {
+	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
 		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always); //set the position of the window
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always); //set the size of the window
+
+		if (backgroundColor.x != -1) {
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, backgroundColor);
+		}
 
 		ImGui::Begin("TextWindow", nullptr,
 			ImGuiWindowFlags_NoTitleBar |
@@ -1815,31 +1826,58 @@ private:
 			ImGuiWindowFlags_NoScrollbar |
 			ImGuiWindowFlags_NoSavedSettings |
 			ImGuiWindowFlags_NoInputs |
-			ImGuiWindowFlags_NoBackground |
 			ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-		//center text:
+		if (font != nullptr) { //if font exists, use it. otherwise, use the default font
+			ImGui::PushFont(font);
+		}
+		if (font != nullptr) {
+			ImGui::PopFont();
+		}
 		float font_size = ImGui::GetFontSize();
 		float text_width = ImGui::CalcTextSize(text).x;
 		float window_width = ImGui::GetWindowSize().x;
 		float centered_start_position = (window_width - text_width) / 2.0f;
 
+		ImGui::SetCursorPosX(centered_start_position); // center the text around the x position cords
 		ImGui::TextUnformatted(text); // dont format the text
+
+		if (backgroundColor.x != -1) {
+			ImGui::PopStyleColor();  // revert background color change
+		}
 		ImGui::End();
 	}
 
 
+
 	void mainLoop() {
+		int frameCount = 0;
+		auto startTime = std::chrono::steady_clock::now();
+		auto previousTime = startTime;
+
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
 			drawF();
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
-			handleKeyboardInput(window); //handle keyboard input to change cam position
+			handleKeyboardInput(window); // handle keyboard input to change cam position
 			recreateObjectBuffers();
-			updateUBO(cam); //update ubo matricies and populate the buffer
+			updateUBO(cam); // update ubo matrices and populate the buffer
+			auto endTime = std::chrono::steady_clock::now();
+			auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+			frameCount++;
+			startTime = endTime;
+
+			auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - previousTime).count();
+			if (timeSincePrevious >= 300) {
+				fps = std::round(frameCount / (timeSincePrevious / 1000.0f));
+				frameCount = 0;
+				previousTime = endTime;
+			}
 		}
+
 		vkDeviceWaitIdle(device);
 	}
+
+
 	void handleKeyboardInput(GLFWwindow* window) {
 		float cameraSpeed = 0.004f; // Adjust the speed as needed. on the laptop 0.012f is good
 		float cameraRotationSpeed = 0.4f;
