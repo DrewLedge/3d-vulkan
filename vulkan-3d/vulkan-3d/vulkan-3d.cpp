@@ -3,7 +3,6 @@
 #include "ext/stb_image.h" // library for loading images
 #include "ext/tiny_obj_loader.h" // load .obj and .mtl files
 #include "forms.h" // my header file with the math
-#include <glm/glm.hpp>
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
@@ -2014,7 +2013,7 @@ private:
 	// 15. texture sampler (done)
 	// 16. descriptor sett (done)
 	// 17. convert to 3d  (done)
-	// 18. mip mapping and optimizations
+	// 18. mip mapping and optimizations (done)
 	// 19. lighting
 	// 20. shadows
 	// 21. skybox

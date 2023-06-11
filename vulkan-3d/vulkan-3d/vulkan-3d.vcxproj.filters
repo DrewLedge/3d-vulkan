@@ -25,6 +25,9 @@
     <Filter Include="Header Files\imgui">
       <UniqueIdentifier>{16837075-bf40-412b-a1af-3cb4b0da2a89}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Source Files\Other files">
+      <UniqueIdentifier>{07e3bd8c-ad41-4b72-987a-c88ba843d96c}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="vulkan-3d.cpp">
@@ -64,6 +67,9 @@
     </None>
     <None Include="glsl_shader.vert.u32">
       <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="..\..\README.md">
+      <Filter>Source Files\Other files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

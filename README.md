@@ -1,8 +1,10 @@
 # My Vulkan Project
 
-To install and set up your Vulkan project, please follow these steps:
+Welcome to My Vulkan Project. This README provides instructions on how to set up the project on your local machine for testing purposes.
 
 ## Download Vulkan SDK
+
+The Vulkan SDK is required to build and run the project. To download it, follow these steps:
 
 1. Visit the official Vulkan SDK website: [Vulkan SDK](https://www.lunarg.com/vulkan-sdk/).
 2. Choose the appropriate version for your operating system.
@@ -10,18 +12,25 @@ To install and set up your Vulkan project, please follow these steps:
 
 ## Install Vulkan SDK
 
-1. Once the Vulkan SDK installer is downloaded, run it to start the installation process.
-2. Follow the on-screen instructions and select the desired installation options.
+After downloading the Vulkan SDK installer, you need to install it on your system:
+
+1. Run the Vulkan SDK installer that you've just downloaded.
+2. Follow the on-screen instructions during the setup process.
 3. Complete the installation process.
 
-## Link GLFW and GLM to the project
+## Required Libraries
 
-1. Download GLFW library:
-   - Visit the GLFW official website: [GLFW](https://www.glfw.org/download.html).
-   - Choose the version right for your operating system and download it.
+There are several required libraries that are not header-only. They need to be linked manually:
 
-2. Download GLM library:
-   - Visit the GLM GitHub repository: [GLM](https://github.com/g-truc/glm/releases).
-   - Look for the latest release and download the source code package.
-   - GLM is header only so its much easier to install
+1. GLFW: This library is already included in the project files.
+2. ImGui: This library is also included in the project files.
 
+## Linking Libraries and Setting up the Environment
+
+1. Link all necessary files and add Vulkan to your system's PATH. This is necessary for the system and the development tools to recognize Vulkan's binaries and libraries.
+2. Link GLFW and ImGui
+3. Link GLM (Not in use right now)
+
+## Build the Project
+
+After everything is set up, you can build the project. Make sure to select the right build options according to your needs. If you encounter any issues during this process, double-check the previous steps to ensure that everything is correctly set up.
