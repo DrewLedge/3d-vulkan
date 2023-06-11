@@ -91,30 +91,23 @@ struct vertHash {
 };
 
 
-struct Texture {
-	VkSampler textureSampler;
-	VkImage textureImage;
-	VkDeviceMemory textureImageMemory;
-	VkImageView textureImageView;
-	uint32_t mipLevels;
-	// texture file paths
-	std::string ambientTexturePath;
-	std::string diffuseTexturePath;
-	std::string specularTexturePath;
-	std::string normalMapPath;
-	std::string displacementMapPath;
-	std::string bumpMapPath;
+struct Materials {
+	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> ambientTex;
+	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> diffuseTex;
+	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> specularTex;
+	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> normalMap;
 
-	// default constructor
-	Texture()
-		: textureSampler(VK_NULL_HANDLE),
-		textureImage(VK_NULL_HANDLE),
-		textureImageMemory(VK_NULL_HANDLE),
-		textureImageView(VK_NULL_HANDLE)
-	{}
+	// default constructor:
+	Materials()
+	{
+		ambientTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
+		diffuseTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
+		specularTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
+		normalMap = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
+	}
 };
 struct model {
-	Texture texture;
+	std::vector<Materials> textures; //used to store all the textures/materials of the model
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
@@ -131,9 +124,10 @@ struct model {
 	bool isLoaded; // if object is loaded or not to prevent reloading
 	bool startObj; // wether is loaded at the start of the program or not
 
+
 	// default constructor:
 	model()
-		: texture(),
+		: textures(),
 		vertices(),
 		indices(),
 		pathObj(""),
@@ -148,11 +142,25 @@ struct model {
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
 };
+struct lightSource {
+	forms::vec3 position;
+	forms::vec3 diffuse;
+	forms::vec3 specular;
+	forms::vec3 ambient;
+	lightSource()
+		: position(forms::vec3(0.0f, 0.0f, 0.0f)), //pos of the loght
+		ambient(forms::vec3(0.2f, 0.2f, 0.2f)),
+		diffuse(forms::vec3(0.5f, 0.5f, 0.5f)),
+		specular(forms::vec3(1.0f, 1.0f, 1.0f))
+	{}
+};
 
 
 model model1 = {};
 model model2 = {};
+lightSource light1 = {};
 std::vector<model> objects = { model1, model2 };
+std::vector<lightSource> lights = { light1 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -292,9 +300,15 @@ private:
 					tempIndices.reserve(attrib.vertices.size() / 3);
 
 					for (const auto& material : materials) {
-						object.texture.diffuseTexturePath = mtl_basepath + material.diffuse_texname; //only diffuse texture is needed for now
-						break;
+						Materials texture;
+						std::get<4>(texture.diffuseTex) = mtl_basepath + material.diffuse_texname;
+						std::get<4>(texture.specularTex) = mtl_basepath + material.specular_texname;
+						std::get<4>(texture.normalMap) = mtl_basepath + material.normal_texname;
+						std::get<4>(texture.ambientTex) = mtl_basepath + material.ambient_texname;
+						object.textures.push_back(texture);
 					}
+
+
 					for (const auto& shape : shapes) {
 						for (const auto& index : shape.mesh.indices) {
 							Vertex vertex;
@@ -350,7 +364,7 @@ private:
 		std::cout << "model: " << stru.pathObj << std::endl;
 		std::cout << "vertices: " << stru.vertices.size() << std::endl;
 		std::cout << "indices: " << stru.indices.size() << std::endl;
-		std::cout << "texture: " << stru.texture.diffuseTexturePath << std::endl;
+		std::cout << "texture: " << stru.textures.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
 
@@ -903,8 +917,8 @@ private:
 			}
 		}
 		for (int i = 0; i < objects.size(); i++) {
-			createTextureImgView(objects[i]); // create the texture image view
-			createTS(objects[i]); // create the texture sampler
+			createTextureImgView(objects[i]);
+			createTS(objects[i]);
 			bufferInfo.buffer = uboBuffers[i];
 			bufferInfo.offset = 0; //offset in the buffer where the UBO starts
 			bufferInfo.range = sizeof(UniformBufferObject);
@@ -1044,7 +1058,7 @@ private:
 		vkUnmapMemory(device, m.stagingBufferMem);
 	}
 
-	void createTexturedImage(std::string path, model& m) {
+	void createDiffuseTexturedImage(std::string path, model& m) {
 		// reset the staging buffer and memory:
 		if (m.stagingBuffer == VK_NULL_HANDLE) {
 			getImageData(path);

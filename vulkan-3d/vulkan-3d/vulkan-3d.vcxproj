@@ -144,8 +144,6 @@
     <None Include="..\..\README.md" />
     <None Include="engine.frag" />
     <None Include="engine.vert" />
-    <None Include="glsl_shader.frag.u32" />
-    <None Include="glsl_shader.vert.u32" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ext\imgui\imconfig.h" />

@@ -62,12 +62,6 @@
     <None Include="engine.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="glsl_shader.frag.u32">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
-    <None Include="glsl_shader.vert.u32">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
     <None Include="..\..\README.md">
       <Filter>Source Files\Other files</Filter>
     </None>
