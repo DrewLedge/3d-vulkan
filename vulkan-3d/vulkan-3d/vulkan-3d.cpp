@@ -89,22 +89,21 @@ struct vertHash {
 		return seed;
 	}
 };
+struct Texture {
+	VkSampler sampler;
+	VkImage image;
+	VkDeviceMemory memory;
+	VkImageView imageView;
+	std::string path;
+	uint32_t mipLevels;
 
+	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1) {}
+};
 
 struct Materials {
-	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> ambientTex;
-	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> diffuseTex;
-	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> specularTex;
-	std::tuple<VkSampler, VkImage, VkDeviceMemory, VkImageView, std::string> normalMap;
-
-	// default constructor:
-	Materials()
-	{
-		ambientTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
-		diffuseTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
-		specularTex = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
-		normalMap = std::make_tuple(VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, VK_NULL_HANDLE, "");
-	}
+	Texture diffuseTex;
+	Texture specularTex;
+	Texture normalMap;
 };
 struct model {
 	std::vector<Materials> textures; //used to store all the textures/materials of the model
@@ -213,7 +212,8 @@ private:
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
 
-	std::vector<VkDescriptorSet> descriptorSets;
+	std::vector<std::vector<VkDescriptorSet>> descriptorSets;
+
 	std::vector<VkBuffer> uboBuffers;
 	std::vector<VkDeviceMemory> uboBufferMemories;
 
@@ -301,10 +301,9 @@ private:
 
 					for (const auto& material : materials) {
 						Materials texture;
-						std::get<4>(texture.diffuseTex) = mtl_basepath + material.diffuse_texname;
-						std::get<4>(texture.specularTex) = mtl_basepath + material.specular_texname;
-						std::get<4>(texture.normalMap) = mtl_basepath + material.normal_texname;
-						std::get<4>(texture.ambientTex) = mtl_basepath + material.ambient_texname;
+						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
+						texture.specularTex.path = mtl_basepath + material.specular_texname;
+						texture.normalMap.path = mtl_basepath + material.normal_texname;
 						object.textures.push_back(texture);
 					}
 
@@ -668,7 +667,6 @@ private:
 		imageInfo.extent.width = swapChainExtent.width;
 		imageInfo.extent.height = swapChainExtent.height;
 		imageInfo.extent.depth = 1;
-		imageInfo.mipLevels = 1; //no mip mapping for now lol
 		imageInfo.arrayLayers = 1;
 		imageInfo.format = depthFormat;
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -820,29 +818,6 @@ private:
 		}
 		return destination;
 	}
-
-	void createDSLayout() {
-		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
-
-		bindings[0].binding = 0;
-		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
-
-		bindings[1].binding = 1;
-		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = 1;
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // combned image sampler will be accessed from the fragment shader
-
-		VkDescriptorSetLayoutCreateInfo layoutInfo{};
-		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-		layoutInfo.pBindings = bindings.data();
-
-		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create descriptor set layout!");
-		}
-	}
 	void guiDSLayout() { //descriptor set layout for imgui
 		VkDescriptorSetLayoutBinding imguiBinding{};
 		imguiBinding.binding = 0;
@@ -875,24 +850,64 @@ private:
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
+	void createDSLayout() {
+		std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
+
+		bindings[0].binding = 0;
+		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[0].descriptorCount = 1;
+		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
+
+		bindings[1].binding = 1;
+		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[1].descriptorCount = 1;
+		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // diffuse texture sampler will be accessed from the fragment shader
+
+		bindings[2].binding = 2;
+		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[2].descriptorCount = 1;
+		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // specular texture sampler will be accessed from the fragment shader
+
+		bindings[3].binding = 3;
+		bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		bindings[3].descriptorCount = 1;
+		bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // normal map sampler will be accessed from the fragment shader
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo{};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+		layoutInfo.pBindings = bindings.data();
+
+		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create descriptor set layout!");
+		}
+	}
 
 	void createDSPool() {
-		std::array<VkDescriptorPoolSize, 2> poolSizes{};
+		std::array<VkDescriptorPoolSize, 4> poolSizes{};
 
 		// matrix ubo descriptor set:
 		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
 
-		// texture data descriptor set:
+		// diffuse texture descriptor set:
 		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
+
+		// specular texture descriptor set:
+		poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSizes[2].descriptorCount = static_cast<uint32_t>(objects.size());
+
+		// normal map descriptor set:
+		poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSizes[3].descriptorCount = static_cast<uint32_t>(objects.size());
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
-		poolInfo.maxSets = static_cast<uint32_t>(objects.size());
+		poolInfo.maxSets = static_cast<uint32_t>(objects.size()) * 4; // four descriptor sets (UBO, diffuse, specular, normal) per object
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
@@ -900,15 +915,14 @@ private:
 	}
 
 
+
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
-		createUBOs();
-		VkDescriptorImageInfo imageInfo;
-		descriptorSets.resize(objects.size());
 		std::vector<std::thread> threads;
 
+		createUBOs(); //create the UBOs for each object
 		for (int i = 0; i < objects.size(); i++) {
-			threads.push_back(std::thread(&Engine::createTexturedImage, this, objects[i].texture.diffuseTexturePath, std::ref(objects[i])));
+			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));
 		}
 
 		for (auto& thread : threads) {
@@ -917,48 +931,94 @@ private:
 			}
 		}
 		for (int i = 0; i < objects.size(); i++) {
-			createTextureImgView(objects[i]);
+			// resize the descriptor sets to accommodate all materials
+			descriptorSets[i].resize(objects[i].textures.size());
+			createTextureImgView(objects[i]); //create all the texture image views for each material in the object
 			createTS(objects[i]);
-			bufferInfo.buffer = uboBuffers[i];
-			bufferInfo.offset = 0; //offset in the buffer where the UBO starts
-			bufferInfo.range = sizeof(UniformBufferObject);
-			imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfo.imageView = objects[i].texture.textureImageView;
-			imageInfo.sampler = objects[i].texture.textureSampler;
 
-			VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
-			VkDescriptorSetAllocateInfo allocInfo{};
-			allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-			allocInfo.descriptorPool = descriptorPool;
-			allocInfo.descriptorSetCount = 1;
-			allocInfo.pSetLayouts = layouts;
+			// loop through all materials/textures for each object
+			for (int j = 0; j < objects[i].textures.size(); j++) {
+				bufferInfo.buffer = uboBuffers[i];
+				bufferInfo.offset = 0; //offset in the buffer where the UBO starts
+				bufferInfo.range = sizeof(UniformBufferObject);
 
-			if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i]) != VK_SUCCESS) { // allocate the descriptor set for each object
-				throw std::runtime_error("Failed to allocate descriptor set!");
+				VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+				VkDescriptorSetAllocateInfo allocInfo{};
+				allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+				allocInfo.descriptorPool = descriptorPool;
+				allocInfo.descriptorSetCount = 1;
+				allocInfo.pSetLayouts = layouts;
+
+				if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i][j]) != VK_SUCCESS) {
+					throw std::runtime_error("Failed to allocate descriptor set!");
+				}
+
+				// setup the image info for each texture
+				VkDescriptorImageInfo diffuseInfo{};
+				diffuseInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				diffuseInfo.imageView = objects[i].textures[j].diffuseTex.imageView;
+				diffuseInfo.sampler = objects[i].textures[j].diffuseTex.sampler;
+
+				VkDescriptorImageInfo specularInfo{};
+				specularInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				specularInfo.imageView = objects[i].textures[j].specularTex.imageView;
+				specularInfo.sampler = objects[i].textures[j].specularTex.sampler;
+
+				VkDescriptorImageInfo normalInfo{};
+				normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				normalInfo.imageView = objects[i].textures[j].normalMap.imageView;
+				normalInfo.sampler = objects[i].textures[j].normalMap.sampler;
+
+				std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
+
+				// setup the UBO
+				descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[0].dstSet = descriptorSets[i][j];
+				descriptorWrites[0].dstBinding = 0;
+				descriptorWrites[0].dstArrayElement = 0;
+				descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+				descriptorWrites[0].descriptorCount = 1;
+				descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+				// setup the diffuse texture
+				descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[1].dstSet = descriptorSets[i][j];
+				descriptorWrites[1].dstBinding = 1;
+				descriptorWrites[1].dstArrayElement = 0;
+				descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				descriptorWrites[1].descriptorCount = 1;
+				descriptorWrites[1].pImageInfo = &diffuseInfo;
+
+				// setup the specular texture
+				descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[2].dstSet = descriptorSets[i][j];
+				descriptorWrites[2].dstBinding = 2;
+				descriptorWrites[2].dstArrayElement = 0;
+				descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				descriptorWrites[2].descriptorCount = 1;
+				descriptorWrites[2].pImageInfo = &specularInfo;
+
+				// setup the normal map
+				descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[3].dstSet = descriptorSets[i][j];
+				descriptorWrites[3].dstBinding = 3;
+				descriptorWrites[3].dstArrayElement = 0;
+				descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+				descriptorWrites[3].descriptorCount = 1;
+				descriptorWrites[3].pImageInfo = &normalInfo;
+
+				vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 			}
-
-			std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
-
-			descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWrites[0].dstSet = descriptorSets[i];
-			descriptorWrites[0].dstBinding = 0;
-			descriptorWrites[0].dstArrayElement = 0;
-			descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
-			descriptorWrites[0].descriptorCount = 1;
-			descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-			descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			descriptorWrites[1].dstSet = descriptorSets[i];
-			descriptorWrites[1].dstBinding = 1;
-			descriptorWrites[1].dstArrayElement = 0;
-			descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-			descriptorWrites[1].descriptorCount = 1;
-			descriptorWrites[1].pImageInfo = &imageInfo;
-
-			vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 		}
 	}
 
+	void setupTexData(model& m) {
+		for (int i = 0; i < m.textures.size(); i++) {
+			createTextureImage(m, m.textures[i].specularTex, false);
+			createTextureImage(m, m.textures[i].normalMap, false);
+			createTextureImage(m, m.textures[i].diffuseTex, true);
+		}
+	}
 	void setupDescriptorSets() {
 		createDSLayout();
 		createDSPool();
@@ -986,39 +1046,43 @@ private:
 		}
 	}
 
-	void createTS(model& m) { //create texture sampler
-		VkSamplerCreateInfo samplerInf{}; // create sampler info
-		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
-		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
-		samplerInf.maxAnisotropy = 16;
-		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
-		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
-		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
-		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = static_cast<float>(m.texture.mipLevels); // set the maximum level-of-detail value to the number of mip levels
-		if (vkCreateSampler(device, &samplerInf, nullptr, &m.texture.textureSampler) != VK_SUCCESS) { // create sampler
-			throw std::runtime_error("failed to create texture sampler!");
+	void createTS(model& m) { //create texture samplers for
+		for (int i = 0; i < m.textures.size(); i++) {
+			VkSamplerCreateInfo samplerInf{}; // create sampler info
+			samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+			samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
+			samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
+			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
+			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
+			samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
+			samplerInf.maxAnisotropy = 16;
+			samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+			samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
+			samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
+			samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
+			samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+			samplerInf.minLod = 0.0f;
+			samplerInf.maxLod = static_cast<float>(m.mipLevels); // set the maximum level-of-detail value to the number of mip levels
+			if (vkCreateSampler(device, &samplerInf, nullptr, &m.textures[i].diffuseTex.sampler) != VK_SUCCESS) { // create sampler
+				throw std::runtime_error("failed to create texture sampler!");
+			}
 		}
 	}
 	void createTextureImgView(model& m) {
-		VkImageViewCreateInfo viewInf{};
-		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInf.image = m.texture.textureImage;
-		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 3D
-		viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
-		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
-		viewInf.subresourceRange.baseMipLevel = 0;
-		viewInf.subresourceRange.levelCount = m.texture.mipLevels - viewInf.subresourceRange.baseMipLevel; //miplevel is influenced by the base 
-		viewInf.subresourceRange.baseArrayLayer = 0;
-		viewInf.subresourceRange.layerCount = 1;
-		if (vkCreateImageView(device, &viewInf, nullptr, &m.texture.textureImageView) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image view!");
+		for (int i = 0; i < m.textures.size(); i++) {
+			VkImageViewCreateInfo viewInf{};
+			viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			viewInf.image = m.textures[i].diffuseTex.image;
+			viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 3D
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
+			viewInf.subresourceRange.baseMipLevel = 0;
+			viewInf.subresourceRange.levelCount = m.textures[i].mipLevels - viewInf.subresourceRange.baseMipLevel; //miplevel is influenced by the base 
+			viewInf.subresourceRange.baseArrayLayer = 0;
+			viewInf.subresourceRange.layerCount = 1;
+			if (vkCreateImageView(device, &viewInf, nullptr, &m.textures[i].diffuseTex.imageView) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create texture image view!");
+			}
 		}
 	}
 	void getImageData(std::string path) {
@@ -1058,15 +1122,15 @@ private:
 		vkUnmapMemory(device, m.stagingBufferMem);
 	}
 
-	void createDiffuseTexturedImage(std::string path, model& m) {
-		// reset the staging buffer and memory:
+	void createTextureImage(model& m, Texture& tex, bool doMipmap) { //create the texture image for the diffuse texture materials
 		if (m.stagingBuffer == VK_NULL_HANDLE) {
-			getImageData(path);
+			getImageData(tex.path);
 			createStagingBuffer(m);
 		}
 		{
 			std::lock_guard<std::mutex> lock(descMtx); //when the thread is done, unlock the mutex
-			m.texture.mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1;
+			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
+
 			// create image:
 			VkImageCreateInfo imageInf{};
 			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1074,7 +1138,7 @@ private:
 			imageInf.extent.width = texWidth;
 			imageInf.extent.height = texHeight;
 			imageInf.extent.depth = 1;
-			imageInf.mipLevels = m.texture.mipLevels;
+			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
 			imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
@@ -1085,22 +1149,22 @@ private:
 			imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
 			imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-			if (vkCreateImage(device, &imageInf, nullptr, &m.texture.textureImage) != VK_SUCCESS) {
+			if (vkCreateImage(device, &imageInf, nullptr, &tex.image) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create texture image!");
 			}
 
 			VkMemoryRequirements memRequirements;
-			vkGetImageMemoryRequirements(device, m.texture.textureImage, &memRequirements);
+			vkGetImageMemoryRequirements(device, tex.image, &memRequirements);
 
 			VkMemoryAllocateInfo allocInf{};
 			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 			allocInf.allocationSize = memRequirements.size;
 			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-			if (vkAllocateMemory(device, &allocInf, nullptr, &m.texture.textureImageMemory) != VK_SUCCESS) {
+			if (vkAllocateMemory(device, &allocInf, nullptr, &tex.memory) != VK_SUCCESS) {
 				throw std::runtime_error("failed to allocate texture image memory!!!");
 			}
-			vkBindImageMemory(device, m.texture.textureImage, m.texture.textureImageMemory, 0); // bind the memory to the image through TIM (texture image memory) and the image
+			vkBindImageMemory(device, tex.image, tex.memory, 0);
 
 			// initialize img and barrier data before buffer copy:
 			VkBufferImageCopy region{};
@@ -1122,66 +1186,67 @@ private:
 			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
 			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; /// TODO
 			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = m.texture.textureImage;
+			barrier.image = tex.image;
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = m.texture.mipLevels;
+			barrier.subresourceRange.levelCount = tex.mipLevels;
 			barrier.subresourceRange.baseArrayLayer = 0;
 			barrier.subresourceRange.layerCount = 1;
 			barrier.srcAccessMask = 0;
 			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
 			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //from the top of the pipeline to the transfer stage
 
-			vkCmdCopyBufferToImage(tempBuffer, m.stagingBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer, m.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = texWidth;
 			int mipHeight = texHeight;
+			if (doMipmap) { //only do mipmapping if the user wants it
+				for (uint32_t j = 0; j < tex.mipLevels; j++) {
+					VkImageMemoryBarrier barrierToSrc{};
+					barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+					barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+					barrierToSrc.image = tex.image;
+					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //this means that the image is a color image not a depth or stencil image
+					barrierToSrc.subresourceRange.baseMipLevel = j;
+					barrierToSrc.subresourceRange.levelCount = 1;
+					barrierToSrc.subresourceRange.baseArrayLayer = 0;
+					barrierToSrc.subresourceRange.layerCount = 1;
+					barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
+					barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
 
-			for (uint32_t i = 0; i < m.texture.mipLevels; i++) {
-				VkImageMemoryBarrier barrierToSrc{};
-				barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-				barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				barrierToSrc.image = m.texture.textureImage;
-				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //this means that the image is a color image not a depth or stencil image
-				barrierToSrc.subresourceRange.baseMipLevel = i;
-				barrierToSrc.subresourceRange.levelCount = 1;
-				barrierToSrc.subresourceRange.baseArrayLayer = 0;
-				barrierToSrc.subresourceRange.layerCount = 1;
-				barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
-				barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
+					//iterate through all but the last mip level to blit from the previous mip level to the next mip level:
+					if (j < tex.mipLevels - 1) {
+						VkImageBlit blit{};
+						blit.srcOffsets[0] = { 0, 0, 0 };
+						blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+						blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+						blit.srcSubresource.mipLevel = j;
+						blit.srcSubresource.baseArrayLayer = 0;
+						blit.srcSubresource.layerCount = 1;
+						blit.dstOffsets[0] = { 0, 0, 0 };
+						blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 }; //if the mip level is greater than 1, divide by 2, otherwise set to 1
+						blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+						blit.dstSubresource.mipLevel = j + 1;
+						blit.dstSubresource.baseArrayLayer = 0;
+						blit.dstSubresource.layerCount = 1;
+						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+					}
 
-				//iterate through all but the last mip level to blit from the previous mip level to the next mip level:
-				if (i < m.texture.mipLevels - 1) {
-					VkImageBlit blit{};
-					blit.srcOffsets[0] = { 0, 0, 0 };
-					blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
-					blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					blit.srcSubresource.mipLevel = i;
-					blit.srcSubresource.baseArrayLayer = 0;
-					blit.srcSubresource.layerCount = 1;
-					blit.dstOffsets[0] = { 0, 0, 0 };
-					blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 }; //if the mip level is greater than 1, divide by 2, otherwise set to 1
-					blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					blit.dstSubresource.mipLevel = i + 1;
-					blit.dstSubresource.baseArrayLayer = 0;
-					blit.dstSubresource.layerCount = 1;
-					vkCmdBlitImage(tempBuffer, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m.texture.textureImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+					barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //mip levels are read by the fragment shader
+
+					//for the next mip level, divide the width and height by 2, unless they are already 1
+					if (mipWidth > 1) mipWidth /= 2;
+					if (mipHeight > 1) mipHeight /= 2;
 				}
-
-				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-				barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //mip levels are read by the fragment shader
-
-				//for the next mip level, divide the width and height by 2, unless they are already 1
-				if (mipWidth > 1) mipWidth /= 2;
-				if (mipHeight > 1) mipHeight /= 2;
 			}
 			endSingleTimeCommands(tempBuffer, commandPool);
 			stbi_image_free(imageData);
