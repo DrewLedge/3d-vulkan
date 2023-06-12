@@ -96,8 +96,11 @@ struct Texture {
 	VkImageView imageView;
 	std::string path;
 	uint32_t mipLevels;
+	VkBuffer stagingBuffer;
+	VkDeviceMemory stagingBufferMem;
 
-	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1) {}
+	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE),
+		stagingBufferMem(VK_NULL_HANDLE) {}
 };
 
 struct Materials {
@@ -110,8 +113,6 @@ struct model {
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
-	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMem;
 
 	forms::vec3 position;  // position of the model
 	forms::vec3 rotation;  // rotation of the model
@@ -134,8 +135,6 @@ struct model {
 		rotation(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 		scale(forms::vec3(0.1f, 0.1f, 0.1f)),
 		isLoaded(false),
-		stagingBuffer(VK_NULL_HANDLE),
-		stagingBufferMem(VK_NULL_HANDLE),
 		startObj(true)
 	{
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
@@ -212,7 +211,7 @@ private:
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
 
-	std::vector<std::vector<VkDescriptorSet>> descriptorSets;
+	std::vector<VkDescriptorSet> descriptorSets;
 
 	std::vector<VkBuffer> uboBuffers;
 	std::vector<VkDeviceMemory> uboBufferMemories;
@@ -305,7 +304,9 @@ private:
 						Materials texture;
 						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
 						texture.specularTex.path = mtl_basepath + material.specular_texname;
-						texture.normalMap.path = mtl_basepath + material.normal_texname;
+						texture.normalMap.path = mtl_basepath + material.bump_texname;
+						//for spome reason the normal map is stored in the bump map.
+						//not sure if this is for all models or just the ones I have
 						object.textures.push_back(texture);
 					}
 
@@ -888,32 +889,24 @@ private:
 		}
 	}
 	void createDSLayout() {
-		std::array<VkDescriptorSetLayoutBinding, 4> bindings{};
+		std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
 
+		// DS for the matrix UBO
 		bindings[0].binding = 0;
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
+		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
+		// DS all of the textures in the scene
 		bindings[1].binding = 1;
 		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = 1;
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // diffuse texture sampler will be accessed from the fragment shader
+		bindings[1].descriptorCount = static_cast<uint32_t>(objects.size());
+		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		bindings[2].binding = 2;
-		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[2].descriptorCount = 1;
-		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // specular texture sampler will be accessed from the fragment shader
-
-		bindings[3].binding = 3;
-		bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[3].descriptorCount = 1;
-		bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // normal map sampler will be accessed from the fragment shader
-
-		bindings[4].binding = 4;
-		bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[4].descriptorCount = 1;
-		bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // light source data will be accessed from the fragment shader
+		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		bindings[2].descriptorCount = static_cast<uint32_t>(lights.size());
+		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -925,41 +918,37 @@ private:
 		}
 	}
 
+
 	void createDSPool() {
-		std::array<VkDescriptorPoolSize, 5> poolSizes{};
+		size_t totalTextureCount = 0;
+		for (const auto& object : objects) {
+			totalTextureCount += object.textures.size() * 3;  // Each material has 3 textures
+		}
+		std::array<VkDescriptorPoolSize, 3> poolSizes{};
 
-		// matrix ubo descriptor set:
+		// matrix UBO
 		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
+		poolSizes[0].descriptorCount = 1;
 
-		// diffuse texture descriptor set:
+		// all of the textures in the scene
 		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
+		poolSizes[1].descriptorCount = static_cast<uint32_t>(totalTextureCount);
 
-		// specular texture descriptor set:
-		poolSizes[2].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[2].descriptorCount = static_cast<uint32_t>(objects.size());
-
-		// normal map descriptor set:
-		poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[3].descriptorCount = static_cast<uint32_t>(objects.size());
-
-		// phong lighting descriptor set:
-		poolSizes[4].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSizes[4].descriptorCount = static_cast<uint32_t>(lights.size());
+		// lights
+		poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+		poolSizes[2].descriptorCount = static_cast<uint32_t>(lights.size());
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
-		poolInfo.maxSets = static_cast<uint32_t>(objects.size()) * 5; // four descriptor sets (UBO, diffuse, specular, normal, phong) per object
+		poolInfo.maxSets = 3;
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 	}
-
 
 
 	void createDS() {
@@ -977,101 +966,81 @@ private:
 				thread.join();
 			}
 		}
-		for (int i = 0; i < objects.size(); i++) {
-			//resize the descriptor sets to accommodate all materials
-			//descriptor sets is a vector of vectors, each vector is a descriptor set for each material inside each object
-			descriptorSets[i].resize(objects[i].textures.size());
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool;
+		allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorSets.size());
+		allocInfo.pSetLayouts = &descriptorSetLayout;
 
-			// loop through all materials/textures for each object
-			for (int j = 0; j < objects[i].textures.size(); j++) {
-				bufferInfo.buffer = uboBuffers[i];
-				bufferInfo.offset = 0; //offset in the buffer where the UBO starts
-				bufferInfo.range = sizeof(UniformBufferObject);
+		if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate descriptor sets!");
+		}
 
-				VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
-				VkDescriptorSetAllocateInfo allocInfo{};
-				allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-				allocInfo.descriptorPool = descriptorPool;
-				allocInfo.descriptorSetCount = 1;
-				allocInfo.pSetLayouts = layouts;
+		// 1 matrix UBO for each object
+		for (size_t i = 0; i < objects.size(); i++) {
+			VkDescriptorBufferInfo bufferInfo{};
+			bufferInfo.buffer = uboBuffers[i];
+			bufferInfo.offset = 0;
+			bufferInfo.range = sizeof(UniformBufferObject);
 
-				if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i][j]) != VK_SUCCESS) {
-					throw std::runtime_error("Failed to allocate descriptor set!");
+			VkWriteDescriptorSet uboWrite{};
+			uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			uboWrite.dstSet = descriptorSets[0];
+			uboWrite.dstBinding = 0;
+			uboWrite.dstArrayElement = static_cast<uint32_t>(i);
+			uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			uboWrite.descriptorCount = 1;
+			uboWrite.pBufferInfo = &bufferInfo;
+
+			vkUpdateDescriptorSets(device, 1, &uboWrite, 0, nullptr);
+		}
+
+		// create descriptor set for all objects textures
+		size_t textureIndex = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			for (size_t j = 0; j < objects[i].textures.size(); j++) {
+				std::array<Texture, 3> textures = {
+					objects[i].textures[j].diffuseTex,
+					objects[i].textures[j].specularTex,
+					objects[i].textures[j].normalMap
+				};
+
+				for (const auto& texture : textures) {
+					VkDescriptorImageInfo imageInfo{};
+					imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+					imageInfo.imageView = texture.imageView;
+					imageInfo.sampler = texture.sampler;
+
+					VkWriteDescriptorSet textureWrite{};
+					textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+					textureWrite.dstSet = descriptorSets[1]; // 1 is the index of the descriptor set for textures
+					textureWrite.dstBinding = 1;
+					textureWrite.dstArrayElement = static_cast<uint32_t>(textureIndex++); // increment the texture index
+					textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+					textureWrite.descriptorCount = 1;
+					textureWrite.pImageInfo = &imageInfo;
+
+					vkUpdateDescriptorSets(device, 1, &textureWrite, 0, nullptr);
 				}
-
-				// setup the image info for each texture
-				VkDescriptorImageInfo diffuseInfo{};
-				diffuseInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				diffuseInfo.imageView = objects[i].textures[j].diffuseTex.imageView;
-				diffuseInfo.sampler = objects[i].textures[j].diffuseTex.sampler;
-
-				VkDescriptorImageInfo specularInfo{};
-				specularInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				specularInfo.imageView = objects[i].textures[j].specularTex.imageView;
-				specularInfo.sampler = objects[i].textures[j].specularTex.sampler;
-
-				VkDescriptorImageInfo normalInfo{};
-				normalInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				normalInfo.imageView = objects[i].textures[j].normalMap.imageView;
-				normalInfo.sampler = objects[i].textures[j].normalMap.sampler;
-
-				std::vector<VkWriteDescriptorSet> descriptorWrites(4);
-
-				// setup the UBO
-				descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[0].dstSet = descriptorSets[i][j];
-				descriptorWrites[0].dstBinding = 0;
-				descriptorWrites[0].dstArrayElement = 0;
-				descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-				descriptorWrites[0].descriptorCount = 1;
-				descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-				// setup the diffuse texture
-				descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[1].dstSet = descriptorSets[i][j];
-				descriptorWrites[1].dstBinding = 1;
-				descriptorWrites[1].dstArrayElement = 0;
-				descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				descriptorWrites[1].descriptorCount = 1;
-				descriptorWrites[1].pImageInfo = &diffuseInfo;
-
-				// setup the specular texture
-				descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[2].dstSet = descriptorSets[i][j];
-				descriptorWrites[2].dstBinding = 2;
-				descriptorWrites[2].dstArrayElement = 0;
-				descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				descriptorWrites[2].descriptorCount = 1;
-				descriptorWrites[2].pImageInfo = &specularInfo;
-
-				// setup the normal map
-				descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[3].dstSet = descriptorSets[i][j];
-				descriptorWrites[3].dstBinding = 3;
-				descriptorWrites[3].dstArrayElement = 0;
-				descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-				descriptorWrites[3].descriptorCount = 1;
-				descriptorWrites[3].pImageInfo = &normalInfo;
-
-				for (int i = 0; i < lights.size(); i++) { // loop through all light sources (not efficient but it will work for now)
-					VkDescriptorBufferInfo lightInfo{};
-					lightInfo.buffer = lightBuffers[i]; // You need to have a VkBuffer for each light source
-					lightInfo.offset = 0;
-					lightInfo.range = sizeof(LightBufferObject);
-
-					VkWriteDescriptorSet lightWrite{};
-					lightWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-					lightWrite.dstSet = descriptorSets[i][j]; // You need to adjust this depending on how you want to layout your descriptor sets
-					lightWrite.dstBinding = 4;
-					lightWrite.dstArrayElement = 0;
-					lightWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-					lightWrite.descriptorCount = 1;
-					lightWrite.pBufferInfo = &lightInfo;
-
-					descriptorWrites.push_back(lightWrite);
-				}
-				vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 			}
+		}
+		// create descriptor set for all lights
+		for (size_t i = 0; i < lights.size(); i++) {
+			VkDescriptorBufferInfo lightInfo{};
+			lightInfo.buffer = lightBuffers[i];
+			lightInfo.offset = 0;
+			lightInfo.range = sizeof(LightBufferObject);
+
+			VkWriteDescriptorSet lightWrite{};
+			lightWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+			lightWrite.dstSet = descriptorSets[2];
+			lightWrite.dstBinding = 2;
+			lightWrite.dstArrayElement = static_cast<uint32_t>(i);
+			lightWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+			lightWrite.descriptorCount = 1;
+			lightWrite.pBufferInfo = &lightInfo;
+
+			vkUpdateDescriptorSets(device, 1, &lightWrite, 0, nullptr);
 		}
 	}
 
@@ -1098,19 +1067,19 @@ private:
 		for (int i = 0; i < m.textures.size(); i++) {
 			//create the texture image for each texture (for each material)
 			//also create miplmaps for each texture
-			createTextureImage(m, m.textures[i].specularTex, false);
-			createTextureImage(m, m.textures[i].normalMap, false);
-			createTextureImage(m, m.textures[i].diffuseTex, true);
+			createTextureImage(m.textures[i].specularTex, false);
+			createTextureImage(m.textures[i].normalMap, false);
+			createTextureImage(m.textures[i].diffuseTex, true);
 
 			//create texture image views and samplers for each texture (for each material):wa
 			createTextureImgView(m.textures[i].specularTex, false);
 			createTS(m.textures[i].specularTex, false);
 
-			createTextureImgView(m.textures[i].diffuseTex, true);
-			createTS(m.textures[i].diffuseTex, true);
-
 			createTextureImgView(m.textures[i].normalMap, false, "norm");
 			createTS(m.textures[i].normalMap, false, "norm");
+
+			createTextureImgView(m.textures[i].diffuseTex, true);
+			createTS(m.textures[i].diffuseTex, true);
 		}
 	}
 
@@ -1122,7 +1091,7 @@ private:
 		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
 		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
 		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_TRUE; // warps textures to fit objects, etc
+		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
 		samplerInf.maxAnisotropy = 16;
 		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
@@ -1162,40 +1131,40 @@ private:
 			throw std::runtime_error("failed to load image!");
 		}
 	}
-	void createStagingBuffer(model& m) { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void createStagingBuffer(Texture& tex) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
 		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		if (vkCreateBuffer(device, &bufferInf, nullptr, &m.stagingBuffer) != VK_SUCCESS) {
+		if (vkCreateBuffer(device, &bufferInf, nullptr, &tex.stagingBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create staging buffer!");
 		}
 		// get mem requirements;
 		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, m.stagingBuffer, &memRequirements);
+		vkGetBufferMemoryRequirements(device, tex.stagingBuffer, &memRequirements);
 		VkMemoryAllocateInfo allocInf{};
 		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInf.allocationSize = memRequirements.size;
 		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (vkAllocateMemory(device, &allocInf, nullptr, &m.stagingBufferMem) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocInf, nullptr, &tex.stagingBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate staging buffer memory!");
 		}
 
 		// bind the memory to the buffer:
-		vkBindBufferMemory(device, m.stagingBuffer, m.stagingBufferMem, 0);
+		vkBindBufferMemory(device, tex.stagingBuffer, tex.stagingBufferMem, 0);
 		void* data;
-		if (vkMapMemory(device, m.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
+		if (vkMapMemory(device, tex.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("failed to map staging buffer memory!");
 		}
 		memcpy(data, imageData, imageSize);
-		vkUnmapMemory(device, m.stagingBufferMem);
+		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTextureImage(model& m, Texture& tex, bool doMipmap) { //create the texture image for the diffuse texture materials
-		if (m.stagingBuffer == VK_NULL_HANDLE) {
+	void createTextureImage(Texture& tex, bool doMipmap) { //create the texture image for the diffuse texture materials
+		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			getImageData(tex.path);
-			createStagingBuffer(m);
+			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
 
 			// create image:
@@ -1263,7 +1232,7 @@ private:
 			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
 			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //from the top of the pipeline to the transfer stage
 
-			vkCmdCopyBufferToImage(tempBuffer, m.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = texWidth;
 			int mipHeight = texHeight;
