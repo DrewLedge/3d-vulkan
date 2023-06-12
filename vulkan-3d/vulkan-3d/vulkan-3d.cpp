@@ -141,12 +141,12 @@ struct model {
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
 };
-struct lightSource {
+struct LightBufferObject {
 	forms::vec3 position;
 	forms::vec3 diffuse;
 	forms::vec3 specular;
 	forms::vec3 ambient;
-	lightSource()
+	LightBufferObject()
 		: position(forms::vec3(0.0f, 0.0f, 0.0f)), //pos of the loght
 		ambient(forms::vec3(0.2f, 0.2f, 0.2f)),
 		diffuse(forms::vec3(0.5f, 0.5f, 0.5f)),
@@ -157,9 +157,9 @@ struct lightSource {
 
 model model1 = {};
 model model2 = {};
-lightSource light1 = {};
+LightBufferObject light1 = {};
 std::vector<model> objects = { model1, model2 };
-std::vector<lightSource> lights = { light1 };
+std::vector<LightBufferObject> lights = { light1 };
 
 struct UniformBufferObject {
 	float model[16];
@@ -216,6 +216,8 @@ private:
 
 	std::vector<VkBuffer> uboBuffers;
 	std::vector<VkDeviceMemory> uboBufferMemories;
+	std::vector<VkBuffer> lightBuffers;
+	std::vector<VkDeviceMemory> lightBufferMemories;
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -402,6 +404,10 @@ private:
 			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) { //isDeviceSuitableG checks if the device is suitable for graphics, isDeviceSuitableP checks if the device is suitable for presentation
 				std::cout << "GPU and Presentation device found!" << std::endl;
 				physicalDevice = device;
+				VkPhysicalDeviceProperties deviceProperties;
+				vkGetPhysicalDeviceProperties(device, &deviceProperties);
+				std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
+
 				break;
 			}
 		}
@@ -774,6 +780,37 @@ private:
 			vkBindBufferMemory(device, uboBuffers[i], uboBufferMemories[i], 0); // bind the buffer to the memory
 		}
 	}
+
+	void createLightUBOs() {
+		lightBuffers.resize(lights.size());
+		lightBufferMemories.resize(lights.size());
+		for (size_t i = 0; i < lights.size(); i++) {
+			VkBufferCreateInfo bufferCreateInfo{};
+			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+			bufferCreateInfo.size = sizeof(LightBufferObject);
+			bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+			if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &lightBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to create Light UBO buffer!");
+			}
+
+			VkMemoryRequirements memoryRequirements;
+			vkGetBufferMemoryRequirements(device, lightBuffers[i], &memoryRequirements);
+
+			VkMemoryAllocateInfo allocateInfo{};
+			allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+			allocateInfo.allocationSize = memoryRequirements.size;
+			allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+			if (vkAllocateMemory(device, &allocateInfo, nullptr, &lightBufferMemories[i]) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to allocate memory for Light UBO buffer!");
+			}
+			vkBindBufferMemory(device, lightBuffers[i], lightBufferMemories[i], 0);
+		}
+	}
+
+
 	void calcMatrixes(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
@@ -873,6 +910,11 @@ private:
 		bindings[3].descriptorCount = 1;
 		bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // normal map sampler will be accessed from the fragment shader
 
+		bindings[4].binding = 4;
+		bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		bindings[4].descriptorCount = 1;
+		bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // light source data will be accessed from the fragment shader
+
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
 		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
@@ -884,7 +926,7 @@ private:
 	}
 
 	void createDSPool() {
-		std::array<VkDescriptorPoolSize, 4> poolSizes{};
+		std::array<VkDescriptorPoolSize, 5> poolSizes{};
 
 		// matrix ubo descriptor set:
 		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -902,12 +944,16 @@ private:
 		poolSizes[3].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
 		poolSizes[3].descriptorCount = static_cast<uint32_t>(objects.size());
 
+		// phong lighting descriptor set:
+		poolSizes[4].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		poolSizes[4].descriptorCount = static_cast<uint32_t>(lights.size());
+
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
-		poolInfo.maxSets = static_cast<uint32_t>(objects.size()) * 4; // four descriptor sets (UBO, diffuse, specular, normal) per object
+		poolInfo.maxSets = static_cast<uint32_t>(objects.size()) * 5; // four descriptor sets (UBO, diffuse, specular, normal, phong) per object
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
@@ -921,8 +967,9 @@ private:
 		std::vector<std::thread> threads;
 
 		createUBOs(); //create the UBOs for each object
+		createLightUBOs(); //create the UBOs for each light source
 		for (int i = 0; i < objects.size(); i++) {
-			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));
+			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
 		}
 
 		for (auto& thread : threads) {
@@ -931,10 +978,9 @@ private:
 			}
 		}
 		for (int i = 0; i < objects.size(); i++) {
-			// resize the descriptor sets to accommodate all materials
+			//resize the descriptor sets to accommodate all materials
+			//descriptor sets is a vector of vectors, each vector is a descriptor set for each material inside each object
 			descriptorSets[i].resize(objects[i].textures.size());
-			createTextureImgView(objects[i]); //create all the texture image views for each material in the object
-			createTS(objects[i]);
 
 			// loop through all materials/textures for each object
 			for (int j = 0; j < objects[i].textures.size(); j++) {
@@ -969,7 +1015,7 @@ private:
 				normalInfo.imageView = objects[i].textures[j].normalMap.imageView;
 				normalInfo.sampler = objects[i].textures[j].normalMap.sampler;
 
-				std::array<VkWriteDescriptorSet, 4> descriptorWrites{};
+				std::vector<VkWriteDescriptorSet> descriptorWrites(4);
 
 				// setup the UBO
 				descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1007,18 +1053,28 @@ private:
 				descriptorWrites[3].descriptorCount = 1;
 				descriptorWrites[3].pImageInfo = &normalInfo;
 
+				for (int i = 0; i < lights.size(); i++) { // loop through all light sources (not efficient but it will work for now)
+					VkDescriptorBufferInfo lightInfo{};
+					lightInfo.buffer = lightBuffers[i]; // You need to have a VkBuffer for each light source
+					lightInfo.offset = 0;
+					lightInfo.range = sizeof(LightBufferObject);
+
+					VkWriteDescriptorSet lightWrite{};
+					lightWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+					lightWrite.dstSet = descriptorSets[i][j]; // You need to adjust this depending on how you want to layout your descriptor sets
+					lightWrite.dstBinding = 4;
+					lightWrite.dstArrayElement = 0;
+					lightWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+					lightWrite.descriptorCount = 1;
+					lightWrite.pBufferInfo = &lightInfo;
+
+					descriptorWrites.push_back(lightWrite);
+				}
 				vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 			}
 		}
 	}
 
-	void setupTexData(model& m) {
-		for (int i = 0; i < m.textures.size(); i++) {
-			createTextureImage(m, m.textures[i].specularTex, false);
-			createTextureImage(m, m.textures[i].normalMap, false);
-			createTextureImage(m, m.textures[i].diffuseTex, true);
-		}
-	}
 	void setupDescriptorSets() {
 		createDSLayout();
 		createDSPool();
@@ -1037,52 +1093,66 @@ private:
 		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
 		setupDescriptorSets();
 	}
-	void printMatrix(forms::mat4 mat) {
-		for (int row = 0; row < 4; ++row) {
-			for (int col = 0; col < 4; ++col) {
-				std::cout << mat.m[row][col] << "\t";
-			}
-			std::cout << std::endl;
+	void setupTexData(model& m) {
+		std::lock_guard<std::mutex> lock(descMtx);
+		for (int i = 0; i < m.textures.size(); i++) {
+			//create the texture image for each texture (for each material)
+			//also create miplmaps for each texture
+			createTextureImage(m, m.textures[i].specularTex, false);
+			createTextureImage(m, m.textures[i].normalMap, false);
+			createTextureImage(m, m.textures[i].diffuseTex, true);
+
+			//create texture image views and samplers for each texture (for each material):wa
+			createTextureImgView(m.textures[i].specularTex, false);
+			createTS(m.textures[i].specularTex, false);
+
+			createTextureImgView(m.textures[i].diffuseTex, true);
+			createTS(m.textures[i].diffuseTex, true);
+
+			createTextureImgView(m.textures[i].normalMap, false, "norm");
+			createTS(m.textures[i].normalMap, false, "norm");
 		}
 	}
 
-	void createTS(model& m) { //create texture samplers for
-		for (int i = 0; i < m.textures.size(); i++) {
-			VkSamplerCreateInfo samplerInf{}; // create sampler info
-			samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-			samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
-			samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-			samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
-			samplerInf.maxAnisotropy = 16;
-			samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-			samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
-			samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
-			samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
-			samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-			samplerInf.minLod = 0.0f;
-			samplerInf.maxLod = static_cast<float>(m.mipLevels); // set the maximum level-of-detail value to the number of mip levels
-			if (vkCreateSampler(device, &samplerInf, nullptr, &m.textures[i].diffuseTex.sampler) != VK_SUCCESS) { // create sampler
-				throw std::runtime_error("failed to create texture sampler!");
-			}
+
+	void createTS(Texture& tex, bool doMipmap, std::string type = "tex") { //create texture samplers for
+		VkSamplerCreateInfo samplerInf{}; // create sampler info
+		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
+		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
+		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
+		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
+		samplerInf.anisotropyEnable = VK_TRUE; // warps textures to fit objects, etc
+		samplerInf.maxAnisotropy = 16;
+		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
+		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
+		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
+		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+		samplerInf.minLod = 0.0f;
+		samplerInf.maxLod = doMipmap ? tex.mipLevels : 1;
+		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) { // create sampler
+			throw std::runtime_error("failed to create texture sampler!");
 		}
 	}
-	void createTextureImgView(model& m) {
-		for (int i = 0; i < m.textures.size(); i++) {
-			VkImageViewCreateInfo viewInf{};
-			viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			viewInf.image = m.textures[i].diffuseTex.image;
-			viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D; //view type is 3D
-			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
-			viewInf.subresourceRange.baseMipLevel = 0;
-			viewInf.subresourceRange.levelCount = m.textures[i].mipLevels - viewInf.subresourceRange.baseMipLevel; //miplevel is influenced by the base 
-			viewInf.subresourceRange.baseArrayLayer = 0;
-			viewInf.subresourceRange.layerCount = 1;
-			if (vkCreateImageView(device, &viewInf, nullptr, &m.textures[i].diffuseTex.imageView) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create texture image view!");
-			}
+	void createTextureImgView(Texture& tex, bool doMipmap, std::string type = "tex") {
+		VkImageViewCreateInfo viewInf{};
+		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInf.image = tex.image;
+		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		if (type != "tex") {
+			viewInf.format = VK_FORMAT_R8G8B8A8_SNORM; //signed format for the normal maps (-1 to 1)
+		}
+		else {
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for specular and diffuse maps
+		}
+		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
+		viewInf.subresourceRange.baseMipLevel = 0;
+		viewInf.subresourceRange.levelCount = doMipmap ? tex.mipLevels - viewInf.subresourceRange.baseMipLevel : 1; //miplevel is influenced by the base 
+		viewInf.subresourceRange.baseArrayLayer = 0;
+		viewInf.subresourceRange.layerCount = 1;
+		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image view!");
 		}
 	}
 	void getImageData(std::string path) {
@@ -1126,9 +1196,6 @@ private:
 		if (m.stagingBuffer == VK_NULL_HANDLE) {
 			getImageData(tex.path);
 			createStagingBuffer(m);
-		}
-		{
-			std::lock_guard<std::mutex> lock(descMtx); //when the thread is done, unlock the mutex
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
 
 			// create image:
@@ -1200,7 +1267,7 @@ private:
 
 			int mipWidth = texWidth;
 			int mipHeight = texHeight;
-			if (doMipmap) { //only do mipmapping if the user wants it
+			if (doMipmap) { //only do mipmapping on the diffuse texture
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
 					VkImageMemoryBarrier barrierToSrc{};
 					barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
