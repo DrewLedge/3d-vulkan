@@ -19,6 +19,8 @@
 #include <array>
 #include <chrono> //time library
 #include <unordered_map>
+#include <set>
+#include <unordered_set>
 #include <mutex>
 #include <random>
 #include <ctime> //random seed based on time
@@ -892,6 +894,37 @@ private:
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
+
+	std::vector<Texture> getAllTextures(const std::vector<model>& objects) {
+		std::vector<Texture> allTextures;
+		std::unordered_set<Texture, vertHash> textureSet;
+
+		for (const model& obj : objects) {
+			for (const Materials& materials : obj.textures) {
+				// diffuse texture
+				if (textureSet.find(materials.diffuseTex) == textureSet.end()) {
+					textureSet.insert(materials.diffuseTex);
+					allTextures.push_back(materials.diffuseTex);
+				}
+
+				// specular texture
+				if (textureSet.find(materials.specularTex) == textureSet.end()) {
+					textureSet.insert(materials.specularTex);
+					allTextures.push_back(materials.specularTex);
+				}
+
+				// normal map texture
+				if (textureSet.find(materials.normalMap) == textureSet.end()) {
+					textureSet.insert(materials.normalMap);
+					allTextures.push_back(materials.normalMap);
+				}
+			}
+		}
+
+		return allTextures;
+	}
+
+
 	void createDSLayout() {
 		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
@@ -946,9 +979,9 @@ private:
 		std::vector<std::thread> threads;
 		descriptorSets.resize(2);
 		VkDescriptorImageInfo imageInfo;
+		std::vector<Texture> textures = getAllTextures(objects);
 
 		createUBOs(); //create the UBOs for each object
-		createLightUBOs(); //create the UBOs for each light source
 		for (int i = 0; i < objects.size(); i++) {
 			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
 			std::cout << "object " << i + 1 << " loaded" << std::endl;
