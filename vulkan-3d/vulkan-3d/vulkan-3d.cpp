@@ -240,6 +240,8 @@ private:
 	ImFont* font_small;
 	ImFont* font_large;
 
+	size_t totalTextureCount = 0;
+
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	forms formula;
@@ -408,6 +410,7 @@ private:
 				VkPhysicalDeviceProperties deviceProperties;
 				vkGetPhysicalDeviceProperties(device, &deviceProperties);
 				std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
+				std::cout << "Max descriptors per set: " << deviceProperties.limits.maxDescriptorSetUniformBuffers << std::endl;
 
 				break;
 			}
@@ -675,6 +678,7 @@ private:
 		imageInfo.extent.height = swapChainExtent.height;
 		imageInfo.extent.depth = 1;
 		imageInfo.arrayLayers = 1;
+		imageInfo.mipLevels = 1;
 		imageInfo.format = depthFormat;
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //intiial layout doesn't matter
@@ -889,24 +893,17 @@ private:
 		}
 	}
 	void createDSLayout() {
-		std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
 
-		// DS for the matrix UBO
 		bindings[0].binding = 0;
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
 		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
 
-		// DS all of the textures in the scene
 		bindings[1].binding = 1;
 		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = static_cast<uint32_t>(objects.size());
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		bindings[2].binding = 2;
-		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		bindings[2].descriptorCount = static_cast<uint32_t>(lights.size());
-		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		bindings[1].descriptorCount = 1;
+		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // combned image sampler will be accessed from the fragment shader
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -920,30 +917,22 @@ private:
 
 
 	void createDSPool() {
-		size_t totalTextureCount = 0;
-		for (const auto& object : objects) {
-			totalTextureCount += object.textures.size() * 3;  // Each material has 3 textures
-		}
-		std::array<VkDescriptorPoolSize, 3> poolSizes{};
+		std::array<VkDescriptorPoolSize, 2> poolSizes{};
 
-		// matrix UBO
+		// matrix ubo descriptor set:
 		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSizes[0].descriptorCount = 1;
+		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
 
-		// all of the textures in the scene
+		// texture data descriptor set:
 		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[1].descriptorCount = static_cast<uint32_t>(totalTextureCount);
-
-		// lights
-		poolSizes[2].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
-		poolSizes[2].descriptorCount = static_cast<uint32_t>(lights.size());
+		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
 		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
 		poolInfo.pPoolSizes = poolSizes.data();
-		poolInfo.maxSets = 3;
+		poolInfo.maxSets = static_cast<uint32_t>(totalTextureCount);
 
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
@@ -951,14 +940,18 @@ private:
 	}
 
 
+
 	void createDS() {
 		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
 		std::vector<std::thread> threads;
+		descriptorSets.resize(2);
+		VkDescriptorImageInfo imageInfo;
 
 		createUBOs(); //create the UBOs for each object
 		createLightUBOs(); //create the UBOs for each light source
 		for (int i = 0; i < objects.size(); i++) {
 			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
+			std::cout << "object " << i + 1 << " loaded" << std::endl;
 		}
 
 		for (auto& thread : threads) {
@@ -966,85 +959,56 @@ private:
 				thread.join();
 			}
 		}
-		VkDescriptorSetAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorPool = descriptorPool;
-		allocInfo.descriptorSetCount = static_cast<uint32_t>(descriptorSets.size());
-		allocInfo.pSetLayouts = &descriptorSetLayout;
+		for (int i = 0; i < objects.size(); i++) {
+			for (int j = 0; j < objects[i].textures.size(); j++) {
+				objects[i].textures[j].diffuseTex.imageView;
+				bufferInfo.buffer = uboBuffers[i];
+				bufferInfo.offset = 0; //offset in the buffer where the UBO starts
+				bufferInfo.range = sizeof(UniformBufferObject);
+				imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				imageInfo.imageView = objects[i].textures[j].diffuseTex.imageView;
+				imageInfo.sampler = objects[i].textures[j].diffuseTex.sampler;
 
-		if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate descriptor sets!");
-		}
+				VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+				VkDescriptorSetAllocateInfo allocInfo{};
+				allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+				allocInfo.descriptorPool = descriptorPool;
+				allocInfo.descriptorSetCount = 1;
+				allocInfo.pSetLayouts = layouts;
 
-		// 1 matrix UBO for each object
-		for (size_t i = 0; i < objects.size(); i++) {
-			VkDescriptorBufferInfo bufferInfo{};
-			bufferInfo.buffer = uboBuffers[i];
-			bufferInfo.offset = 0;
-			bufferInfo.range = sizeof(UniformBufferObject);
-
-			VkWriteDescriptorSet uboWrite{};
-			uboWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			uboWrite.dstSet = descriptorSets[0];
-			uboWrite.dstBinding = 0;
-			uboWrite.dstArrayElement = static_cast<uint32_t>(i);
-			uboWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			uboWrite.descriptorCount = 1;
-			uboWrite.pBufferInfo = &bufferInfo;
-
-			vkUpdateDescriptorSets(device, 1, &uboWrite, 0, nullptr);
-		}
-
-		// create descriptor set for all objects textures
-		size_t textureIndex = 0;
-		for (size_t i = 0; i < objects.size(); i++) {
-			for (size_t j = 0; j < objects[i].textures.size(); j++) {
-				std::array<Texture, 3> textures = {
-					objects[i].textures[j].diffuseTex,
-					objects[i].textures[j].specularTex,
-					objects[i].textures[j].normalMap
-				};
-
-				for (const auto& texture : textures) {
-					VkDescriptorImageInfo imageInfo{};
-					imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-					imageInfo.imageView = texture.imageView;
-					imageInfo.sampler = texture.sampler;
-
-					VkWriteDescriptorSet textureWrite{};
-					textureWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-					textureWrite.dstSet = descriptorSets[1]; // 1 is the index of the descriptor set for textures
-					textureWrite.dstBinding = 1;
-					textureWrite.dstArrayElement = static_cast<uint32_t>(textureIndex++); // increment the texture index
-					textureWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-					textureWrite.descriptorCount = 1;
-					textureWrite.pImageInfo = &imageInfo;
-
-					vkUpdateDescriptorSets(device, 1, &textureWrite, 0, nullptr);
+				if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i]) != VK_SUCCESS) { // allocate the descriptor set for each object
+					throw std::runtime_error("Failed to allocate descriptor set!");
 				}
+
+				std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+
+				descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[0].dstSet = descriptorSets[i];
+				descriptorWrites[0].dstBinding = 0;
+				descriptorWrites[0].dstArrayElement = 0;
+				descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
+				descriptorWrites[0].descriptorCount = 1;
+				descriptorWrites[0].pBufferInfo = &bufferInfo;
+
+				descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+				descriptorWrites[1].dstSet = descriptorSets[i];
+				descriptorWrites[1].dstBinding = 1;
+				descriptorWrites[1].dstArrayElement = 0;
+				descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+				descriptorWrites[1].descriptorCount = 1;
+				descriptorWrites[1].pImageInfo = &imageInfo;
+
+				vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 			}
-		}
-		// create descriptor set for all lights
-		for (size_t i = 0; i < lights.size(); i++) {
-			VkDescriptorBufferInfo lightInfo{};
-			lightInfo.buffer = lightBuffers[i];
-			lightInfo.offset = 0;
-			lightInfo.range = sizeof(LightBufferObject);
-
-			VkWriteDescriptorSet lightWrite{};
-			lightWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-			lightWrite.dstSet = descriptorSets[2];
-			lightWrite.dstBinding = 2;
-			lightWrite.dstArrayElement = static_cast<uint32_t>(i);
-			lightWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-			lightWrite.descriptorCount = 1;
-			lightWrite.pBufferInfo = &lightInfo;
-
-			vkUpdateDescriptorSets(device, 1, &lightWrite, 0, nullptr);
 		}
 	}
 
 	void setupDescriptorSets() {
+		totalTextureCount = 0;
+		for (const auto& object : objects) {
+			totalTextureCount += object.textures.size() * 3;  // Each material has 3 textures
+		}
+		std::array<VkDescriptorPoolSize, 3> poolSizes{};
 		createDSLayout();
 		createDSPool();
 		createDS(); //create the descriptor set
@@ -1068,7 +1032,7 @@ private:
 			//create the texture image for each texture (for each material)
 			//also create miplmaps for each texture
 			createTextureImage(m.textures[i].specularTex, false);
-			createTextureImage(m.textures[i].normalMap, false);
+			createTextureImage(m.textures[i].normalMap, false, "norm");
 			createTextureImage(m.textures[i].diffuseTex, true);
 
 			//create texture image views and samplers for each texture (for each material):wa
@@ -1100,6 +1064,7 @@ private:
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
 		samplerInf.maxLod = doMipmap ? tex.mipLevels : 1;
+		std::cout << tex.mipLevels << std::endl;
 		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) { // create sampler
 			throw std::runtime_error("failed to create texture sampler!");
 		}
@@ -1161,12 +1126,11 @@ private:
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTextureImage(Texture& tex, bool doMipmap) { //create the texture image for the diffuse texture materials
+	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "tex") { //create the texture image for the diffuse texture materials
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			getImageData(tex.path);
 			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
-
 			// create image:
 			VkImageCreateInfo imageInf{};
 			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1176,7 +1140,13 @@ private:
 			imageInf.extent.depth = 1;
 			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
-			imageInf.format = VK_FORMAT_R8G8B8A8_SRGB;
+
+			if (type != "tex") {
+				imageInf.format = VK_FORMAT_R8G8B8A8_SNORM; //signed format for the normal maps (-1 to 1)
+			}
+			else {
+				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for specular and diffuse maps
+			}
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -1184,7 +1154,6 @@ private:
 
 			imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
 			imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
 			if (vkCreateImage(device, &imageInf, nullptr, &tex.image) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create texture image!");
 			}
@@ -1993,8 +1962,8 @@ private:
 
 
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.004f; // Adjust the speed as needed. on the laptop 0.012f is good
-		float cameraRotationSpeed = 0.4f;
+		float cameraSpeed = 0.01f; // Adjust the speed as needed. on the laptop 0.012f is good
+		float cameraRotationSpeed = 1.0f;
 
 		cam.camAngle.y = fmod(cam.camAngle.y + 360.0f, 360.0f);
 		if (cam.camAngle.x > 90) {
