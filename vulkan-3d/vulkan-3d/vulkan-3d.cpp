@@ -981,6 +981,16 @@ private:
 		VkDescriptorImageInfo imageInfo;
 		std::vector<Texture> textures = getAllTextures(objects);
 
+		std::vector<VkSampler> samplers;
+		for (const auto& texture : textures) {
+			samplers.push_back(texture.sampler);
+		}
+
+		std::vector<VkImageView> views;
+		for (const auto& texture : textures) {
+			views.push_back(texture.imageView);
+		}
+
 		createUBOs(); //create the UBOs for each object
 		for (int i = 0; i < objects.size(); i++) {
 			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
