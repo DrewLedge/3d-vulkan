@@ -24,12 +24,7 @@ There are several required libraries that are not header-only. They need to be l
 
 1. GLFW: This library is already included in the project files.
 2. ImGui: This library is also included in the project files.
-
-## Linking Libraries and Setting up the Environment
-
-1. Link all necessary files and add Vulkan to your system's PATH. This is necessary for the system and the development tools to recognize Vulkan's binaries and libraries.
-2. Link GLFW and ImGui
-3. Link GLM (Not in use right now)
+3. Add Vulkan to your system's PATH
 
 ## Build the Project
 
