@@ -19,7 +19,6 @@
 #include <array>
 #include <chrono> //time library
 #include <unordered_map>
-#include <set>
 #include <unordered_set>
 #include <mutex>
 #include <random>
@@ -91,6 +90,7 @@ struct vertHash {
 		return seed;
 	}
 };
+
 struct Texture {
 	VkSampler sampler;
 	VkImage image;
@@ -101,8 +101,34 @@ struct Texture {
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMem;
 
-	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE),
-		stagingBufferMem(VK_NULL_HANDLE) {}
+	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE) {}
+
+	bool operator==(const Texture& other) const {
+		return sampler == other.sampler
+			&& image == other.image
+			&& memory == other.memory
+			&& imageView == other.imageView
+			&& path == other.path
+			&& mipLevels == other.mipLevels
+			&& stagingBuffer == other.stagingBuffer
+			&& stagingBufferMem == other.stagingBufferMem;
+	}
+};
+
+struct texHash {
+	size_t operator()(const Texture& tex) const {
+		size_t seed = 0;
+		seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+		seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+		return seed;
+	}
 };
 
 struct Materials {
@@ -897,7 +923,7 @@ private:
 
 	std::vector<Texture> getAllTextures(const std::vector<model>& objects) {
 		std::vector<Texture> allTextures;
-		std::unordered_set<Texture, vertHash> textureSet;
+		std::unordered_set<Texture, texHash> textureSet;
 
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.textures) {
@@ -975,21 +1001,10 @@ private:
 
 
 	void createDS() {
-		VkDescriptorBufferInfo bufferInfo{}; //info about the UBO
 		std::vector<std::thread> threads;
-		descriptorSets.resize(2);
 		VkDescriptorImageInfo imageInfo;
-		std::vector<Texture> textures = getAllTextures(objects);
-
-		std::vector<VkSampler> samplers;
-		for (const auto& texture : textures) {
-			samplers.push_back(texture.sampler);
-		}
-
-		std::vector<VkImageView> views;
-		for (const auto& texture : textures) {
-			views.push_back(texture.imageView);
-		}
+		std::vector<Texture> textures = getAllTextures(objects); // not in use at the moment
+		descriptorSets.resize(2); // 1: ubo 2: texture data
 
 		createUBOs(); //create the UBOs for each object
 		for (int i = 0; i < objects.size(); i++) {
@@ -1002,48 +1017,56 @@ private:
 				thread.join();
 			}
 		}
-		for (int i = 0; i < objects.size(); i++) {
-			for (int j = 0; j < objects[i].textures.size(); j++) {
-				objects[i].textures[j].diffuseTex.imageView;
-				bufferInfo.buffer = uboBuffers[i];
-				bufferInfo.offset = 0; //offset in the buffer where the UBO starts
-				bufferInfo.range = sizeof(UniformBufferObject);
-				imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				imageInfo.imageView = objects[i].textures[j].diffuseTex.imageView;
-				imageInfo.sampler = objects[i].textures[j].diffuseTex.sampler;
 
-				VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
-				VkDescriptorSetAllocateInfo allocInfo{};
-				allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-				allocInfo.descriptorPool = descriptorPool;
-				allocInfo.descriptorSetCount = 1;
-				allocInfo.pSetLayouts = layouts;
-
-				if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i]) != VK_SUCCESS) { // allocate the descriptor set for each object
-					throw std::runtime_error("Failed to allocate descriptor set!");
-				}
-
-				std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
-
-				descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[0].dstSet = descriptorSets[i];
-				descriptorWrites[0].dstBinding = 0;
-				descriptorWrites[0].dstArrayElement = 0;
-				descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
-				descriptorWrites[0].descriptorCount = 1;
-				descriptorWrites[0].pBufferInfo = &bufferInfo;
-
-				descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-				descriptorWrites[1].dstSet = descriptorSets[i];
-				descriptorWrites[1].dstBinding = 1;
-				descriptorWrites[1].dstArrayElement = 0;
-				descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-				descriptorWrites[1].descriptorCount = 1;
-				descriptorWrites[1].pImageInfo = &imageInfo;
-
-				vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = layouts;
+		for (int d = 0; d < descriptorSets.size(); d++) {
+			if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[d]) != VK_SUCCESS) { // allocate the descriptor set for each object
+				throw std::runtime_error("Failed to allocate descriptor set!");
 			}
 		}
+		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
+		for (int i = 0; i < objects.size(); i++) {
+			bufferInfos[i].buffer = uboBuffers[i];
+			bufferInfos[i].offset = 0; //offset in the buffer where the UBO starts
+			bufferInfos[i].range = sizeof(UniformBufferObject);
+		}
+
+
+		std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+
+		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[0].dstSet = descriptorSets[0];
+		descriptorWrites[0].dstBinding = 0;
+		descriptorWrites[0].dstArrayElement = 0;
+		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
+		descriptorWrites[0].descriptorCount = 1;
+		descriptorWrites[0].pBufferInfo = bufferInfos.data();
+
+		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
+
+		// loop to initialize all imageInfos
+		for (int i = 0; i < totalTextureCount; i++)
+		{
+			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfos[i].imageView = textures[i].imageView;
+			imageInfos[i].sampler = textures[i].sampler;
+		}
+
+		// modify VkWriteDescriptorSet for textures
+		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[1].dstSet = descriptorSets[1];
+		descriptorWrites[1].dstBinding = 1;
+		descriptorWrites[1].dstArrayElement = 0;
+		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[1].descriptorCount = totalTextureCount;
+		descriptorWrites[1].pImageInfo = imageInfos.data();
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
 	void setupDescriptorSets() {
