@@ -100,8 +100,9 @@ struct Texture {
 	uint32_t mipLevels;
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMem;
+	uint32_t texIndex;
 
-	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE) {}
+	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE), texIndex(0) {}
 
 	bool operator==(const Texture& other) const {
 		return sampler == other.sampler
@@ -111,7 +112,8 @@ struct Texture {
 			&& path == other.path
 			&& mipLevels == other.mipLevels
 			&& stagingBuffer == other.stagingBuffer
-			&& stagingBufferMem == other.stagingBufferMem;
+			&& stagingBufferMem == other.stagingBufferMem
+			&& texIndex == other.texIndex;
 	}
 };
 
@@ -245,6 +247,9 @@ private:
 	std::vector<VkDeviceMemory> uboBufferMemories;
 	std::vector<VkBuffer> lightBuffers;
 	std::vector<VkDeviceMemory> lightBufferMemories;
+	VkBuffer texIndexBuffer;
+	VkDeviceMemory texIndexBufferMem;
+	std::vector<uint32_t> texIndices;
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -301,7 +306,7 @@ private:
 
 	void loadModels() {
 		std::vector<std::thread> threads;
-
+		uint32_t texInd = 0;
 		// parallel loading using multiple threads:
 		for (auto& object : objects) {
 			if (!object.isLoaded) {
@@ -335,7 +340,12 @@ private:
 						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
 						texture.specularTex.path = mtl_basepath + material.specular_texname;
 						texture.normalMap.path = mtl_basepath + material.bump_texname;
-						//for spome reason the normal map is stored in the bump map.
+						//get the texture index for each texture:
+						texture.diffuseTex.texIndex = texInd;
+						texture.specularTex.texIndex = texInd;
+						texture.normalMap.texIndex = texInd;
+						texInd += 1;
+						//for some reason the normal map is stored in the bump map.
 						//not sure if this is for all models or just the ones I have
 						object.textures.push_back(texture);
 					}
@@ -785,7 +795,7 @@ private:
 		return shaderModule;
 	}
 
-	void createUBOs() {
+	void setupMatrixUBO() {
 		uboBuffers.resize(objects.size());
 		uboBufferMemories.resize(objects.size());
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -842,6 +852,42 @@ private:
 			vkBindBufferMemory(device, lightBuffers[i], lightBufferMemories[i], 0);
 		}
 	}
+	void setupTexIndices(std::vector<Texture>& textures) {
+		texIndices.resize(totalTextureCount); // 1 index per texture in the scene
+		for (size_t i = 0; i < totalTextureCount; ++i) {
+			texIndices[i] = textures[i].texIndex;
+		}
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = sizeof(uint32_t) * texIndices.size();
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; // will be used as a uniform buffer
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
+
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &texIndexBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create index buffer!");
+		}
+
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, texIndexBuffer, &memoryRequirements);
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &texIndexBufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for index buffer!");
+		}
+
+		vkBindBufferMemory(device, texIndexBuffer, texIndexBufferMem, 0);
+
+		// once memory is bound, map and fill it
+		void* data;
+		vkMapMemory(device, texIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, texIndices.data(), bufferCreateInfo.size);
+		vkUnmapMemory(device, texIndexBufferMem);
+	}
+
 
 
 	void calcMatrixes(model& o) {
@@ -953,7 +999,7 @@ private:
 
 
 	void createDSLayout() {
-		std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+		std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
 
 		bindings[0].binding = 0;
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -962,8 +1008,13 @@ private:
 
 		bindings[1].binding = 1;
 		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = totalTextureCount; // maximum number of combined image samplers
+		bindings[1].descriptorCount = static_cast<uint32_t>(totalTextureCount); // maximum number of combined image samplers
 		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+		bindings[2].binding = 2;
+		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // for storing texture indices
+		bindings[2].descriptorCount = static_cast<uint32_t>(totalTextureCount);  // 1 tex index per texture in each material
+		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -1004,10 +1055,9 @@ private:
 
 	void createDS() {
 		std::vector<std::thread> threads;
-		VkDescriptorImageInfo imageInfo;
-		descriptorSets.resize(2); // 1: ubo 2: texture data
+		descriptorSets.resize(3); // 1: ubo 2: texture data
 
-		createUBOs(); //create the matrix UBOs for each object
+		setupMatrixUBO(); //create the matrix UBOs for each object
 		for (int i = 0; i < objects.size(); i++) {
 			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
 			std::cout << "object " << i + 1 << " loaded" << std::endl;
@@ -1020,16 +1070,17 @@ private:
 		}
 		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
 
-		VkDescriptorSetLayout layouts[] = { descriptorSetLayout, descriptorSetLayout };
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout, descriptorSetLayout, descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorPool = descriptorPool;
-		allocInfo.descriptorSetCount = 2; // ubo, texture data
+		allocInfo.descriptorSetCount = 3; // ubo, texture data, texture indices
 		allocInfo.pSetLayouts = layouts;
 
 		if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate descriptor sets!");
 		}
+		setupTexIndices(textures);
 
 		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
 		for (int i = 0; i < objects.size(); i++) {
@@ -1045,26 +1096,37 @@ private:
 			imageInfos[i].sampler = textures[i].sampler;
 		}
 
+		VkDescriptorBufferInfo indexBufferInfo{};
+		indexBufferInfo.buffer = texIndexBuffer;
+		indexBufferInfo.offset = 0;
+		indexBufferInfo.range = sizeof(uint32_t) * texIndices.size();
 
-		std::array<VkWriteDescriptorSet, 2> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+
+		std::array<VkWriteDescriptorSet, 3> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[0];
 		descriptorWrites[0].dstBinding = 0;
 		descriptorWrites[0].dstArrayElement = 0;
 		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
-		descriptorWrites[0].descriptorCount = objects.size();
+		descriptorWrites[0].descriptorCount = static_cast<uint32_t>(objects.size());
 		descriptorWrites[0].pBufferInfo = bufferInfos.data();
 
-
-		// modify VkWriteDescriptorSet for textures
 		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[1].dstSet = descriptorSets[1];
 		descriptorWrites[1].dstBinding = 1;
 		descriptorWrites[1].dstArrayElement = 0;
 		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[1].descriptorCount = totalTextureCount;
+		descriptorWrites[1].descriptorCount = static_cast<uint32_t>(totalTextureCount);
 		descriptorWrites[1].pImageInfo = imageInfos.data();
+
+		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[2].dstSet = descriptorSets[2];
+		descriptorWrites[2].dstBinding = 2;
+		descriptorWrites[2].dstArrayElement = 0;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrites[2].descriptorCount = 1;
+		descriptorWrites[2].pBufferInfo = &indexBufferInfo;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1129,8 +1191,7 @@ private:
 		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = doMipmap ? tex.mipLevels : 1;
-		std::cout << tex.mipLevels << std::endl;
+		samplerInf.maxLod = doMipmap ? static_cast<float>(tex.mipLevels) : 1;
 		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) { // create sampler
 			throw std::runtime_error("failed to create texture sampler!");
 		}
@@ -1513,11 +1574,11 @@ private:
 		};
 		VkPipelineDynamicStateCreateInfo dynamicState{};
 		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-		dynamicState.dynamicStateCount = std::size(dynamicStates);
+		dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
 		dynamicState.pDynamicStates = dynamicStates;
 
-		//pipeline layout setup: Allows for uniform variables to be passed into the shader. no uniform variables are used yet thats fior later
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout, descriptorSetLayout };
+		//pipeline layout setup: Allows for uniform variables to be passed into the shader
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout, descriptorSetLayout, descriptorSetLayout };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -1813,7 +1874,7 @@ private:
 			// draw the imgui text
 			std::string str = std::to_string(fps);
 			std::string text = "fps: " + str;
-			drawText(text.c_str(), swapChainExtent.width / 2, 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+			drawText(text.c_str(), static_cast<float>(swapChainExtent.width / 2), 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
 
 			// render the imgui frame and draw imgui's commands into the command buffer:
 			ImGui::Render();
@@ -2019,7 +2080,7 @@ private:
 
 			auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - previousTime).count();
 			if (timeSincePrevious >= 300) {
-				fps = std::round(frameCount / (timeSincePrevious / 1000.0f));
+				fps = static_cast<uint32_t>(std::round(frameCount / (timeSincePrevious / 1000.0f)));
 				frameCount = 0;
 				previousTime = endTime;
 			}
