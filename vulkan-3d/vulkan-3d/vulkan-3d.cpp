@@ -924,6 +924,7 @@ private:
 	std::vector<Texture> getAllTextures(const std::vector<model>& objects) {
 		std::vector<Texture> allTextures;
 		std::unordered_set<Texture, texHash> textureSet;
+		allTextures.reserve(totalTextureCount);
 
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.textures) {
@@ -956,13 +957,13 @@ private:
 
 		bindings[0].binding = 0;
 		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[0].descriptorCount = 1;
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT; //UBO will be accessed from the vertex shader
+		bindings[0].descriptorCount = static_cast<uint32_t>(objects.size()); // maximum number of UBOs
+		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 
 		bindings[1].binding = 1;
 		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = 1;
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // combned image sampler will be accessed from the fragment shader
+		bindings[1].descriptorCount = totalTextureCount; // maximum number of combined image samplers
+		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -973,6 +974,7 @@ private:
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
 	}
+
 
 
 	void createDSPool() {
@@ -1003,10 +1005,9 @@ private:
 	void createDS() {
 		std::vector<std::thread> threads;
 		VkDescriptorImageInfo imageInfo;
-		std::vector<Texture> textures = getAllTextures(objects); // not in use at the moment
 		descriptorSets.resize(2); // 1: ubo 2: texture data
 
-		createUBOs(); //create the UBOs for each object
+		createUBOs(); //create the matrix UBOs for each object
 		for (int i = 0; i < objects.size(); i++) {
 			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
 			std::cout << "object " << i + 1 << " loaded" << std::endl;
@@ -1017,23 +1018,31 @@ private:
 				thread.join();
 			}
 		}
+		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
 
-		VkDescriptorSetLayout layouts[] = { descriptorSetLayout };
+		VkDescriptorSetLayout layouts[] = { descriptorSetLayout, descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorPool = descriptorPool;
-		allocInfo.descriptorSetCount = 1;
+		allocInfo.descriptorSetCount = 2; // ubo, texture data
 		allocInfo.pSetLayouts = layouts;
-		for (int d = 0; d < descriptorSets.size(); d++) {
-			if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[d]) != VK_SUCCESS) { // allocate the descriptor set for each object
-				throw std::runtime_error("Failed to allocate descriptor set!");
-			}
+
+		if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate descriptor sets!");
 		}
+
 		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
 		for (int i = 0; i < objects.size(); i++) {
 			bufferInfos[i].buffer = uboBuffers[i];
 			bufferInfos[i].offset = 0; //offset in the buffer where the UBO starts
 			bufferInfos[i].range = sizeof(UniformBufferObject);
+		}
+
+		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
+		for (int i = 0; i < totalTextureCount; i++) {
+			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfos[i].imageView = textures[i].imageView;
+			imageInfos[i].sampler = textures[i].sampler;
 		}
 
 
@@ -1044,18 +1053,9 @@ private:
 		descriptorWrites[0].dstBinding = 0;
 		descriptorWrites[0].dstArrayElement = 0;
 		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
-		descriptorWrites[0].descriptorCount = 1;
+		descriptorWrites[0].descriptorCount = objects.size();
 		descriptorWrites[0].pBufferInfo = bufferInfos.data();
 
-		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
-
-		// loop to initialize all imageInfos
-		for (int i = 0; i < totalTextureCount; i++)
-		{
-			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = textures[i].imageView;
-			imageInfos[i].sampler = textures[i].sampler;
-		}
 
 		// modify VkWriteDescriptorSet for textures
 		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -1517,11 +1517,11 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader. no uniform variables are used yet thats fior later
-
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout, descriptorSetLayout };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = 1; //number of descriptor set layouts
-		pipelineLayoutInf.pSetLayouts = &descriptorSetLayout; //array of descriptor set layouts (a pointer to the array)
+		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pushConstantRangeCount = 0; //number of push constant ranges
 		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
@@ -1746,11 +1746,13 @@ private:
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		for (size_t i = 0; i < commandBuffers.size(); i++) {
+			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
+			vkResetCommandBuffer(commandBuffers[i], 0);
+
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 			beginInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
-			vkResetCommandBuffer(commandBuffers[i], 0);
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -1773,10 +1775,10 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1] };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, dSets, 0, nullptr);
+
 			for (size_t j = 0; j < objects.size(); j++) {
-				// bind the descriptor set for each object (each set is a different object):
-				VkDescriptorSet dSets[] = { descriptorSets[j] };
-				vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, dSets, 0, nullptr);
 				if (j >= vertBuffers.size()) {
 					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
 					continue;
