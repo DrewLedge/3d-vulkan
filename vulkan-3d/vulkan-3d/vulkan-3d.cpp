@@ -34,6 +34,7 @@ struct Vertex {
 	forms::vec3 col; // color r, g, b
 	forms::vec3 normal; // normal vector x, y, z
 	float alpha;
+	uint32_t matIndex; // used to know which vertex belong to which material
 
 	// default constructor:
 	Vertex()
@@ -54,7 +55,8 @@ struct Vertex {
 		tex(texture),
 		col(color),
 		normal(normalVector),
-		alpha(alphaValue)
+		alpha(alphaValue),
+		matIndex(0)
 	{}
 	bool operator==(const Vertex& other) const {
 		const float epsilon = 0.00001f; // tolerance for floating point equality
@@ -100,7 +102,7 @@ struct Texture {
 	uint32_t mipLevels;
 	VkBuffer stagingBuffer;
 	VkDeviceMemory stagingBufferMem;
-	uint32_t texIndex;
+	uint32_t texIndex; //used to know what textures belong to what material
 
 	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE), texIndex(0) {}
 
@@ -112,8 +114,7 @@ struct Texture {
 			&& path == other.path
 			&& mipLevels == other.mipLevels
 			&& stagingBuffer == other.stagingBuffer
-			&& stagingBufferMem == other.stagingBufferMem
-			&& texIndex == other.texIndex;
+			&& stagingBufferMem == other.stagingBufferMem;
 	}
 };
 
@@ -137,6 +138,7 @@ struct Materials {
 	Texture diffuseTex;
 	Texture specularTex;
 	Texture normalMap;
+	uint32_t modelIndex; //used to know what model the material belongs to
 };
 struct model {
 	std::vector<Materials> textures; //used to store all the textures/materials of the model
@@ -236,12 +238,17 @@ private:
 	VkFormat depthFormat;
 
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
-	VkDescriptorSetLayout descriptorSetLayout; //descriptor set layout object, defined in the pipeline
-	VkDescriptorPool descriptorPool; // descriptor pool object
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
 
 	std::vector<VkDescriptorSet> descriptorSets;
+	VkDescriptorSetLayout descriptorSetLayout1;
+	VkDescriptorPool descriptorPool1;
+	VkDescriptorSetLayout descriptorSetLayout2;
+	VkDescriptorPool descriptorPool2;
+	VkDescriptorSetLayout descriptorSetLayout3;
+	VkDescriptorPool descriptorPool3;
+
 
 	std::vector<VkBuffer> uboBuffers;
 	std::vector<VkDeviceMemory> uboBufferMemories;
@@ -307,6 +314,8 @@ private:
 	void loadModels() {
 		std::vector<std::thread> threads;
 		uint32_t texInd = 0;
+		uint32_t modInd = 0;
+
 		// parallel loading using multiple threads:
 		for (auto& object : objects) {
 			if (!object.isLoaded) {
@@ -325,9 +334,7 @@ private:
 					if (!err.empty()) {
 						throw std::runtime_error(err);
 					}
-					// Use an unordered_map instead of a vector for storing unique vertices:
 					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-
 					std::vector<Vertex> tempVertices;
 					std::vector<uint32_t> tempIndices;
 
@@ -340,18 +347,22 @@ private:
 						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
 						texture.specularTex.path = mtl_basepath + material.specular_texname;
 						texture.normalMap.path = mtl_basepath + material.bump_texname;
+
 						//get the texture index for each texture:
 						texture.diffuseTex.texIndex = texInd;
 						texture.specularTex.texIndex = texInd;
 						texture.normalMap.texIndex = texInd;
 						texInd += 1;
-						//for some reason the normal map is stored in the bump map.
-						//not sure if this is for all models or just the ones I have
+
+						//get he model index (which materials goto which model)
+						texture.modelIndex = modInd;
 						object.textures.push_back(texture);
 					}
+					modInd += 1;
 
 
 					for (const auto& shape : shapes) {
+						uint32_t matIndex = shape.mesh.material_ids[0]; //each shape only has one material for now
 						for (const auto& index : shape.mesh.indices) {
 							Vertex vertex;
 							vertex.pos = {
@@ -373,6 +384,8 @@ private:
 								attrib.normals[3 * index.normal_index + 1],
 								attrib.normals[3 * index.normal_index + 2]
 							};
+							vertex.matIndex = matIndex;
+
 							// Check if vertex is unique and add it to the map if it is:
 							if (uniqueVertices.count(vertex) == 0) {
 								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -380,6 +393,25 @@ private:
 							}
 							tempIndices.push_back(uniqueVertices[vertex]);
 						}
+					}
+
+					//load texture data
+					for (int i = 0; i < object.textures.size(); i++) {
+						//create the texture image for each texture (for each material)
+						//also create miplmaps for each texture
+						createTextureImage(object.textures[i].specularTex, false);
+						createTextureImage(object.textures[i].normalMap, false, "norm");
+						createTextureImage(object.textures[i].diffuseTex, true);
+
+						//create texture image views and samplers for each texture (for each material):wa
+						createTextureImgView(object.textures[i].specularTex, false);
+						createTS(object.textures[i].specularTex, false);
+
+						createTextureImgView(object.textures[i].normalMap, false, "norm");
+						createTS(object.textures[i].normalMap, false, "norm");
+
+						createTextureImgView(object.textures[i].diffuseTex, true);
+						createTS(object.textures[i].diffuseTex, true);
 					}
 
 					// batch insert vertices and indices into object:
@@ -412,15 +444,17 @@ private:
 
 	void createInstance() {
 		VkApplicationInfo info{};
-		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO; // VK_STRUCTURE_TYPE_APPLICATION_INFO is a constant that tells Vulkan which structure you are using, which allows the implementation to read the data accordingly
-		info.pApplicationName = "My Engine"; //the "p" is a naming convention that indicates a pointer to a null-terminated string
+		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		info.pApplicationName = "My Engine";
 		info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 		info.pEngineName = "No Engine";
 		info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 		info.apiVersion = VK_API_VERSION_1_0;
+
 		VkInstanceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		newInfo.pApplicationInfo = &info;
+
 		uint32_t glfwExtensionCount = 0;
 		const char** glfwExtensions;
 		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -430,9 +464,10 @@ private:
 		newInfo.ppEnabledLayerNames = validationLayers.data();
 
 		if (vkCreateInstance(&newInfo, nullptr, &instance) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create instance! " + resultStr(vkCreateInstance(&newInfo, nullptr, &instance)));
+			throw std::runtime_error("Failed to create instance!");
 		}
 	}
+
 	void pickDevice() {
 		uint32_t deviceCount = 0;
 		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
@@ -442,20 +477,33 @@ private:
 		std::vector<VkPhysicalDevice> devices(deviceCount);
 		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
 		for (const auto& device : devices) {
-			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) { //isDeviceSuitableG checks if the device is suitable for graphics, isDeviceSuitableP checks if the device is suitable for presentation
-				std::cout << "GPU and Presentation device found!" << std::endl;
+			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) {
 				physicalDevice = device;
 				VkPhysicalDeviceProperties deviceProperties;
 				vkGetPhysicalDeviceProperties(device, &deviceProperties);
-				std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
-				std::cout << "Max descriptors per set: " << deviceProperties.limits.maxDescriptorSetUniformBuffers << std::endl;
-
+				printCapabilities(deviceProperties);
 				break;
 			}
+
 		}
 		if (physicalDevice == VK_NULL_HANDLE) {
 			throw std::runtime_error("failed to find a suitable GPU for graphics and presentation");
 		}
+	}
+	void printCapabilities(VkPhysicalDeviceProperties deviceProperties) {
+		std::cout << "---------------------------------" << std::endl;
+		std::cout << "Device Name: " << deviceProperties.deviceName << std::endl;
+		std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
+		std::cout << "Max Uniform Buffers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetUniformBuffers << std::endl;
+		std::cout << "Max Combined Image Samplers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetSamplers << std::endl;
+		std::cout << "Max Storage Buffers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetStorageBuffers << std::endl;
+		std::cout << "Max Storage Images Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetStorageImages << std::endl;
+		std::cout << "Max Input Attachments Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetInputAttachments << std::endl;
+		std::cout << "Max Vertex Input Attributes: " << deviceProperties.limits.maxVertexInputAttributes << std::endl;
+		std::cout << "Max Vertex Input Bindings: " << deviceProperties.limits.maxVertexInputBindings << std::endl;
+		std::cout << "Max Vertex Input Attribute Offset: " << deviceProperties.limits.maxVertexInputAttributeOffset << std::endl;
+		std::cout << "Max Vertex Input Binding Stride: " << deviceProperties.limits.maxVertexInputBindingStride << std::endl;
+		std::cout << "---------------------------------" << std::endl;
 	}
 
 	void createLogicalDevice() {
@@ -998,88 +1046,79 @@ private:
 	}
 
 
-	void createDSLayout() {
-		std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
-
-		bindings[0].binding = 0;
-		bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		bindings[0].descriptorCount = static_cast<uint32_t>(objects.size()); // maximum number of UBOs
-		bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-
-		bindings[1].binding = 1;
-		bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		bindings[1].descriptorCount = static_cast<uint32_t>(totalTextureCount); // maximum number of combined image samplers
-		bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-
-		bindings[2].binding = 2;
-		bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; // for storing texture indices
-		bindings[2].descriptorCount = static_cast<uint32_t>(totalTextureCount);  // 1 tex index per texture in each material
-		bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	VkDescriptorSetLayout createDSLayout(uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags) {
+		VkDescriptorSetLayoutBinding binding{};
+		binding.binding = bindingIndex;
+		binding.descriptorType = type;
+		binding.descriptorCount = descriptorCount;
+		binding.stageFlags = stageFlags;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-		layoutInfo.pBindings = bindings.data();
+		layoutInfo.bindingCount = 1;
+		layoutInfo.pBindings = &binding;
 
+		VkDescriptorSetLayout descriptorSetLayout;
 		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
+
+		return descriptorSetLayout;
 	}
 
-
-
-	void createDSPool() {
-		std::array<VkDescriptorPoolSize, 2> poolSizes{};
-
-		// matrix ubo descriptor set:
-		poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-		poolSizes[0].descriptorCount = static_cast<uint32_t>(objects.size());
-
-		// texture data descriptor set:
-		poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSizes[1].descriptorCount = static_cast<uint32_t>(objects.size());
+	VkDescriptorPool createDSPool(VkDescriptorType type, uint32_t descriptorCount) {
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = type;
+		poolSize.descriptorCount = descriptorCount;
 
 		VkDescriptorPoolCreateInfo poolInfo{};
 		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
 		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-		poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-		poolInfo.pPoolSizes = poolSizes.data();
-		poolInfo.maxSets = static_cast<uint32_t>(totalTextureCount);
+		poolInfo.poolSizeCount = 1;
+		poolInfo.pPoolSizes = &poolSize;
+		poolInfo.maxSets = 1;
 
+		VkDescriptorPool descriptorPool;
 		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
+
+		return descriptorPool;
 	}
 
 
 
+
 	void createDS() {
-		std::vector<std::thread> threads;
-		descriptorSets.resize(3); // 1: ubo 2: texture data
+		descriptorSets.resize(3);
 
-		setupMatrixUBO(); //create the matrix UBOs for each object
-		for (int i = 0; i < objects.size(); i++) {
-			threads.push_back(std::thread(&Engine::setupTexData, this, std::ref(objects[i])));// create texture samplers, and image for each material in each object
-			std::cout << "object " << i + 1 << " loaded" << std::endl;
-		}
+		//initialize descriptor set layouts and pools
+		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()), VK_SHADER_STAGE_VERTEX_BIT);
+		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
+		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()));
+		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
+		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
 
-		for (auto& thread : threads) {
-			if (thread.joinable()) {
-				thread.join();
-			}
-		}
-		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
-
-		VkDescriptorSetLayout layouts[] = { descriptorSetLayout, descriptorSetLayout, descriptorSetLayout };
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorPool = descriptorPool;
-		allocInfo.descriptorSetCount = 3; // ubo, texture data, texture indices
-		allocInfo.pSetLayouts = layouts;
+		allocInfo.descriptorSetCount = 1; // 1 because we are allocating 1 descriptor set at a time
 
-		if (vkAllocateDescriptorSets(device, &allocInfo, descriptorSets.data()) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate descriptor sets!");
+		std::array<VkDescriptorSetLayout, 3> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
+		std::array<VkDescriptorPool, 3> pools = { descriptorPool1, descriptorPool2, descriptorPool3 };
+
+		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
+			allocInfo.descriptorPool = pools[i];
+			allocInfo.pSetLayouts = &layouts[i];
+
+			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[i]);
+			if (result != VK_SUCCESS) {
+				throw std::runtime_error("Failed to allocate descriptor sets. Error code: " + std::to_string(result));
+			}
 		}
+
+		setupMatrixUBO(); //create the matrix UBOs for each object
+		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
 		setupTexIndices(textures);
 
 		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
@@ -1136,9 +1175,6 @@ private:
 		for (const auto& object : objects) {
 			totalTextureCount += object.textures.size() * 3;  // Each material has 3 textures
 		}
-		std::array<VkDescriptorPoolSize, 3> poolSizes{};
-		createDSLayout();
-		createDSPool();
 		createDS(); //create the descriptor set
 	}
 	void realtimeLoad(std::string p) {
@@ -1151,30 +1187,8 @@ private:
 		m.position = worldPos.multiply(10, 10, 10);
 		m.startObj = false;
 		objects.push_back(m);
-		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-		setupDescriptorSets();
+		// add descriptor set recreation stuff
 	}
-	void setupTexData(model& m) {
-		std::lock_guard<std::mutex> lock(descMtx);
-		for (int i = 0; i < m.textures.size(); i++) {
-			//create the texture image for each texture (for each material)
-			//also create miplmaps for each texture
-			createTextureImage(m.textures[i].specularTex, false);
-			createTextureImage(m.textures[i].normalMap, false, "norm");
-			createTextureImage(m.textures[i].diffuseTex, true);
-
-			//create texture image views and samplers for each texture (for each material):wa
-			createTextureImgView(m.textures[i].specularTex, false);
-			createTS(m.textures[i].specularTex, false);
-
-			createTextureImgView(m.textures[i].normalMap, false, "norm");
-			createTS(m.textures[i].normalMap, false, "norm");
-
-			createTextureImgView(m.textures[i].diffuseTex, true);
-			createTS(m.textures[i].diffuseTex, true);
-		}
-	}
-
 
 	void createTS(Texture& tex, bool doMipmap, std::string type = "tex") { //create texture samplers for
 		VkSamplerCreateInfo samplerInf{}; // create sampler info
@@ -1578,7 +1592,7 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout, descriptorSetLayout, descriptorSetLayout };
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -1931,7 +1945,9 @@ private:
 		cleanupSwapChain();
 		createSC();
 		createImageViews();
-		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
 		setupDescriptorSets();
 		vkDestroyImageView(device, depthImageView, nullptr);
 		vkDestroyImage(device, depthImage, nullptr);
@@ -2146,11 +2162,11 @@ private:
 		pickDevice();
 		createLogicalDevice();
 		initQueues(); //sets the queue family indices such as graphics and presentation
-		loadModels(); //load the model data from the obj file
 		createSC(); //create swap chain
 		setupFences();
 		createSemaphores();
 		commandPool = createCommandPool();
+		loadModels(); //load the model data from the obj file
 		createVertexBuffer();
 		createIndexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
@@ -2165,7 +2181,6 @@ private:
 	}
 	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
-		cleanupTextures(); //cleanup texture, descriptor and all sampler data
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 		for (size_t i = 0; i < 3; i++) {
@@ -2203,11 +2218,6 @@ private:
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
-	void cleanupTextures() { // cleanup textures, samplers and descriptors
-		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-	}
-
 
 	//TODO: 
 	// 1. clean up code (done)
