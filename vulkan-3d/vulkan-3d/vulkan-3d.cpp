@@ -10,6 +10,7 @@
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
+
 #include <optional> //allows to create optional values in a more efficient way than using pointers
 #include <vector>
 #include <string>
@@ -197,6 +198,11 @@ struct UniformBufferObject {
 	float view[16];
 	float proj[16];
 };
+struct sceneIndexBufferObject { /// TODO: change to a SSBO
+	std::vector<uint32_t> texIndices; //array of which indices for which textures belong to what materials
+	std::vector<uint32_t> modelIndices; // array of indices for which materials belong to what models
+	// the vert indices are going to be passed through the vert shader
+};
 
 struct camData {
 	forms::vec3 camPos; //x, y, z
@@ -236,8 +242,8 @@ private:
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
 	VkFormat depthFormat;
-
-	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // gets height and width of image and multiplies them by 4 (4 bytes per pixel)
+	sceneIndexBufferObject sceneIndices = {};
+	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // 4 bytes per pixel
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
 
@@ -254,9 +260,8 @@ private:
 	std::vector<VkDeviceMemory> uboBufferMemories;
 	std::vector<VkBuffer> lightBuffers;
 	std::vector<VkDeviceMemory> lightBufferMemories;
-	VkBuffer texIndexBuffer;
-	VkDeviceMemory texIndexBufferMem;
-	std::vector<uint32_t> texIndices;
+	VkBuffer sceneIndexBuffer;
+	VkDeviceMemory sceneIndexBufferMem;
 
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
@@ -514,21 +519,35 @@ private:
 		queueInf.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
 		queueInf.queueCount = 1;
 		queueInf.pQueuePriorities = &queuePriority;
-		VkPhysicalDeviceFeatures deviceFeatures{}; //this struct is used to specify the features we will be using. such as geometry shaders, anisotropic filtering, etc.
-		VkDeviceCreateInfo newinfo{}; //specify which queues to create
-		newinfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-		newinfo.pQueueCreateInfos = &queueInf; //queues to create
-		newinfo.queueCreateInfoCount = 1;
-		newinfo.pEnabledFeatures = &deviceFeatures; //device features to enable
-		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME }; // specify the device extensions to enable
-		newinfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
-		newinfo.ppEnabledExtensionNames = deviceExtensions.data();
-		newinfo.enabledLayerCount = 0;
-		newinfo.ppEnabledLayerNames = nullptr;
-		if (vkCreateDevice(physicalDevice, &newinfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
-			throw std::runtime_error("failed to create logical device! " + resultStr(vkCreateDevice(physicalDevice, &newinfo, nullptr, &device)));
+
+		VkPhysicalDeviceFeatures deviceFeatures{};
+		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
+		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+		descIndexing.pNext = nullptr; // nullptr because we are not chaining any other structures to this one
+		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE; // combined image samplers non uniform indexing
+		descIndexing.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE; // ubo non uniform indexing
+		descIndexing.runtimeDescriptorArray = VK_TRUE; // calculates descriptor arrays at runtime
+		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE; // descriptors can be bound by specifying a descriptor count
+		descIndexing.descriptorBindingPartiallyBound = VK_TRUE; // descriptors can be partially bound which means that only some of the array elements need to be valid
+
+		VkDeviceCreateInfo newInfo{};
+		newInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+		newInfo.pNext = &descIndexing; // add the indexing features to the pNext chain
+		newInfo.pQueueCreateInfos = &queueInf;
+		newInfo.queueCreateInfoCount = 1;
+		newInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
+		// specify the device extensions to enable
+		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME,VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME };
+		newInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
+		newInfo.ppEnabledExtensionNames = deviceExtensions.data();
+		newInfo.enabledLayerCount = 0;
+		newInfo.ppEnabledLayerNames = nullptr;
+		if (vkCreateDevice(physicalDevice, &newInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
+			throw std::runtime_error("failed to create logical device! " + resultStr(vkCreateDevice(physicalDevice, &newInfo, nullptr, &device)));
 		}
 	}
+
+
 	std::vector<char> readFile(const std::string& filename) { //reads shader code from file. it should reads SPIRV binary files
 		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
 		if (!file.is_open()) {
@@ -901,39 +920,49 @@ private:
 		}
 	}
 	void setupTexIndices(std::vector<Texture>& textures) {
-		texIndices.resize(totalTextureCount); // 1 index per texture in the scene
+		size_t materialCount = 0;
+		sceneIndices.texIndices.resize(totalTextureCount); // 1 index per texture in the scene
 		for (size_t i = 0; i < totalTextureCount; ++i) {
-			texIndices[i] = textures[i].texIndex;
+			sceneIndices.texIndices[i] = textures[i].texIndex;
+		}
+		for (int h = 0; h < objects.size(); h++) {
+			materialCount += objects[h].textures.size();
+		}
+		sceneIndices.modelIndices.resize(materialCount);
+		for (int i = 0; i < objects.size(); i++) {
+			for (int j = 0; j < objects[i].textures.size(); j++) {
+				sceneIndices.modelIndices[j] = objects[i].textures[j].modelIndex;
+			}
 		}
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(uint32_t) * texIndices.size();
+		bufferCreateInfo.size = sizeof(sceneIndexBufferObject);
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; // will be used as a uniform buffer
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &texIndexBuffer) != VK_SUCCESS) {
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &sceneIndexBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create index buffer!");
 		}
 
 		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, texIndexBuffer, &memoryRequirements);
+		vkGetBufferMemoryRequirements(device, sceneIndexBuffer, &memoryRequirements);
 
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
 		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &texIndexBufferMem) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &sceneIndexBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for index buffer!");
 		}
 
-		vkBindBufferMemory(device, texIndexBuffer, texIndexBufferMem, 0);
+		vkBindBufferMemory(device, sceneIndexBuffer, sceneIndexBufferMem, 0);
 
 		// once memory is bound, map and fill it
 		void* data;
-		vkMapMemory(device, texIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, texIndices.data(), bufferCreateInfo.size);
-		vkUnmapMemory(device, texIndexBufferMem);
+		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, &sceneIndices, bufferCreateInfo.size);
+		vkUnmapMemory(device, sceneIndexBufferMem);
 	}
 
 
@@ -1053,8 +1082,20 @@ private:
 		binding.descriptorCount = descriptorCount;
 		binding.stageFlags = stageFlags;
 
+		VkDescriptorBindingFlagsEXT bindingFlags = 0;
+		//if the descriptor count is variable, set the flag
+		if (descriptorCount > 1) {
+			bindingFlags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+		}
+
+		VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo{};
+		bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+		bindingFlagsInfo.bindingCount = 1;
+		bindingFlagsInfo.pBindingFlags = &bindingFlags; // if 0, no flags are set
+
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.pNext = &bindingFlagsInfo; // bindingFlagsInfo is added to the pNext chain
 		layoutInfo.bindingCount = 1;
 		layoutInfo.pBindings = &binding;
 
@@ -1065,6 +1106,7 @@ private:
 
 		return descriptorSetLayout;
 	}
+
 
 	VkDescriptorPool createDSPool(VkDescriptorType type, uint32_t descriptorCount) {
 		VkDescriptorPoolSize poolSize{};
@@ -1107,7 +1149,15 @@ private:
 		std::array<VkDescriptorSetLayout, 3> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
 		std::array<VkDescriptorPool, 3> pools = { descriptorPool1, descriptorPool2, descriptorPool3 };
 
+		std::array<uint32_t, 3> descCountArr = { static_cast<uint32_t>(objects.size()), static_cast<uint32_t> (totalTextureCount), 1 };
+
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
+			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
+			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
+			varCountInfo.descriptorSetCount = 1;
+			varCountInfo.pDescriptorCounts = &descCountArr[i];
+
+			allocInfo.pNext = &varCountInfo; // variableCountInfo is added to the pNext chain
 			allocInfo.descriptorPool = pools[i];
 			allocInfo.pSetLayouts = &layouts[i];
 
@@ -1116,6 +1166,7 @@ private:
 				throw std::runtime_error("Failed to allocate descriptor sets. Error code: " + std::to_string(result));
 			}
 		}
+
 
 		setupMatrixUBO(); //create the matrix UBOs for each object
 		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
@@ -1136,9 +1187,9 @@ private:
 		}
 
 		VkDescriptorBufferInfo indexBufferInfo{};
-		indexBufferInfo.buffer = texIndexBuffer;
+		indexBufferInfo.buffer = sceneIndexBuffer;
 		indexBufferInfo.offset = 0;
-		indexBufferInfo.range = sizeof(uint32_t) * texIndices.size();
+		indexBufferInfo.range = sizeof(sceneIndexBufferObject);
 
 
 		std::array<VkWriteDescriptorSet, 3> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
@@ -1458,7 +1509,8 @@ private:
 		bindDesc.stride = sizeof(Vertex); // Number of bytes from one entry to the next
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 4> attrDesc; // attr0 is position, attr1 is color, attr2 is alpha, attr3 is texture coordinates
+		std::array<VkVertexInputAttributeDescription, 5> attrDesc;
+		// attr0 is position, attr1 is color, attr2 is alpha, attr3 is texture coordinates, attr4 is vert/mat index
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -1479,6 +1531,12 @@ private:
 		attrDesc[3].location = 3;
 		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
 		attrDesc[3].offset = offsetof(Vertex, tex);
+
+		attrDesc[4].binding = 0;
+		attrDesc[4].location = 4;
+		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for material index
+		attrDesc[4].offset = offsetof(Vertex, matIndex);
+
 
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};

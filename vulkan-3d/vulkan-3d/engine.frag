@@ -7,6 +7,7 @@ layout(set = 0, binding = 1) uniform sampler2D texSampler; // The texture sample
 layout(location = 0) in vec4 fragColor;
 layout(location = 2) in float inAlpha;
 layout(location = 3) in vec2 inTexCoord; // Input texture coordinates from vertex shader
+layout(location=4) in uint inVertInex; // an int of which vertex goes to which material
 
 layout(location = 0) out vec4 outColor;
 
