@@ -26,6 +26,8 @@
 #include <ctime> //random seed based on time
 #include <chrono> // random seed based on time
 #include <cmath>
+#define MAX_TEXTURES 100 // temp max num of textures and models (used for passing data to shaders)
+#define MAX_MODELS 300
 
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
@@ -198,11 +200,14 @@ struct UniformBufferObject {
 	float view[16];
 	float proj[16];
 };
-struct sceneIndexBufferObject { /// TODO: change to a SSBO
-	std::vector<uint32_t> texIndices; //array of which indices for which textures belong to what materials
-	std::vector<uint32_t> modelIndices; // array of indices for which materials belong to what models
-	// the vert indices are going to be passed through the vert shader
+struct sceneIndexBufferObject {
+	uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
+	uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
+	// the actual num of elements so glsl can iterate through the array properly
+	uint32_t texIndicesCount;
+	uint32_t modelIndicesCount;
 };
+
 
 struct camData {
 	forms::vec3 camPos; //x, y, z
@@ -921,14 +926,14 @@ private:
 	}
 	void setupTexIndices(std::vector<Texture>& textures) {
 		size_t materialCount = 0;
-		sceneIndices.texIndices.resize(totalTextureCount); // 1 index per texture in the scene
+		sceneIndices.texIndicesCount = totalTextureCount; // 1 index per texture in the scene
 		for (size_t i = 0; i < totalTextureCount; ++i) {
 			sceneIndices.texIndices[i] = textures[i].texIndex;
 		}
 		for (int h = 0; h < objects.size(); h++) {
 			materialCount += objects[h].textures.size();
 		}
-		sceneIndices.modelIndices.resize(materialCount);
+		sceneIndices.modelIndicesCount = materialCount;
 		for (int i = 0; i < objects.size(); i++) {
 			for (int j = 0; j < objects[i].textures.size(); j++) {
 				sceneIndices.modelIndices[j] = objects[i].textures[j].modelIndex;
@@ -937,7 +942,7 @@ private:
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(sceneIndexBufferObject);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT; // will be used as a uniform buffer
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
 		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &sceneIndexBuffer) != VK_SUCCESS) {
@@ -964,8 +969,6 @@ private:
 		memcpy(data, &sceneIndices, bufferCreateInfo.size);
 		vkUnmapMemory(device, sceneIndexBufferMem);
 	}
-
-
 
 	void calcMatrixes(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
@@ -1137,10 +1140,10 @@ private:
 		//initialize descriptor set layouts and pools
 		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()), VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
-		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()));
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
-		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
+		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1149,15 +1152,15 @@ private:
 		std::array<VkDescriptorSetLayout, 3> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
 		std::array<VkDescriptorPool, 3> pools = { descriptorPool1, descriptorPool2, descriptorPool3 };
 
-		std::array<uint32_t, 3> descCountArr = { static_cast<uint32_t>(objects.size()), static_cast<uint32_t> (totalTextureCount), 1 };
+		std::array<uint32_t, 3> descCountArr = { static_cast<uint32_t>(objects.size()), static_cast<uint32_t>(totalTextureCount), 1 };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
 			varCountInfo.descriptorSetCount = 1;
 			varCountInfo.pDescriptorCounts = &descCountArr[i];
-
 			allocInfo.pNext = &varCountInfo; // variableCountInfo is added to the pNext chain
+
 			allocInfo.descriptorPool = pools[i];
 			allocInfo.pSetLayouts = &layouts[i];
 
@@ -1214,7 +1217,7 @@ private:
 		descriptorWrites[2].dstSet = descriptorSets[2];
 		descriptorWrites[2].dstBinding = 2;
 		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
 		descriptorWrites[2].descriptorCount = 1;
 		descriptorWrites[2].pBufferInfo = &indexBufferInfo;
 
