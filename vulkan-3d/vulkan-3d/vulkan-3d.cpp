@@ -1140,7 +1140,7 @@ private:
 		//initialize descriptor set layouts and pools
 		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()), VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
-		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()));
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
