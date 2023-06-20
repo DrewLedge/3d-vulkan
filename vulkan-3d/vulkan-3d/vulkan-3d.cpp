@@ -321,128 +321,6 @@ private:
 		return dist(gen);
 	};
 
-	void loadModels() {
-		std::vector<std::thread> threads;
-		uint32_t texInd = 0;
-		uint32_t modInd = 0;
-
-		// parallel loading using multiple threads:
-		for (auto& object : objects) {
-			if (!object.isLoaded) {
-				threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
-					std::cout << "loading model: " << object.pathObj << std::endl;
-					const std::string& objFilePath = object.pathObj;
-					const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
-					tinyobj::attrib_t attrib;
-					std::vector<tinyobj::shape_t> shapes;
-					std::vector<tinyobj::material_t> materials;
-					std::string warn, err;
-					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
-					if (!warn.empty()) {
-						std::cout << "Warning: " << warn << std::endl;
-					}
-					if (!err.empty()) {
-						throw std::runtime_error(err);
-					}
-					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-					std::vector<Vertex> tempVertices;
-					std::vector<uint32_t> tempIndices;
-
-					// reserve memory for vectors:
-					tempVertices.reserve(attrib.vertices.size() / 3);
-					tempIndices.reserve(attrib.vertices.size() / 3);
-
-					for (const auto& material : materials) {
-						Materials texture;
-						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
-						texture.specularTex.path = mtl_basepath + material.specular_texname;
-						texture.normalMap.path = mtl_basepath + material.bump_texname;
-
-						//get the texture index for each texture:
-						texture.diffuseTex.texIndex = texInd;
-						texture.specularTex.texIndex = texInd;
-						texture.normalMap.texIndex = texInd;
-						texInd += 1;
-
-						//get he model index (which materials goto which model)
-						texture.modelIndex = modInd;
-						object.textures.push_back(texture);
-					}
-					modInd += 1;
-
-
-					for (const auto& shape : shapes) {
-						uint32_t matIndex = shape.mesh.material_ids[0]; //each shape only has one material for now
-						for (const auto& index : shape.mesh.indices) {
-							Vertex vertex;
-							vertex.pos = {
-								attrib.vertices[3 * index.vertex_index + 0],
-								attrib.vertices[3 * index.vertex_index + 1],
-								attrib.vertices[3 * index.vertex_index + 2]
-							};
-							vertex.tex = {
-								attrib.texcoords[2 * index.texcoord_index + 0],
-								1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-							};
-							vertex.col = {
-								attrib.colors[3 * index.vertex_index + 0],
-								attrib.colors[3 * index.vertex_index + 1],
-								attrib.colors[3 * index.vertex_index + 2]
-							};
-							vertex.normal = {
-								attrib.normals[3 * index.normal_index + 0],
-								attrib.normals[3 * index.normal_index + 1],
-								attrib.normals[3 * index.normal_index + 2]
-							};
-							vertex.matIndex = matIndex;
-
-							// Check if vertex is unique and add it to the map if it is:
-							if (uniqueVertices.count(vertex) == 0) {
-								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-								tempVertices.push_back(std::move(vertex));
-							}
-							tempIndices.push_back(uniqueVertices[vertex]);
-						}
-					}
-
-					//load texture data
-					for (int i = 0; i < object.textures.size(); i++) {
-						//create the texture image for each texture (for each material)
-						//also create miplmaps for each texture
-						createTextureImage(object.textures[i].specularTex, false);
-						createTextureImage(object.textures[i].normalMap, false, "norm");
-						createTextureImage(object.textures[i].diffuseTex, true);
-
-						//create texture image views and samplers for each texture (for each material):wa
-						createTextureImgView(object.textures[i].specularTex, false);
-						createTS(object.textures[i].specularTex, false);
-
-						createTextureImgView(object.textures[i].normalMap, false, "norm");
-						createTS(object.textures[i].normalMap, false, "norm");
-
-						createTextureImgView(object.textures[i].diffuseTex, true);
-						createTS(object.textures[i].diffuseTex, true);
-					}
-
-					// batch insert vertices and indices into object:
-					modelMtx.lock();
-					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
-					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
-					object.isLoaded = true;
-					modelMtx.unlock();
-					}));
-			}
-		}
-		for (auto& t : threads) {
-			t.join();
-		}
-
-		for (auto& object : objects) {
-			if (object.isLoaded) {
-				debugStruct(object);
-			}
-		}
-	}
 	void debugStruct(model stru) {
 		std::cout << " ----------------" << std::endl;
 		std::cout << "model: " << stru.pathObj << std::endl;
@@ -453,17 +331,17 @@ private:
 	}
 
 	void createInstance() {
-		VkApplicationInfo info{};
-		info.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-		info.pApplicationName = "My Engine";
-		info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-		info.pEngineName = "No Engine";
-		info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-		info.apiVersion = VK_API_VERSION_1_0;
+		VkApplicationInfo instanceInfo{};
+		instanceInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+		instanceInfo.pApplicationName = "My Engine";
+		instanceInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
+		instanceInfo.pEngineName = "No Engine";
+		instanceInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
+		instanceInfo.apiVersion = VK_API_VERSION_1_0;
 
 		VkInstanceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		newInfo.pApplicationInfo = &info;
+		newInfo.pApplicationInfo = &instanceInfo;
 
 		uint32_t glfwExtensionCount = 0;
 		const char** glfwExtensions;
@@ -774,7 +652,129 @@ private:
 		}
 		throw std::runtime_error("failed to find suitable depth format! :(");
 	}
-	//
+	void loadModels() {
+		std::vector<std::thread> threads;
+		uint32_t texInd = 0;
+		uint32_t modInd = 0;
+
+		// parallel loading using multiple threads:
+		for (auto& object : objects) {
+			if (!object.isLoaded) {
+				threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
+					std::cout << "loading model: " << object.pathObj << std::endl;
+					const std::string& objFilePath = object.pathObj;
+					const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
+					tinyobj::attrib_t attrib;
+					std::vector<tinyobj::shape_t> shapes;
+					std::vector<tinyobj::material_t> materials;
+					std::string warn, err;
+					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
+					if (!warn.empty()) {
+						std::cout << "Warning: " << warn << std::endl;
+					}
+					if (!err.empty()) {
+						throw std::runtime_error(err);
+					}
+					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
+					std::vector<Vertex> tempVertices;
+					std::vector<uint32_t> tempIndices;
+
+					// reserve memory for vectors:
+					tempVertices.reserve(attrib.vertices.size() / 3);
+					tempIndices.reserve(attrib.vertices.size() / 3);
+
+					for (const auto& material : materials) {
+						Materials texture;
+						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
+						texture.specularTex.path = mtl_basepath + material.specular_texname;
+						texture.normalMap.path = mtl_basepath + material.bump_texname;
+
+						//get the texture index for each texture:
+						texture.diffuseTex.texIndex = texInd;
+						texture.specularTex.texIndex = texInd;
+						texture.normalMap.texIndex = texInd;
+						texInd += 1;
+
+						//get he model index (which materials goto which model)
+						texture.modelIndex = modInd;
+						object.textures.push_back(texture);
+					}
+					modInd += 1;
+
+
+					for (const auto& shape : shapes) {
+						uint32_t matIndex = shape.mesh.material_ids[0]; //each shape only has one material for now
+						for (const auto& index : shape.mesh.indices) {
+							Vertex vertex;
+							vertex.pos = {
+								attrib.vertices[3 * index.vertex_index + 0],
+								attrib.vertices[3 * index.vertex_index + 1],
+								attrib.vertices[3 * index.vertex_index + 2]
+							};
+							vertex.tex = {
+								attrib.texcoords[2 * index.texcoord_index + 0],
+								1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+							};
+							vertex.col = {
+								attrib.colors[3 * index.vertex_index + 0],
+								attrib.colors[3 * index.vertex_index + 1],
+								attrib.colors[3 * index.vertex_index + 2]
+							};
+							vertex.normal = {
+								attrib.normals[3 * index.normal_index + 0],
+								attrib.normals[3 * index.normal_index + 1],
+								attrib.normals[3 * index.normal_index + 2]
+							};
+							vertex.matIndex = matIndex;
+
+							// Check if vertex is unique and add it to the map if it is:
+							if (uniqueVertices.count(vertex) == 0) {
+								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+								tempVertices.push_back(std::move(vertex));
+							}
+							tempIndices.push_back(uniqueVertices[vertex]);
+						}
+					}
+
+					//load texture data
+					for (size_t i = 0; i < object.textures.size(); i++) {
+						//create the texture image for each texture (for each material)
+						//also create miplmaps for each texture
+						createTextureImage(object.textures[i].specularTex, false);
+						createTextureImage(object.textures[i].normalMap, false, "norm");
+						createTextureImage(object.textures[i].diffuseTex, true);
+
+						//create texture image views and samplers for each texture (for each material):wa
+						createTextureImgView(object.textures[i].specularTex, false);
+						createTS(object.textures[i].specularTex, false);
+
+						createTextureImgView(object.textures[i].normalMap, false, "norm");
+						createTS(object.textures[i].normalMap, false, "norm");
+
+						createTextureImgView(object.textures[i].diffuseTex, true);
+						createTS(object.textures[i].diffuseTex, true);
+					}
+
+					// batch insert vertices and indices into object:
+					modelMtx.lock();
+					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
+					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
+					object.isLoaded = true;
+					modelMtx.unlock();
+					}));
+			}
+		}
+		for (auto& t : threads) {
+			t.join();
+		}
+
+		for (auto& object : objects) {
+			if (object.isLoaded) {
+				debugStruct(object);
+			}
+		}
+	}
+
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
 		createDepthImage();
@@ -926,16 +926,16 @@ private:
 	}
 	void setupTexIndices(std::vector<Texture>& textures) {
 		size_t materialCount = 0;
-		sceneIndices.texIndicesCount = totalTextureCount; // 1 index per texture in the scene
+		sceneIndices.texIndicesCount = static_cast<uint32_t>(totalTextureCount); // 1 index per texture in the scene
 		for (size_t i = 0; i < totalTextureCount; ++i) {
 			sceneIndices.texIndices[i] = textures[i].texIndex;
 		}
-		for (int h = 0; h < objects.size(); h++) {
+		for (size_t h = 0; h < objects.size(); h++) {
 			materialCount += objects[h].textures.size();
 		}
-		sceneIndices.modelIndicesCount = materialCount;
-		for (int i = 0; i < objects.size(); i++) {
-			for (int j = 0; j < objects[i].textures.size(); j++) {
+		sceneIndices.modelIndicesCount = static_cast<uint32_t>(materialCount);
+		for (size_t i = 0; i < objects.size(); i++) {
+			for (size_t j = 0; j < objects[i].textures.size(); j++) {
 				sceneIndices.modelIndices[j] = objects[i].textures[j].modelIndex;
 			}
 		}
@@ -995,9 +995,9 @@ private:
 		}
 	}
 	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
-		int index = 0;
-		for (int column = 0; column < 4; column++) {
-			for (int row = 0; row < 4; row++) {
+		size_t index = 0;
+		for (size_t column = 0; column < 4; column++) {
+			for (size_t row = 0; row < 4; row++) {
 				destination[index] = source.m[row][column];
 				index++;
 			}
@@ -1005,9 +1005,9 @@ private:
 	}
 	forms::mat4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
 		forms::mat4 destination;
-		int index = 0;
-		for (int column = 0; column < 4; column++) {
-			for (int row = 0; row < 4; row++) {
+		size_t index = 0;
+		for (size_t column = 0; column < 4; column++) {
+			for (size_t row = 0; row < 4; row++) {
 				destination.m[row][column] = source[index];
 				index++;
 			}
@@ -1176,14 +1176,14 @@ private:
 		setupTexIndices(textures);
 
 		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
-		for (int i = 0; i < objects.size(); i++) {
+		for (size_t i = 0; i < objects.size(); i++) {
 			bufferInfos[i].buffer = uboBuffers[i];
 			bufferInfos[i].offset = 0; //offset in the buffer where the UBO starts
 			bufferInfos[i].range = sizeof(UniformBufferObject);
 		}
 
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
-		for (int i = 0; i < totalTextureCount; i++) {
+		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfos[i].imageView = textures[i].imageView;
 			imageInfos[i].sampler = textures[i].sampler;
@@ -1747,19 +1747,19 @@ private:
 
 		// imgui setup:
 		uint32_t graphicsQueueFamily = findQueueFamiliesG(physicalDevice).graphicsFamily.value();
-		ImGui_ImplVulkan_InitInfo init_info = {};
-		init_info.Instance = instance;
-		init_info.PhysicalDevice = physicalDevice;
-		init_info.Device = device;
-		init_info.QueueFamily = graphicsQueueFamily;
-		init_info.Queue = graphicsQueue;
-		init_info.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
-		init_info.DescriptorPool = imguiDescriptorPool;
-		init_info.Allocator = VK_NULL_HANDLE;
-		init_info.MinImageCount = imageCount;
-		init_info.ImageCount = imageCount;
-		init_info.CheckVkResultFn = check_vk_result; // function to check vulkan results
-		ImGui_ImplVulkan_Init(&init_info, renderPass);
+		ImGui_ImplVulkan_InitInfo initInfo = {};
+		initInfo.Instance = instance;
+		initInfo.PhysicalDevice = physicalDevice;
+		initInfo.Device = device;
+		initInfo.QueueFamily = graphicsQueueFamily;
+		initInfo.Queue = graphicsQueue;
+		initInfo.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
+		initInfo.DescriptorPool = imguiDescriptorPool;
+		initInfo.Allocator = VK_NULL_HANDLE;
+		initInfo.MinImageCount = imageCount;
+		initInfo.ImageCount = imageCount;
+		initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
+		ImGui_ImplVulkan_Init(&initInfo, renderPass);
 
 		// upload fonts, etc:
 		VkCommandPool guiCommandPool = createCommandPool();
@@ -2262,10 +2262,10 @@ private:
 		ImGui::DestroyContext();
 
 		// clean up vertex buffer and its memory
-		for (int i = 0; i < vertBuffers.size(); i++) {
+		for (size_t i = 0; i < vertBuffers.size(); i++) {
 			vkDestroyBuffer(device, vertBuffers[i], nullptr);
 		}
-		for (int i = 0; i < vertBufferMems.size(); i++) {
+		for (size_t i = 0; i < vertBufferMems.size(); i++) {
 			vkFreeMemory(device, vertBufferMems[i], nullptr);
 		}
 		for (auto imageView : swapChainImageViews) {
