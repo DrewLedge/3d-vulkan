@@ -26,7 +26,7 @@ layout(set = 0, binding = 0) uniform UniformBufferObjects {
 
 layout(set = 2, binding = 2) buffer BufferObject {
     uint texIndices[MAX_TEXTURES]; // which textures are used by the model (1,1,1 would be model 1)
-    uint modelIndices[MAX_MODELS]; // which models are part of which objects. (3,3,3 would be object 3)
+    uint modelIndices[MAX_MODELS]; // which materials are part of which objects. (3,3,3 would be object 3)
 } ssbo;
 
 void main() {
@@ -36,9 +36,12 @@ void main() {
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
-    outVertIndex = inVertIndex; // pass the texture index to the fragment shader
+    if (texIndex >= MAX_TEXTURES) {
     outTexIndex = texIndex; // pass the texture index to the fragment shader
-    outModelIndex = modelIndex; // pass the model index to the fragment shader
+    }
+     if (modelIndex >= MAX_MODELS) {
+    outModelIndex = modelIndex; // pass the model/material index to the fragment shader
+    }
 }
 
 

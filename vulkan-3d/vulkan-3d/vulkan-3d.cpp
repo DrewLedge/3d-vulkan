@@ -144,7 +144,7 @@ struct Materials {
 	uint32_t modelIndex; //used to know what model the material belongs to
 };
 struct model {
-	std::vector<Materials> textures; //used to store all the textures/materials of the model
+	std::vector<Materials> materials; //used to store all the textures/materials of the model
 	std::vector<Vertex> vertices;
 	std::vector<uint32_t> indices;
 	std::string pathObj; // i.e "models/cube.obj"
@@ -162,7 +162,7 @@ struct model {
 
 	// default constructor:
 	model()
-		: textures(),
+		: materials(),
 		vertices(),
 		indices(),
 		pathObj(""),
@@ -203,6 +203,17 @@ struct UniformBufferObject {
 struct sceneIndexBufferObject {
 	uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
 	uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
+
+	// default constructor:
+	sceneIndexBufferObject() {
+		// by default, all the unused indices are max + 1 so glsl can ignore them
+		for (int i = 0; i < MAX_TEXTURES; i++) {
+			texIndices[i] = MAX_TEXTURES + 1;
+		}
+		for (int i = 0; i < MAX_MODELS; i++) {
+			modelIndices[i] = MAX_MODELS + 1;
+		}
+	}
 };
 
 
@@ -323,7 +334,7 @@ private:
 		std::cout << "model: " << stru.pathObj << std::endl;
 		std::cout << "vertices: " << stru.vertices.size() << std::endl;
 		std::cout << "indices: " << stru.indices.size() << std::endl;
-		std::cout << "texture: " << stru.textures.size() << std::endl;
+		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
 
@@ -694,7 +705,7 @@ private:
 
 						//get he model index (which materials goto which model)
 						texture.modelIndex = modInd;
-						object.textures.push_back(texture);
+						object.materials.push_back(texture);
 					}
 					modInd += 1;
 
@@ -734,22 +745,22 @@ private:
 					}
 
 					//load texture data
-					for (size_t i = 0; i < object.textures.size(); i++) {
+					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
 						//also create miplmaps for each texture
-						createTextureImage(object.textures[i].specularTex, false);
-						createTextureImage(object.textures[i].normalMap, false, "norm");
-						createTextureImage(object.textures[i].diffuseTex, true);
+						createTextureImage(object.materials[i].specularTex, false);
+						createTextureImage(object.materials[i].normalMap, false, "norm");
+						createTextureImage(object.materials[i].diffuseTex, true);
 
 						//create texture image views and samplers for each texture (for each material):wa
-						createTextureImgView(object.textures[i].specularTex, false);
-						createTS(object.textures[i].specularTex, false);
+						createTextureImgView(object.materials[i].specularTex, false);
+						createTS(object.materials[i].specularTex, false);
 
-						createTextureImgView(object.textures[i].normalMap, false, "norm");
-						createTS(object.textures[i].normalMap, false, "norm");
+						createTextureImgView(object.materials[i].normalMap, false, "norm");
+						createTS(object.materials[i].normalMap, false, "norm");
 
-						createTextureImgView(object.textures[i].diffuseTex, true);
-						createTS(object.textures[i].diffuseTex, true);
+						createTextureImgView(object.materials[i].diffuseTex, true);
+						createTS(object.materials[i].diffuseTex, true);
 					}
 
 					// batch insert vertices and indices into object:
@@ -777,6 +788,7 @@ private:
 		createDepthImage();
 		depthImageView = createDepthView();
 	}
+
 	void createDepthImage() { //create the depth image and allocate memory for it
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -921,19 +933,34 @@ private:
 			vkBindBufferMemory(device, lightBuffers[i], lightBufferMemories[i], 0);
 		}
 	}
-	void setupTexIndices(std::vector<Texture>& textures) {
+
+	void printIndices(const sceneIndexBufferObject& indexBuffer) {
+		std::cout << "-------------------------------" << std::endl;
+		for (size_t i = 0; i < MAX_TEXTURES; i++) {
+			if (indexBuffer.texIndices[i] < MAX_TEXTURES) {
+				std::cout << "Texture " << i << " goes with Material " << indexBuffer.texIndices[i] << std::endl;
+			}
+		}
+		for (size_t i = 0; i < MAX_MODELS; i++) {
+			if (indexBuffer.modelIndices[i] < MAX_MODELS) {
+				std::cout << "Material " << i << " goes with Model/Object " << indexBuffer.modelIndices[i] << std::endl;
+			}
+		}
+		std::cout << "-------------------------------" << std::endl;
+	}
+
+	void setupTexIndices(std::vector<Texture>& textures, std::vector<Materials>& materials) {
 		size_t materialCount = 0;
 		for (size_t i = 0; i < totalTextureCount; ++i) {
 			sceneIndices.texIndices[i] = textures[i].texIndex;
 		}
 		for (size_t h = 0; h < objects.size(); h++) {
-			materialCount += objects[h].textures.size();
+			materialCount += objects[h].materials.size();
 		}
-		for (size_t i = 0; i < objects.size(); i++) {
-			for (size_t j = 0; j < objects[i].textures.size(); j++) {
-				sceneIndices.modelIndices[j] = objects[i].textures[j].modelIndex;
-			}
+		for (size_t g = 0; g < materialCount; g++) {
+			sceneIndices.modelIndices[g] = materials[g].modelIndex;
 		}
+		printIndices(sceneIndices);
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(sceneIndexBufferObject);
@@ -1042,35 +1069,33 @@ private:
 		}
 	}
 
-	std::vector<Texture> getAllTextures(const std::vector<model>& objects) {
+	std::vector<Texture> getAllTextures() {
 		std::vector<Texture> allTextures;
-		std::unordered_set<Texture, texHash> textureSet;
 		allTextures.reserve(totalTextureCount);
 
 		for (const model& obj : objects) {
-			for (const Materials& materials : obj.textures) {
+			for (const Materials& materials : obj.materials) {
 				// diffuse texture
-				if (textureSet.find(materials.diffuseTex) == textureSet.end()) {
-					textureSet.insert(materials.diffuseTex);
-					allTextures.push_back(materials.diffuseTex);
-				}
-
+				allTextures.push_back(materials.diffuseTex);
 				// specular texture
-				if (textureSet.find(materials.specularTex) == textureSet.end()) {
-					textureSet.insert(materials.specularTex);
-					allTextures.push_back(materials.specularTex);
-				}
-
+				allTextures.push_back(materials.specularTex);
 				// normal map texture
-				if (textureSet.find(materials.normalMap) == textureSet.end()) {
-					textureSet.insert(materials.normalMap);
-					allTextures.push_back(materials.normalMap);
-				}
+				allTextures.push_back(materials.normalMap);
 			}
 		}
-
 		return allTextures;
 	}
+	std::vector<Materials> getAllMaterials() {
+		std::vector<Materials> allMaterials;
+
+		for (auto& obj : objects) {
+			for (auto& mat : obj.materials) {
+				allMaterials.push_back(mat);
+			}
+		}
+		return allMaterials;
+	}
+
 
 
 	VkDescriptorSetLayout createDSLayout(uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags) {
@@ -1128,7 +1153,6 @@ private:
 
 
 
-
 	void createDS() {
 		descriptorSets.resize(3);
 
@@ -1167,8 +1191,9 @@ private:
 
 
 		setupMatrixUBO(); //create the matrix UBOs for each object
-		std::vector<Texture> textures = getAllTextures(objects); // iterate through all objects and put all texture data into a vector
-		setupTexIndices(textures);
+		std::vector<Texture> textures = getAllTextures(); // iterate through all objects and put all texture data into a vector
+		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
+		setupTexIndices(textures, mats);
 
 		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -1222,7 +1247,7 @@ private:
 	void setupDescriptorSets() {
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			totalTextureCount += object.textures.size() * 3;  // Each material has 3 textures
+			totalTextureCount += object.materials.size() * 3;  // Each material has 3 textures
 		}
 		createDS(); //create the descriptor set
 	}
@@ -1235,8 +1260,21 @@ private:
 		m.scale = { 0.01f, 0.01f, 0.01f };
 		m.position = worldPos.multiply(10, 10, 10);
 		m.startObj = false;
+		for (size_t i = 0; i < m.materials.size(); i++) {
+			m.materials[i].modelIndex = static_cast<uint32_t>(objects.size());
+		}
 		objects.push_back(m);
-		// add descriptor set recreation stuff
+		cleanupDS();
+		setupDescriptorSets();
+	}
+	void cleanupDS() {
+		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
+
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
 	}
 
 	void createTS(Texture& tex, bool doMipmap, std::string type = "tex") { //create texture samplers for
@@ -2007,6 +2045,7 @@ private:
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
 	}
+
 	void recreateSwap() {
 		int width = 0, height = 0;
 		while (width == 0 || height == 0) {
@@ -2266,6 +2305,7 @@ private:
 		vkDestroyCommandPool(device, commandPool, nullptr);
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
+		cleanupDS();
 		vkDestroyPipeline(device, graphicsPipeline, nullptr);
 		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 		vkDestroyRenderPass(device, renderPass, nullptr);
