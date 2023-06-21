@@ -24,11 +24,9 @@ layout(set = 0, binding = 0) uniform UniformBufferObjects {
     mat4 proj;
 } ubo[];
 
-layout(std430, binding = 2) buffer BufferObject {
+layout(set = 2, binding = 2) buffer BufferObject {
     uint texIndices[MAX_TEXTURES]; // which textures are used by the model (1,1,1 would be model 1)
     uint modelIndices[MAX_MODELS]; // which models are part of which objects. (3,3,3 would be object 3)
-    uint texIndicesCount;
-	uint modelIndicesCount;
 } ssbo;
 
 void main() {

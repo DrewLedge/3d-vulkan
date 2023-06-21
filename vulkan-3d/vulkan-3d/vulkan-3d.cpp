@@ -203,9 +203,6 @@ struct UniformBufferObject {
 struct sceneIndexBufferObject {
 	uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
 	uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
-	// the actual num of elements so glsl can iterate through the array properly
-	uint32_t texIndicesCount;
-	uint32_t modelIndicesCount;
 };
 
 
@@ -926,14 +923,12 @@ private:
 	}
 	void setupTexIndices(std::vector<Texture>& textures) {
 		size_t materialCount = 0;
-		sceneIndices.texIndicesCount = static_cast<uint32_t>(totalTextureCount); // 1 index per texture in the scene
 		for (size_t i = 0; i < totalTextureCount; ++i) {
 			sceneIndices.texIndices[i] = textures[i].texIndex;
 		}
 		for (size_t h = 0; h < objects.size(); h++) {
 			materialCount += objects[h].textures.size();
 		}
-		sceneIndices.modelIndicesCount = static_cast<uint32_t>(materialCount);
 		for (size_t i = 0; i < objects.size(); i++) {
 			for (size_t j = 0; j < objects[i].textures.size(); j++) {
 				sceneIndices.modelIndices[j] = objects[i].textures[j].modelIndex;
@@ -1217,7 +1212,7 @@ private:
 		descriptorWrites[2].dstSet = descriptorSets[2];
 		descriptorWrites[2].dstBinding = 2;
 		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
 		descriptorWrites[2].descriptorCount = 1;
 		descriptorWrites[2].pBufferInfo = &indexBufferInfo;
 
@@ -1409,7 +1404,7 @@ private:
 					barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 					barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 					barrierToSrc.image = tex.image;
-					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //this means that the image is a color image not a depth or stencil image
+					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // color image not a depth or stencil image
 					barrierToSrc.subresourceRange.baseMipLevel = j;
 					barrierToSrc.subresourceRange.levelCount = 1;
 					barrierToSrc.subresourceRange.baseArrayLayer = 0;
@@ -1448,6 +1443,26 @@ private:
 					if (mipHeight > 1) mipHeight /= 2;
 				}
 			}
+
+			//transition the image from the transfer destination layout to the shader read only layout:
+			for (uint32_t j = doMipmap ? tex.mipLevels : 0; j < tex.mipLevels; j++) {
+				VkImageMemoryBarrier barrierToSrc{};
+				barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierToSrc.image = tex.image;
+				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // color image not a depth or stencil image
+				barrierToSrc.subresourceRange.baseMipLevel = j;
+				barrierToSrc.subresourceRange.levelCount = 1;
+				barrierToSrc.subresourceRange.baseArrayLayer = 0;
+				barrierToSrc.subresourceRange.layerCount = 1;
+				barrierToSrc.srcAccessMask = 0;
+				barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+				//from the top of the pipeline to the transfer stage
+				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc);
+			}
+
 			endSingleTimeCommands(tempBuffer, commandPool);
 			stbi_image_free(imageData);
 			imageData = nullptr;
@@ -1539,8 +1554,6 @@ private:
 		attrDesc[4].location = 4;
 		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for material index
 		attrDesc[4].offset = offsetof(Vertex, matIndex);
-
-
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1658,8 +1671,6 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		pipelineLayoutInf.pushConstantRangeCount = 0; //number of push constant ranges
-		pipelineLayoutInf.pPushConstantRanges = nullptr; //array of push constant ranges
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
@@ -1911,8 +1922,9 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1] };
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 2, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2] };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 3, dSets, 0, nullptr);
+			//params are: 
 
 			for (size_t j = 0; j < objects.size(); j++) {
 				if (j >= vertBuffers.size()) {
