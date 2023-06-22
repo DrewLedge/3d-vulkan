@@ -707,11 +707,9 @@ private:
 						texture.modelIndex = modInd;
 						object.materials.push_back(texture);
 					}
-					modInd += 1;
-
 
 					for (const auto& shape : shapes) {
-						uint32_t matIndex = shape.mesh.material_ids[0]; //each shape only has one material for now
+						uint32_t matIndex = modInd;
 						for (const auto& index : shape.mesh.indices) {
 							Vertex vertex;
 							vertex.pos = {
@@ -743,6 +741,7 @@ private:
 							tempIndices.push_back(uniqueVertices[vertex]);
 						}
 					}
+					modInd += 1;
 
 					//load texture data
 					for (size_t i = 0; i < object.materials.size(); i++) {
@@ -1096,8 +1095,6 @@ private:
 		return allMaterials;
 	}
 
-
-
 	VkDescriptorSetLayout createDSLayout(uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags) {
 		VkDescriptorSetLayoutBinding binding{};
 		binding.binding = bindingIndex;
@@ -1245,27 +1242,45 @@ private:
 	}
 
 	void setupDescriptorSets() {
+		descriptorSets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
 			totalTextureCount += object.materials.size() * 3;  // Each material has 3 textures
 		}
 		createDS(); //create the descriptor set
 	}
+
 	void realtimeLoad(std::string p) {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[0];
 		forms::mat4 test;
-		// modify the copied model
+
+		// convert the CamPos to World Space
 		forms::vec3 worldPos = { 0.0f, 0.0f, 0.0f };
 		worldPos = forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos);
 		m.scale = { 0.01f, 0.01f, 0.01f };
-		m.position = worldPos.multiply(10, 10, 10);
+		forms::vec3 fac = 0.1f / m.scale;
+		m.position = worldPos * fac;
 		m.startObj = false;
+
+		//modify the new models indices
 		for (size_t i = 0; i < m.materials.size(); i++) {
 			m.materials[i].modelIndex = static_cast<uint32_t>(objects.size());
 		}
+		for (size_t i = 0; i < m.materials.size(); i++) {
+			m.materials[i].diffuseTex.texIndex = static_cast<uint32_t>(objects.size());
+			m.materials[i].specularTex.texIndex = static_cast<uint32_t>(objects.size());
+			m.materials[i].normalMap.texIndex = static_cast<uint32_t>(objects.size());
+		}
+		for (size_t i = 0; i < m.vertices.size(); i++) {
+			m.vertices[i].matIndex = static_cast<uint32_t>(objects.size());
+		}
+
+		//create the model and reset the descriptor sets
 		objects.push_back(m);
 		cleanupDS();
 		setupDescriptorSets();
+		createGraphicsPipelineOpaque();
 	}
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
@@ -2187,8 +2202,6 @@ private:
 		ImGui::End();
 	}
 
-
-
 	void mainLoop() {
 		int frameCount = 0;
 		auto startTime = std::chrono::steady_clock::now();
@@ -2207,7 +2220,7 @@ private:
 			startTime = endTime;
 
 			auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - previousTime).count();
-			if (timeSincePrevious >= 300) {
+			if (timeSincePrevious >= 50) {
 				fps = static_cast<uint32_t>(std::round(frameCount / (timeSincePrevious / 1000.0f)));
 				frameCount = 0;
 				previousTime = endTime;
