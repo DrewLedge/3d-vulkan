@@ -195,34 +195,7 @@ LightBufferObject light1 = {};
 std::vector<model> objects = { model1, model2 };
 std::vector<LightBufferObject> lights = { light1 };
 
-struct UniformBufferObject {
-	float model[16];
-	float view[16];
-	float proj[16];
-};
-struct sceneIndexBufferObject {
-	uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
-	uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
 
-	// default constructor:
-	sceneIndexBufferObject() {
-		// by default, all the unused indices are max + 1 so glsl can ignore them
-		for (int i = 0; i < MAX_TEXTURES; i++) {
-			texIndices[i] = MAX_TEXTURES + 1;
-		}
-		for (int i = 0; i < MAX_MODELS; i++) {
-			modelIndices[i] = MAX_MODELS + 1;
-		}
-	}
-};
-
-
-struct camData {
-	forms::vec3 camPos; //x, y, z
-	forms::vec3 camAngle; //angle of the camera is facing
-	forms::vec3 camRads;
-};
-camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 class Engine {
 public:
 	void run() {
@@ -232,6 +205,39 @@ public:
 		cleanup();
 	}
 private:
+	struct matrixUBO {
+		float model[16];
+		float view[16];
+		float proj[16];
+	};
+	struct matrixDataSSBO {
+		matrixUBO objectMatrixData[MAX_MODELS];
+	};
+	struct sceneIndexSSBO {
+		uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
+		uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
+
+		// default constructor:
+		sceneIndexSSBO() {
+			// by default, all the unused indices are max + 1 so glsl can ignore them
+			for (int i = 0; i < MAX_TEXTURES; i++) {
+				texIndices[i] = MAX_TEXTURES + 1;
+			}
+			for (int i = 0; i < MAX_MODELS; i++) {
+				modelIndices[i] = MAX_MODELS + 1;
+			}
+		}
+	};
+
+	struct camData {
+		forms::vec3 camPos; //x, y, z
+		forms::vec3 camAngle; //angle of the camera is facing
+		forms::vec3 camRads;
+	};
+
+
+	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
+	matrixDataSSBO matData = {};
 	VkSurfaceKHR surface;
 	GLFWwindow* window;
 	VkInstance instance;
@@ -255,7 +261,7 @@ private:
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
 	VkFormat depthFormat;
-	sceneIndexBufferObject sceneIndices = {};
+	sceneIndexSSBO sceneIndices = {};
 	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // 4 bytes per pixel
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
@@ -269,8 +275,10 @@ private:
 	VkDescriptorPool descriptorPool3;
 
 
-	std::vector<VkBuffer> uboBuffers;
-	std::vector<VkDeviceMemory> uboBufferMemories;
+	VkBuffer matrixDataBuffer;
+	VkDeviceMemory matrixDataBufferMem;
+
+
 	std::vector<VkBuffer> lightBuffers;
 	std::vector<VkDeviceMemory> lightBufferMemories;
 	VkBuffer sceneIndexBuffer;
@@ -876,64 +884,38 @@ private:
 	}
 
 	void setupMatrixUBO() {
-		uboBuffers.resize(objects.size());
-		uboBufferMemories.resize(objects.size());
-		for (size_t i = 0; i < objects.size(); i++) {
-			VkBufferCreateInfo bufferCreateInfo{};
-			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferCreateInfo.size = sizeof(UniformBufferObject);
-			bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = sizeof(matrixDataSSBO);
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
-			if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &uboBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("Failed to create UBO buffer!");
-			}
-
-			VkMemoryRequirements memoryRequirements;
-			vkGetBufferMemoryRequirements(device, uboBuffers[i], &memoryRequirements);
-
-			VkMemoryAllocateInfo allocateInfo{};
-			allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocateInfo.allocationSize = memoryRequirements.size;
-			allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //find a memory type that is host visible and coherent
-
-			if (vkAllocateMemory(device, &allocateInfo, nullptr, &uboBufferMemories[i]) != VK_SUCCESS) {
-				throw std::runtime_error("Failed to allocate memory for UBO buffer!");
-			}
-			vkBindBufferMemory(device, uboBuffers[i], uboBufferMemories[i], 0); // bind the buffer to the memory
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &matrixDataBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create matrix SSBO!");
 		}
+
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, matrixDataBuffer, &memoryRequirements);
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &matrixDataBufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
+		}
+
+		vkBindBufferMemory(device, matrixDataBuffer, matrixDataBufferMem, 0);
+
+		// once memory is bound, map and fill it
+		void* data;
+		vkMapMemory(device, matrixDataBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, &matData, bufferCreateInfo.size);
+		vkUnmapMemory(device, matrixDataBufferMem);
 	}
 
-	void createLightUBOs() {
-		lightBuffers.resize(lights.size());
-		lightBufferMemories.resize(lights.size());
-		for (size_t i = 0; i < lights.size(); i++) {
-			VkBufferCreateInfo bufferCreateInfo{};
-			bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferCreateInfo.size = sizeof(LightBufferObject);
-			bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-			bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-			if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &lightBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("Failed to create Light UBO buffer!");
-			}
-
-			VkMemoryRequirements memoryRequirements;
-			vkGetBufferMemoryRequirements(device, lightBuffers[i], &memoryRequirements);
-
-			VkMemoryAllocateInfo allocateInfo{};
-			allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocateInfo.allocationSize = memoryRequirements.size;
-			allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-			if (vkAllocateMemory(device, &allocateInfo, nullptr, &lightBufferMemories[i]) != VK_SUCCESS) {
-				throw std::runtime_error("Failed to allocate memory for Light UBO buffer!");
-			}
-			vkBindBufferMemory(device, lightBuffers[i], lightBufferMemories[i], 0);
-		}
-	}
-
-	void printIndices(const sceneIndexBufferObject& indexBuffer) {
+	void printIndices(const sceneIndexSSBO& indexBuffer) {
 		std::cout << "-------------------------------" << std::endl;
 		for (size_t i = 0; i < MAX_TEXTURES; i++) {
 			if (indexBuffer.texIndices[i] < MAX_TEXTURES) {
@@ -959,10 +941,10 @@ private:
 		for (size_t g = 0; g < materialCount; g++) {
 			sceneIndices.modelIndices[g] = materials[g].modelIndex;
 		}
-		printIndices(sceneIndices);
+		//printIndices(sceneIndices);
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(sceneIndexBufferObject);
+		bufferCreateInfo.size = sizeof(sceneIndexSSBO);
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
@@ -1003,17 +985,16 @@ private:
 			calcMatrixes(objects[i]);
 
 			// create and populate the UBO:
-			UniformBufferObject ubo;
-			memcpy(ubo.model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
-			memcpy(ubo.view, objects[i].viewMatrix, sizeof(objects[i].viewMatrix));
-			memcpy(ubo.proj, objects[i].projectionMatrix, sizeof(objects[i].projectionMatrix));
+			memcpy(matData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+			memcpy(matData.objectMatrixData[i].view, objects[i].viewMatrix, sizeof(objects[i].viewMatrix));
+			memcpy(matData.objectMatrixData[i].proj, objects[i].projectionMatrix, sizeof(objects[i].projectionMatrix));
 
 			// transfer the ubo struct into the buffer:
-			void* data;
-			vkMapMemory(device, uboBufferMemories[i], 0, sizeof(ubo), 0, &data);
-			memcpy(data, &ubo, sizeof(ubo));
-			vkUnmapMemory(device, uboBufferMemories[i]);
 		}
+		void* data;
+		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &data);
+		memcpy(data, &matData, sizeof(matData));
+		vkUnmapMemory(device, matrixDataBufferMem);
 	}
 	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		size_t index = 0;
@@ -1154,10 +1135,10 @@ private:
 		descriptorSets.resize(3);
 
 		//initialize descriptor set layouts and pools
-		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()), VK_SHADER_STAGE_VERTEX_BIT);
+		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, static_cast<uint32_t>(objects.size()));
+		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 
@@ -1168,7 +1149,7 @@ private:
 		std::array<VkDescriptorSetLayout, 3> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
 		std::array<VkDescriptorPool, 3> pools = { descriptorPool1, descriptorPool2, descriptorPool3 };
 
-		std::array<uint32_t, 3> descCountArr = { static_cast<uint32_t>(objects.size()), static_cast<uint32_t>(totalTextureCount), 1 };
+		std::array<uint32_t, 3> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -1192,12 +1173,10 @@ private:
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
 		setupTexIndices(textures, mats);
 
-		std::vector<VkDescriptorBufferInfo> bufferInfos(objects.size()); // 1 ubo per object
-		for (size_t i = 0; i < objects.size(); i++) {
-			bufferInfos[i].buffer = uboBuffers[i];
-			bufferInfos[i].offset = 0; //offset in the buffer where the UBO starts
-			bufferInfos[i].range = sizeof(UniformBufferObject);
-		}
+		VkDescriptorBufferInfo matrixBufferInfo{};
+		matrixBufferInfo.buffer = matrixDataBuffer;
+		matrixBufferInfo.offset = 0;
+		matrixBufferInfo.range = sizeof(matrixDataSSBO);
 
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
@@ -1209,7 +1188,7 @@ private:
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.buffer = sceneIndexBuffer;
 		indexBufferInfo.offset = 0;
-		indexBufferInfo.range = sizeof(sceneIndexBufferObject);
+		indexBufferInfo.range = sizeof(sceneIndexSSBO);
 
 
 		std::array<VkWriteDescriptorSet, 3> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
@@ -1218,9 +1197,9 @@ private:
 		descriptorWrites[0].dstSet = descriptorSets[0];
 		descriptorWrites[0].dstBinding = 0;
 		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=UBO
-		descriptorWrites[0].descriptorCount = static_cast<uint32_t>(objects.size());
-		descriptorWrites[0].pBufferInfo = bufferInfos.data();
+		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
+		descriptorWrites[0].descriptorCount = 1;
+		descriptorWrites[0].pBufferInfo = &matrixBufferInfo;
 
 		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[1].dstSet = descriptorSets[1];

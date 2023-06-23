@@ -18,24 +18,33 @@ layout(location = 4) flat out uint outVertIndex;
 layout(location = 5) flat out uint outTexIndex;
 layout(location = 6) flat out uint outModelIndex;
 
-layout(set = 0, binding = 0) uniform UniformBufferObjects {
+struct matrixUBO {
     mat4 model;
     mat4 view;
     mat4 proj;
-} ubo[];
+};
+layout(set = 0, binding = 0) buffer matBufferObject {
+    matrixUBO matrixSSBO[MAX_MODELS];
+} matSSBO;
 
 layout(set = 2, binding = 2) buffer BufferObject {
     uint texIndices[MAX_TEXTURES]; // which textures are used by the model (1,1,1 would be model 1)
     uint modelIndices[MAX_MODELS]; // which materials are part of which objects. (3,3,3 would be object 3)
-} ssbo;
+} idxSSBO;
 
 void main() {
-    uint modelIndex = ssbo.modelIndices[inVertIndex];
-    uint texIndex = ssbo.texIndices[inVertIndex];
-    gl_Position = ubo[modelIndex].proj * ubo[modelIndex].view * ubo[modelIndex].model * vec4(inPosition, 1.0);
+    uint modelIndex = idxSSBO.modelIndices[inVertIndex];
+    uint texIndex = idxSSBO.texIndices[inVertIndex];
+
+    mat4 proj = matSSBO.matrixSSBO[modelIndex].proj;
+    mat4 view = matSSBO.matrixSSBO[modelIndex].view;
+    mat4 model = matSSBO.matrixSSBO[modelIndex].model;
+
+    gl_Position = proj*view*model * vec4(inPosition, 1.0);
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
+
     if (texIndex >= MAX_TEXTURES) {
     outTexIndex = texIndex; // pass the texture index to the fragment shader
     }
