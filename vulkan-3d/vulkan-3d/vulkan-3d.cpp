@@ -1260,6 +1260,7 @@ private:
 		cleanupDS();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
+		std::cout << "Current Objects: " << objects.size() << std::endl;
 	}
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
@@ -1779,7 +1780,6 @@ private:
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
-		std::cout << "Opaque Graphics Pipeline Created Successfully!" << std::endl;
 
 	}
 
@@ -1825,6 +1825,7 @@ private:
 	}
 
 	VkCommandPool createCommandPool() {
+		commandBuffers.resize(swapChainImages.size());
 		VkCommandPool cPool;
 		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
@@ -1924,14 +1925,19 @@ private:
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
-		for (size_t i = 0; i < commandBuffers.size(); i++) {
+		size_t oIdx = 0; // object index
+		std::array<VkClearValue, 2> clearValues = {
+		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
+		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
+		};
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
 			vkResetCommandBuffer(commandBuffers[i], 0);
 
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-			beginInfo.pInheritanceInfo = nullptr; //if nullptr, then it is a primary command buffer
+			beginInfo.pInheritanceInfo = nullptr;
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -1942,12 +1948,6 @@ private:
 			renderPassInfo.framebuffer = swapChainFramebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
-
-			std::array<VkClearValue, 2> clearValues = {
-		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
-		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
-			};
-
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
 
@@ -1956,35 +1956,43 @@ private:
 
 			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2] };
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 3, dSets, 0, nullptr);
-			//params are: 
 
-			for (size_t j = 0; j < objects.size(); j++) {
-				if (j >= vertBuffers.size()) {
-					std::cerr << "Warning: missing vertex buffer for object " << j + 1 << std::endl;
+			size_t obj_size = objects.size();
+			size_t vertBuffers_size = vertBuffers.size();
+			size_t indBuffers_size = indBuffers.size();
+			VkBuffer vertexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkBuffer indexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkDeviceSize offsets[] = { 0 };
+			for (size_t j = 0; j < obj_size; j++) {
+				oIdx %= obj_size; // if object index > object size, reset to 0
+				if (oIdx >= vertBuffers_size) {
+					std::cerr << "Warning: missing vertex buffer for object " << oIdx + 1 << std::endl;
+					oIdx++;
 					continue;
 				}
-
-				VkBuffer vertexBuffersArray[] = { vertBuffers[j] };
-				VkDeviceSize offsets[] = { 0 };
+				vertexBuffersArray[0] = vertBuffers[oIdx];
 				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
-
-				if (j >= indBuffers.size()) {
-					std::cerr << "Warning: missing index buffer for object " << j + 1 << std::endl;
+				if (oIdx >= indBuffers_size) {
+					std::cerr << "Warning: missing index buffer for object " << oIdx + 1 << std::endl;
+					oIdx++;
 					continue;
 				}
-
-				VkBuffer indexBuffersArray[] = { indBuffers[j] };
+				indexBuffersArray[0] = indBuffers[oIdx];
 				vkCmdBindIndexBuffer(commandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
 
-				// ensure object size is correct:
-				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].vertices.size());
+				// check object size
+				uint32_t objectVertexCount = static_cast<uint32_t>(objects[oIdx].vertices.size());
 				if (objectVertexCount == 0) {
-					std::cerr << "Warning: object " << j + 1 << " has an invalid size" << std::endl;
+					std::cerr << "Warning: object " << oIdx + 1 << " has an invalid size" << std::endl;
+					oIdx++;
 					continue;
 				}
+				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[oIdx].indices.size()), 1, 0, 0, 0);
 
-				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
+				// increment object index
+				oIdx++;
 			}
+
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
@@ -2211,8 +2219,12 @@ private:
 
 
 	void handleKeyboardInput(GLFWwindow* window) {
-		float cameraSpeed = 0.01f; // Adjust the speed as needed. on the laptop 0.012f is good
-		float cameraRotationSpeed = 1.0f;
+		static double previousTime = glfwGetTime();
+		double currentTime = glfwGetTime();
+		float deltaTime = static_cast<float>(currentTime - previousTime) * 200;
+		previousTime = currentTime;
+		float cameraSpeed = 0.01f * deltaTime;
+		float cameraRotationSpeed = 1.0f * deltaTime;
 
 		cam.camAngle.y = fmod(cam.camAngle.y + 360.0f, 360.0f);
 		if (cam.camAngle.x > 90) {
