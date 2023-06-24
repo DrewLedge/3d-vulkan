@@ -12,7 +12,15 @@ public:
 
 		vec3 operator+(const vec3& other) const {
 			return vec3(x + other.x, y + other.y, z + other.z);
+
 		}
+		vec3& operator+=(float scalar) {
+			x += scalar;
+			y += scalar;
+			z += scalar;
+			return *this;
+		}
+
 		vec3 operator-(const vec3& other) const {
 			return vec3(x - other.x, y - other.y, z - other.z);
 		}

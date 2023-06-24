@@ -187,10 +187,11 @@ private:
 	};
 
 	struct light { // omnidirectional light
-		float lightPos[3];
-		float lightColor[3];
+		forms::vec3 lightPos;
+		forms::vec3 lightColor;
 		float lightIntensity;
 	};
+
 
 	struct matrixUBO {
 		float model[16];
@@ -215,17 +216,24 @@ private:
 			}
 		}
 	};
-
 	struct camData {
 		forms::vec3 camPos; //x, y, z
 		forms::vec3 camAngle; //angle of the camera is facing
 		forms::vec3 camRads;
+	};
+	struct shadowMap {
+		VkImage image;
+		VkDeviceMemory imageMemory;
+		VkImageView imageView;
+		uint32_t mapWidth = 1024;
+		uint32_t mapHeight = 1024;
 	};
 
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	std::vector<light> lights = {};
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
+	shadowMap sMap;
 
 	VkSurfaceKHR surface;
 	GLFWwindow* window;
@@ -350,14 +358,8 @@ private:
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity) {
 		light l;
-		l.lightColor[0] = color.x;
-		l.lightColor[1] = color.y;
-		l.lightColor[2] = color.z;
-
-		l.lightPos[0] = pos.x;
-		l.lightPos[1] = pos.y;
-		l.lightPos[2] = pos.z;
-
+		l.lightColor = color;
+		l.lightPos = pos;
 		l.lightIntensity = intensity;
 		lights.push_back(l);
 	}
@@ -365,7 +367,7 @@ private:
 	void setupObjects() {
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 50.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.1f);
+		createLight({ 0.0f, 100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f);
 	}
 
 	void createInstance() {
@@ -814,58 +816,62 @@ private:
 
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
-		createDepthImage();
-		depthImageView = createDepthView();
+		createDepthImage(depthImage, depthImageMemory, swapChainExtent.width, swapChainExtent.height, depthFormat);
+		depthImageView = createDepthView(depthImage, depthFormat);
+	}
+	void setupShadowMaps() {
+		createDepthImage(sMap.image, sMap.imageMemory, sMap.mapWidth, sMap.mapHeight, VK_FORMAT_D32_SFLOAT);
+		sMap.imageView = createDepthView(sMap.image, VK_FORMAT_D32_SFLOAT);
 	}
 
-	void createDepthImage() { //create the depth image and allocate memory for it
+	void createDepthImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format) { //create the depth image and allocate memory for it
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageInfo.imageType = VK_IMAGE_TYPE_2D;  //2d image
-		imageInfo.extent.width = swapChainExtent.width;
-		imageInfo.extent.height = swapChainExtent.height;
+		imageInfo.extent.width = width;
+		imageInfo.extent.height = height;
 		imageInfo.extent.depth = 1;
 		imageInfo.arrayLayers = 1;
 		imageInfo.mipLevels = 1;
-		imageInfo.format = depthFormat;
+		imageInfo.format = format;
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //intiial layout doesn't matter
-		imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT; //dstencil attachment
+		imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT; //no multisampling
 		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //only one queue family can access the image at a time
 
-		if (vkCreateImage(device, &imageInfo, nullptr, &depthImage) != VK_SUCCESS) {
+		if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create depth image!");
 		}
 		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, depthImage, &memRequirements);
+		vkGetImageMemoryRequirements(device, image, &memRequirements);
 		VkMemoryAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInfo.allocationSize = memRequirements.size;
 		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		if (vkAllocateMemory(device, &allocInfo, nullptr, &depthImageMemory) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate depth image memory!");
 		}
-		vkBindImageMemory(device, depthImage, depthImageMemory, 0);
+		vkBindImageMemory(device, image, imageMemory, 0);
 	}
-	VkImageView createDepthView() {
+	VkImageView createDepthView(VkImage image, VkFormat format) {
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image = depthImage;
+		viewInfo.image = image;
 		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = depthFormat;
+		viewInfo.format = format;
 		viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT; // only depth aspect of the image
 		viewInfo.subresourceRange.baseMipLevel = 0; //no mip mapping
 		viewInfo.subresourceRange.levelCount = 1;
 		viewInfo.subresourceRange.baseArrayLayer = 0;
 		viewInfo.subresourceRange.layerCount = 1;
 
-		VkImageView depthView;
-		if (vkCreateImageView(device, &viewInfo, nullptr, &depthView) != VK_SUCCESS) {
+		VkImageView imageView;
+		if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create depth image view!");
 		}
 
-		return depthView;
+		return imageView;
 	}
 	void createImageViews() { //create the image views for the swap chain images
 		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
@@ -1028,7 +1034,14 @@ private:
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
-	void updateUBO(const camData& cam) { // needs optimization later
+	void updateUBO(const camData& cam) {
+		for (size_t i = 0; i < lights.size(); i++) {
+			// live light editing here
+		}
+		void* lightData;
+		vkMapMemory(device, lightBufferMem, 0, sizeof(lights), 0, &lightData);
+		memcpy(lightData, lights.data(), sizeof(lights));
+		vkUnmapMemory(device, lightBufferMem);
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcMatrixes(objects[i]);
 
@@ -1039,9 +1052,9 @@ private:
 
 			// transfer the ubo struct into the buffer:
 		}
-		void* data;
-		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &data);
-		memcpy(data, &matData, sizeof(matData));
+		void* matrixData;
+		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &matrixData);
+		memcpy(matrixData, &matData, sizeof(matData));
 		vkUnmapMemory(device, matrixDataBufferMem);
 	}
 	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
