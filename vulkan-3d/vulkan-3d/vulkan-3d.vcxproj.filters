@@ -65,6 +65,12 @@
     <None Include="..\..\README.md">
       <Filter>Source Files\Other files</Filter>
     </None>
+    <None Include="shadow.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="shadow.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="forms.h">

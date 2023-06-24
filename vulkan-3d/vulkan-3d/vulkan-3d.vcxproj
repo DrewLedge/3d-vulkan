@@ -144,6 +144,8 @@
     <None Include="..\..\README.md" />
     <None Include="engine.frag" />
     <None Include="engine.vert" />
+    <None Include="shadow.frag" />
+    <None Include="shadow.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ext\imgui\imconfig.h" />

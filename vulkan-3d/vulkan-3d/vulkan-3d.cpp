@@ -228,12 +228,19 @@ private:
 		uint32_t mapWidth = 1024;
 		uint32_t mapHeight = 1024;
 	};
+	struct pipelineDataObject { // used to store the pipeline data that works for multiple pipelines
+		VkPipelineInputAssemblyStateCreateInfo inputAssembly;
+		VkPipelineViewportStateCreateInfo viewportState;
+		VkPipelineRasterizationStateCreateInfo rasterizer;
+		VkPipelineMultisampleStateCreateInfo multisamp;
+	};
 
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	std::vector<light> lights = {};
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
 	shadowMap sMap;
+	pipelineDataObject pipelineData;
 
 	VkSurfaceKHR surface;
 	GLFWwindow* window;
@@ -277,7 +284,6 @@ private:
 	VkBuffer matrixDataBuffer;
 	VkDeviceMemory matrixDataBufferMem;
 
-
 	VkBuffer lightBuffer;
 	VkDeviceMemory lightBufferMem;
 	VkBuffer sceneIndexBuffer;
@@ -286,9 +292,13 @@ private:
 	VkPipelineLayout pipelineLayout;
 	VkPipeline graphicsPipeline;
 
+	VkPipelineLayout shadowMapPipelineLayout;
+	VkPipeline shadowMapPipeline;
+
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
 	VkRenderPass renderPass;
+	VkRenderPass shadowMapRenderPass;
 	VkCommandPool commandPool;
 
 	std::vector<VkCommandBuffer> commandBuffers;
@@ -1691,23 +1701,28 @@ private:
 		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; //assign the struct type to the input assembly state
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
 		inputAssem.primitiveRestartEnable = VK_FALSE; //if true, then a special index value of 0xFFFF or 0xFFFFFFFF is treated as a restart index
+		pipelineData.inputAssembly = inputAssem;
 
 		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
 		vp.x = 0.0f;
 		vp.y = 0.0f;
-		vp.width = (float)swapChainExtent.width; //width for the viewport is the swap chain extent widthh
-		vp.height = (float)swapChainExtent.height;
+		vp.width = static_cast<float>(swapChainExtent.width); // swap chain extent width for the viewport
+		vp.height = static_cast<float>(swapChainExtent.height);
 		vp.minDepth = 0.0f;
 		vp.maxDepth = 1.0f;
 		VkRect2D scissor{};
-		scissor.offset = { 0, 0 }; //0,0 offset (top left corner)
+		scissor.offset = { 0, 0 }; // top-left corner offset
 		scissor.extent = swapChainExtent;
-		VkPipelineViewportStateCreateInfo vpState{}; //create a struct for the viewport state
-		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO; //assign the struct type to the viewport state
+		VkPipelineViewportStateCreateInfo vpState{};
+		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 		vpState.viewportCount = 1;
 		vpState.pViewports = &vp;
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
+
+		// copy the viewport state to the heap so it can be used in the pipeline data struct
+		VkPipelineViewportStateCreateInfo* viewportState = new VkPipelineViewportStateCreateInfo(vpState);
+		pipelineData.viewportState = *viewportState;
 
 		//rasterizer setup: Transforms 3D primitives into 3D fragments for display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
@@ -1722,6 +1737,7 @@ private:
 		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
 		rasterizer.depthBiasClamp = 0.0f;
 		rasterizer.depthBiasSlopeFactor = 0.0f;
+		pipelineData.rasterizer = rasterizer;
 
 		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
@@ -1732,6 +1748,7 @@ private:
 		multiSamp.pSampleMask = nullptr; //array of sample mask values
 		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, blending semi-transparent pixels based on alpha values
 		multiSamp.alphaToOneEnable = VK_FALSE; //used for testing right alpha values
+		pipelineData.multisamp = multiSamp;
 
 		//depth and stencil testing setup: Allows for fragments to be discarded based on depth and stencil values
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
@@ -1872,6 +1889,127 @@ private:
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
 
+	}
+	void createShadowPipeline() {
+		// get shader data
+		auto vertShaderSPV = readFile("shadow_vert_shader.spv");
+		auto fragShaderSPV = readFile("shadow_frag_shader.spv");
+		VkShaderModule vertShaderModule = createShaderModule(vertShaderSPV);
+		VkShaderModule fragShaderModule = createShaderModule(fragShaderSPV);
+
+		VkPipelineShaderStageCreateInfo vertStage{};
+		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+		vertStage.module = vertShaderModule;
+		vertStage.pName = "main";
+		VkPipelineShaderStageCreateInfo fragStage{};
+		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+		fragStage.module = fragShaderModule;
+		fragStage.pName = "main";
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+
+		// creating the vertex input state
+		std::array<VkVertexInputAttributeDescription, 1> attrDesc;
+
+		// lights position
+		attrDesc[0].binding = 0;
+		attrDesc[0].location = 0;
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for the position
+		attrDesc[0].offset = offsetof(light, lightPos);
+
+		// vertex input setup:
+		VkVertexInputBindingDescription bindDesc{};
+		bindDesc.binding = 0;
+		bindDesc.stride = sizeof(light);
+		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInputInfo.vertexBindingDescriptionCount = 1;
+		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
+
+		// creating the depth stencil state
+		VkPipelineDepthStencilStateCreateInfo dStencil{};
+		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		dStencil.depthTestEnable = VK_TRUE; //enable depth test
+		dStencil.depthWriteEnable = VK_TRUE;
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		dStencil.depthBoundsTestEnable = VK_FALSE;
+		dStencil.minDepthBounds = 0.0f;
+		dStencil.maxDepthBounds = 1.0f;
+		dStencil.stencilTestEnable = VK_FALSE;
+
+		// creating the shadow map render pass
+		VkAttachmentDescription depthAttachment{};
+		depthAttachment.format = findDepthFormat();
+		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+		// create the depth attachment reference
+		VkAttachmentReference depthAttachmentRef{};
+		depthAttachmentRef.attachment = 0;
+		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		// creatr the subpass
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 0;
+		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+		// create the render pass
+		VkRenderPassCreateInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = 1;
+		renderPassInfo.pAttachments = &depthAttachment;
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapRenderPass) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow map render pass!");
+		}
+
+		// enable color blending
+		VkPipelineColorBlendStateCreateInfo colorBlending{};
+		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBlending.attachmentCount = 0;
+
+		/// TODO: finish this
+		VkDescriptorSetLayout setLayouts[0] = {};
+		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
+		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = setLayouts;
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipelineLayout);
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
+		}
+
+		// create the pipeline based off this pipeline and some data from the main pipeline
+		VkGraphicsPipelineCreateInfo pipelineInfo{};
+		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInfo.stageCount = 2;
+		pipelineInfo.pStages = stages;
+		pipelineInfo.pVertexInputState = &vertexInputInfo;
+		pipelineInfo.pInputAssemblyState = &pipelineData.inputAssembly;
+		pipelineInfo.pViewportState = &pipelineData.viewportState;
+		pipelineInfo.pRasterizationState = &pipelineData.rasterizer;
+		pipelineInfo.pMultisampleState = &pipelineData.multisamp;
+		pipelineInfo.pDepthStencilState = &dStencil;
+		pipelineInfo.pColorBlendState = &colorBlending;
+		pipelineInfo.layout = pipelineLayout;
+		pipelineInfo.renderPass = shadowMapRenderPass;
+		pipelineInfo.subpass = 0;
+		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow map pipeline!!!!");
+		}
 	}
 
 	void imguiSetup() {
@@ -2380,7 +2518,9 @@ private:
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		setupDepthResources();
+		setupShadowMaps();
 		createGraphicsPipelineOpaque();
+		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		createFrameBuffer();
 		createCommandBuffer();
