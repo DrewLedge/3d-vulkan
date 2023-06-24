@@ -175,7 +175,13 @@ struct model {
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
 };
-
+struct light { // omnidirectional light
+	float lightPos[3];
+	float lightColor[3];
+	float lightIntensity;
+};
+light light1 = {};
+std::vector<light> lights = { light1 };
 
 model model1 = {};
 model model2 = {};
@@ -221,7 +227,6 @@ private:
 		forms::vec3 camRads;
 	};
 
-
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	matrixDataSSBO matData = {};
 	VkSurfaceKHR surface;
@@ -259,14 +264,16 @@ private:
 	VkDescriptorPool descriptorPool2;
 	VkDescriptorSetLayout descriptorSetLayout3;
 	VkDescriptorPool descriptorPool3;
+	VkDescriptorSetLayout descriptorSetLayout4;
+	VkDescriptorPool descriptorPool4;
 
 
 	VkBuffer matrixDataBuffer;
 	VkDeviceMemory matrixDataBufferMem;
 
 
-	std::vector<VkBuffer> lightBuffers;
-	std::vector<VkDeviceMemory> lightBufferMemories;
+	VkBuffer lightBuffer;
+	VkDeviceMemory lightBufferMem;
 	VkBuffer sceneIndexBuffer;
 	VkDeviceMemory sceneIndexBufferMem;
 
@@ -900,6 +907,32 @@ private:
 		memcpy(data, &matData, bufferCreateInfo.size);
 		vkUnmapMemory(device, matrixDataBufferMem);
 	}
+	void setupLighs() {
+		VkBufferCreateInfo bufferCreateInfo = {};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = sizeof(light) * lights.size();
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		vkCreateBuffer(device, &bufferCreateInfo, nullptr, &lightBuffer);
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, lightBuffer, &memRequirements);
+
+		VkMemoryAllocateInfo allocInfo = {};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		vkAllocateMemory(device, &allocInfo, nullptr, &lightBufferMem);
+
+		vkBindBufferMemory(device, lightBuffer, lightBufferMem, 0);
+
+		void* data;
+		vkMapMemory(device, lightBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, lights.data(), bufferCreateInfo.size);
+		vkUnmapMemory(device, lightBufferMem);
+	}
 
 	void printIndices(const sceneIndexSSBO& indexBuffer) {
 		std::cout << "-------------------------------" << std::endl;
@@ -1118,25 +1151,26 @@ private:
 
 
 	void createDS() {
-		turnObjIntoLightSource(objects[0]); // turn the first object into a light source
-		descriptorSets.resize(3);
+		descriptorSets.resize(4);
 
 		//initialize descriptor set layouts and pools
 		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+		descriptorPool4 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1; // 1 because we are allocating 1 descriptor set at a time
 
-		std::array<VkDescriptorSetLayout, 3> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
-		std::array<VkDescriptorPool, 3> pools = { descriptorPool1, descriptorPool2, descriptorPool3 };
+		std::array<VkDescriptorSetLayout, 4> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4 };
+		std::array<VkDescriptorPool, 4> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4 };
 
-		std::array<uint32_t, 3> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 };
+		std::array<uint32_t, 4> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1 };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -1156,6 +1190,7 @@ private:
 
 
 		setupMatrixUBO(); //create the matrix UBOs for each object
+		setupLighs();
 		std::vector<Texture> textures = getAllTextures(); // iterate through all objects and put all texture data into a vector
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
 		setupTexIndices(textures, mats);
@@ -1177,8 +1212,12 @@ private:
 		indexBufferInfo.offset = 0;
 		indexBufferInfo.range = sizeof(sceneIndexSSBO);
 
+		VkDescriptorBufferInfo lightBufferInfo{};
+		lightBufferInfo.buffer = lightBuffer;
+		lightBufferInfo.offset = 0;
+		lightBufferInfo.range = sizeof(light) * lights.size();
 
-		std::array<VkWriteDescriptorSet, 3> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, 4> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[0];
@@ -1203,6 +1242,14 @@ private:
 		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
 		descriptorWrites[2].descriptorCount = 1;
 		descriptorWrites[2].pBufferInfo = &indexBufferInfo;
+
+		descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[3].dstSet = descriptorSets[3];
+		descriptorWrites[3].dstBinding = 3;
+		descriptorWrites[3].dstArrayElement = 0;
+		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
+		descriptorWrites[3].descriptorCount = 1;
+		descriptorWrites[3].pBufferInfo = &lightBufferInfo;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1553,7 +1600,7 @@ private:
 		bindDesc.stride = sizeof(Vertex); // Number of bytes from one entry to the next
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 5> attrDesc;
+		std::array<VkVertexInputAttributeDescription, 6> attrDesc;
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -1583,6 +1630,12 @@ private:
 		attrDesc[4].location = 4;
 		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for material index
 		attrDesc[4].offset = offsetof(Vertex, matIndex);
+
+		// normal
+		attrDesc[5].binding = 0;
+		attrDesc[5].location = 5;
+		attrDesc[5].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
+		attrDesc[5].offset = offsetof(Vertex, normal);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -1695,7 +1748,7 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3 };
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -1950,8 +2003,8 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2] };
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 3, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3] };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, dSets, 0, nullptr);
 
 			size_t obj_size = objects.size();
 			size_t vertBuffers_size = vertBuffers.size();
@@ -2359,6 +2412,16 @@ int main() {
 	objects[0].pathObj = "models/gear/Gear1.obj";
 	objects[0].rotation = { 0.0f, 70.0f, 0.0f };
 	objects[1].pathObj = "models/gear2/Gear2.obj";
+
+	lights[0].lightColor[0] = 1.0f;
+	lights[0].lightColor[1] = 1.0f;
+	lights[0].lightColor[2] = 1.0f;
+
+	lights[0].lightPos[0] = 0.0f;
+	lights[0].lightPos[1] = 50.0f;
+	lights[0].lightPos[2] = 0.0f;
+
+	lights[0].lightIntensity = 0.8f;
 	Engine app;
 	try {
 		app.run();
