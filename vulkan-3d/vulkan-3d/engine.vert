@@ -40,17 +40,20 @@ void main() {
     mat4 view = matSSBO.matrixSSBO[modelIndex].view;
     mat4 model = matSSBO.matrixSSBO[modelIndex].model;
 
+    vec3 cameraPosition = vec3(inverse(view)[3]);
+    vec3 viewDirection = normalize(cameraPosition - vec3(model * vec4(inPosition, 1.0)));
+
     gl_Position = proj*view*model * vec4(inPosition, 1.0);
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
-if (texIndex>0) {
-texIndex+=2;
-}
-    if (texIndex <= MAX_TEXTURES) {
-    outTexIndex = texIndex; // pass the texture index to the fragment shader
+    if (texIndex>0) {
+        texIndex+=2;
     }
-     if (modelIndex <= MAX_MODELS) {
-    outModelIndex = modelIndex; // pass the model/material index to the fragment shader
+    if (texIndex <= MAX_TEXTURES) {
+        outTexIndex = texIndex; // pass the texture index to the fragment shader
+    }
+    if (modelIndex <= MAX_MODELS) {
+        outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
 }

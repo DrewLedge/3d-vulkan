@@ -175,25 +175,11 @@ struct model {
 		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 	}
 };
-struct LightBufferObject {
-	forms::vec3 position;
-	forms::vec3 diffuse;
-	forms::vec3 specular;
-	forms::vec3 ambient;
-	LightBufferObject()
-		: position(forms::vec3(0.0f, 0.0f, 0.0f)), //pos of the loght
-		ambient(forms::vec3(0.2f, 0.2f, 0.2f)),
-		diffuse(forms::vec3(0.5f, 0.5f, 0.5f)),
-		specular(forms::vec3(1.0f, 1.0f, 1.0f))
-	{}
-};
 
 
 model model1 = {};
 model model2 = {};
-LightBufferObject light1 = {};
 std::vector<model> objects = { model1, model2 };
-std::vector<LightBufferObject> lights = { light1 };
 
 
 class Engine {
@@ -1132,6 +1118,7 @@ private:
 
 
 	void createDS() {
+		turnObjIntoLightSource(objects[0]); // turn the first object into a light source
 		descriptorSets.resize(3);
 
 		//initialize descriptor set layouts and pools
@@ -1567,28 +1554,31 @@ private:
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
 		std::array<VkVertexInputAttributeDescription, 5> attrDesc;
-		// attr0 is position, attr1 is color, attr2 is alpha, attr3 is texture coordinates, attr4 is vert/mat index
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
 		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
 		attrDesc[0].offset = offsetof(Vertex, pos);
 
+		// color
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
 		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for color
 		attrDesc[1].offset = offsetof(Vertex, col);
 
+		// alpha (transparency)
 		attrDesc[2].binding = 0;
 		attrDesc[2].location = 2;
 		attrDesc[2].format = VK_FORMAT_R32_SFLOAT; // 1 float for alpha
 		attrDesc[2].offset = offsetof(Vertex, alpha);
 
+		// texture coordinates
 		attrDesc[3].binding = 0;
 		attrDesc[3].location = 3;
 		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
 		attrDesc[3].offset = offsetof(Vertex, tex);
 
+		// material index
 		attrDesc[4].binding = 0;
 		attrDesc[4].location = 4;
 		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for material index
