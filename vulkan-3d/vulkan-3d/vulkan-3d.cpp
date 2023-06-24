@@ -1247,23 +1247,16 @@ private:
 		// get maximum indices from original model
 		for (auto& material : m.materials) {
 			if (material.diffuseTex.texIndex > texInd)
-				texInd = material.diffuseTex.texIndex;
+				material.diffuseTex.texIndex = texInd;
 			if (material.specularTex.texIndex > texInd)
-				texInd = material.specularTex.texIndex;
+				material.specularTex.texIndex = texInd;
 			if (material.normalMap.texIndex > texInd)
-				texInd = material.normalMap.texIndex;
+				material.normalMap.texIndex = texInd;
+			material.modelIndex = objSize;
 		}
 
 		// increment indices for new model
 		texInd++;
-		for (size_t i = 0; i < m.materials.size(); i++) {
-			m.materials[i].modelIndex = objSize;
-		}
-		for (auto& material : m.materials) {
-			material.diffuseTex.texIndex = texInd;
-			material.specularTex.texIndex = texInd;
-			material.normalMap.texIndex = texInd;
-		}
 		for (size_t i = 0; i < m.vertices.size(); i++) {
 			m.vertices[i].matIndex = objSize;
 		}

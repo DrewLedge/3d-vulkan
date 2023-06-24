@@ -44,7 +44,9 @@ void main() {
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
-
+if (texIndex>0) {
+texIndex+=2;
+}
     if (texIndex <= MAX_TEXTURES) {
     outTexIndex = texIndex; // pass the texture index to the fragment shader
     }
@@ -52,12 +54,3 @@ void main() {
     outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
 }
-
-
-
-
-
-
-
-
-
