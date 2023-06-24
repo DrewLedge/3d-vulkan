@@ -1,5 +1,6 @@
 #version 460
 #extension GL_ARB_separate_shader_objects : enable
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
@@ -12,7 +13,7 @@ layout(location = 6) flat in uint inModelIndex;
 layout(location = 0) out vec4 outColor;
 
 void main() {
-    vec4 sampled = texture(texSamplers[3], inTexCoord);
+    vec4 sampled = texture(texSamplers[inTexIndex], inTexCoord);
     outColor = sampled * vec4(fragColor.rgb, inAlpha);
 }
 

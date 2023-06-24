@@ -26,7 +26,7 @@
 #include <ctime> //random seed based on time
 #include <chrono> // random seed based on time
 #include <cmath>
-#define MAX_TEXTURES 100 // temp max num of textures and models (used for passing data to shaders)
+#define MAX_TEXTURES 1000 // temp max num of textures and models (used for passing data to shaders)
 #define MAX_MODELS 300
 
 const uint32_t WIDTH = 3200;
@@ -1231,7 +1231,7 @@ private:
 
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		model m = objects[0];
+		model m = objects[1];
 		forms::mat4 test;
 
 		// convert the CamPos to World Space
@@ -1241,18 +1241,31 @@ private:
 		forms::vec3 fac = 0.1f / m.scale;
 		m.position = worldPos * fac;
 		m.startObj = false;
+		uint32_t objSize = static_cast<uint32_t>(objects.size());
+		uint32_t texInd = -1;
 
-		//modify the new models indices
-		for (size_t i = 0; i < m.materials.size(); i++) {
-			m.materials[i].modelIndex = static_cast<uint32_t>(objects.size());
+		// get maximum indices from original model
+		for (auto& material : m.materials) {
+			if (material.diffuseTex.texIndex > texInd)
+				texInd = material.diffuseTex.texIndex;
+			if (material.specularTex.texIndex > texInd)
+				texInd = material.specularTex.texIndex;
+			if (material.normalMap.texIndex > texInd)
+				texInd = material.normalMap.texIndex;
 		}
+
+		// increment indices for new model
+		texInd++;
 		for (size_t i = 0; i < m.materials.size(); i++) {
-			m.materials[i].diffuseTex.texIndex = static_cast<uint32_t>(objects.size());
-			m.materials[i].specularTex.texIndex = static_cast<uint32_t>(objects.size());
-			m.materials[i].normalMap.texIndex = static_cast<uint32_t>(objects.size());
+			m.materials[i].modelIndex = objSize;
+		}
+		for (auto& material : m.materials) {
+			material.diffuseTex.texIndex = texInd;
+			material.specularTex.texIndex = texInd;
+			material.normalMap.texIndex = texInd;
 		}
 		for (size_t i = 0; i < m.vertices.size(); i++) {
-			m.vertices[i].matIndex = static_cast<uint32_t>(objects.size());
+			m.vertices[i].matIndex = objSize;
 		}
 
 		//create the model and reset the descriptor sets
@@ -1260,7 +1273,7 @@ private:
 		cleanupDS();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
-		std::cout << "Current Objects: " << objects.size() << std::endl;
+		std::cout << "Current Object Count: " << objSize << std::endl;
 	}
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);

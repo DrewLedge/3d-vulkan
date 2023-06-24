@@ -2,7 +2,7 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define MAX_TEXTURES 100 // this number must be the same as in the main code!!!
+#define MAX_TEXTURES 1000 // this number must be the same as in the main code!!!
 #define MAX_MODELS 300
 
 layout(location = 0) in vec3 inPosition; 
@@ -45,10 +45,10 @@ void main() {
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
 
-    if (texIndex >= MAX_TEXTURES) {
+    if (texIndex <= MAX_TEXTURES) {
     outTexIndex = texIndex; // pass the texture index to the fragment shader
     }
-     if (modelIndex >= MAX_MODELS) {
+     if (modelIndex <= MAX_MODELS) {
     outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
 }
