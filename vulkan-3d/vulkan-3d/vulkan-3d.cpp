@@ -31,162 +31,6 @@
 
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
-struct Vertex {
-	forms::vec3 pos; // position coordinates x, y, z
-	forms::vec2 tex; // texture coordinates u, v
-	forms::vec3 col; // color r, g, b
-	forms::vec3 normal; // normal vector x, y, z
-	float alpha;
-	uint32_t matIndex; // used to know which vertex belong to which material
-
-	// default constructor:
-	Vertex()
-		: pos(forms::vec3(0.0f, 0.0f, 0.0f)),
-		tex(forms::vec2(0.0f, 0.0f)),
-		col(forms::vec3(0.0f, 0.0f, 0.0f)),
-		normal(forms::vec3(0.0f, 0.0f, 0.0f)),
-		alpha(1.0f)
-	{}
-
-	// constructor:
-	Vertex(const forms::vec3& position,
-		const forms::vec2& texture,
-		const forms::vec3& color,
-		const forms::vec3& normalVector,
-		float alphaValue)
-		: pos(position),
-		tex(texture),
-		col(color),
-		normal(normalVector),
-		alpha(alphaValue),
-		matIndex(0)
-	{}
-	bool operator==(const Vertex& other) const {
-		const float epsilon = 0.00001f; // tolerance for floating point equality
-		return pos == other.pos &&
-			tex == other.tex &&
-			col == other.col &&
-			normal == other.normal &&
-			std::abs(alpha - other.alpha) < epsilon;
-	}
-};
-
-struct vertHash {
-	size_t operator()(const Vertex& vertex) const {
-		size_t seed = 0;
-
-		// combine hashes for 'pos' using XOR and bit shifting:
-		seed ^= std::hash<float>()(vertex.pos.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.pos.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.pos.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-		seed ^= std::hash<float>()(vertex.tex.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.tex.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-		seed ^= std::hash<float>()(vertex.col.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.col.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.col.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-		seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-		seed ^= std::hash<float>()(vertex.alpha) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		return seed;
-	}
-};
-
-struct Texture {
-	VkSampler sampler;
-	VkImage image;
-	VkDeviceMemory memory;
-	VkImageView imageView;
-	std::string path;
-	uint32_t mipLevels;
-	VkBuffer stagingBuffer;
-	VkDeviceMemory stagingBufferMem;
-	uint32_t texIndex; //used to know what textures belong to what material
-
-	Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE), texIndex(0) {}
-
-	bool operator==(const Texture& other) const {
-		return sampler == other.sampler
-			&& image == other.image
-			&& memory == other.memory
-			&& imageView == other.imageView
-			&& path == other.path
-			&& mipLevels == other.mipLevels
-			&& stagingBuffer == other.stagingBuffer
-			&& stagingBufferMem == other.stagingBufferMem;
-	}
-};
-
-struct texHash {
-	size_t operator()(const Texture& tex) const {
-		size_t seed = 0;
-		seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-		seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-		return seed;
-	}
-};
-
-struct Materials {
-	Texture diffuseTex;
-	Texture specularTex;
-	Texture normalMap;
-	uint32_t modelIndex; //used to know what model the material belongs to
-};
-struct model {
-	std::vector<Materials> materials; //used to store all the textures/materials of the model
-	std::vector<Vertex> vertices;
-	std::vector<uint32_t> indices;
-	std::string pathObj; // i.e "models/cube.obj"
-
-	forms::vec3 position;  // position of the model
-	forms::vec3 rotation;  // rotation of the model
-	forms::vec3 scale;     // scale of the model
-	float modelMatrix[16];
-	float projectionMatrix[16];
-	float viewMatrix[16];
-
-	bool isLoaded; // if object is loaded or not to prevent reloading
-	bool startObj; // wether is loaded at the start of the program or not
-
-
-	// default constructor:
-	model()
-		: materials(),
-		vertices(),
-		indices(),
-		pathObj(""),
-		position(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
-		rotation(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-		scale(forms::vec3(0.1f, 0.1f, 0.1f)),
-		isLoaded(false),
-		startObj(true)
-	{
-		std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
-	}
-};
-struct light { // omnidirectional light
-	float lightPos[3];
-	float lightColor[3];
-	float lightIntensity;
-};
-light light1 = {};
-std::vector<light> lights = { light1 };
-
-model model1 = {};
-model model2 = {};
-std::vector<model> objects = { model1, model2 };
-
 
 class Engine {
 public:
@@ -197,6 +41,157 @@ public:
 		cleanup();
 	}
 private:
+	struct Vertex {
+		forms::vec3 pos; // position coordinates x, y, z
+		forms::vec2 tex; // texture coordinates u, v
+		forms::vec3 col; // color r, g, b
+		forms::vec3 normal; // normal vector x, y, z
+		float alpha;
+		uint32_t matIndex; // used to know which vertex belong to which material
+
+		// default constructor:
+		Vertex()
+			: pos(forms::vec3(0.0f, 0.0f, 0.0f)),
+			tex(forms::vec2(0.0f, 0.0f)),
+			col(forms::vec3(0.0f, 0.0f, 0.0f)),
+			normal(forms::vec3(0.0f, 0.0f, 0.0f)),
+			alpha(1.0f)
+		{}
+
+		// constructor:
+		Vertex(const forms::vec3& position,
+			const forms::vec2& texture,
+			const forms::vec3& color,
+			const forms::vec3& normalVector,
+			float alphaValue)
+			: pos(position),
+			tex(texture),
+			col(color),
+			normal(normalVector),
+			alpha(alphaValue),
+			matIndex(0)
+		{}
+		bool operator==(const Vertex& other) const {
+			const float epsilon = 0.00001f; // tolerance for floating point equality
+			return pos == other.pos &&
+				tex == other.tex &&
+				col == other.col &&
+				normal == other.normal &&
+				std::abs(alpha - other.alpha) < epsilon;
+		}
+	};
+
+	struct vertHash {
+		size_t operator()(const Vertex& vertex) const {
+			size_t seed = 0;
+
+			// combine hashes for 'pos' using XOR and bit shifting:
+			seed ^= std::hash<float>()(vertex.pos.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.pos.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.pos.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			seed ^= std::hash<float>()(vertex.tex.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.tex.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			seed ^= std::hash<float>()(vertex.col.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.col.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.col.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			seed ^= std::hash<float>()(vertex.alpha) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			return seed;
+		}
+	};
+
+	struct Texture {
+		VkSampler sampler;
+		VkImage image;
+		VkDeviceMemory memory;
+		VkImageView imageView;
+		std::string path;
+		uint32_t mipLevels;
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMem;
+		uint32_t texIndex; //used to know what textures belong to what material
+
+		Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE), texIndex(0) {}
+
+		bool operator==(const Texture& other) const {
+			return sampler == other.sampler
+				&& image == other.image
+				&& memory == other.memory
+				&& imageView == other.imageView
+				&& path == other.path
+				&& mipLevels == other.mipLevels
+				&& stagingBuffer == other.stagingBuffer
+				&& stagingBufferMem == other.stagingBufferMem;
+		}
+	};
+
+	struct texHash {
+		size_t operator()(const Texture& tex) const {
+			size_t seed = 0;
+			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			return seed;
+		}
+	};
+
+	struct Materials {
+		Texture diffuseTex;
+		Texture specularTex;
+		Texture normalMap;
+		uint32_t modelIndex; //used to know what model the material belongs to
+	};
+	struct model {
+		std::vector<Materials> materials; //used to store all the textures/materials of the model
+		std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
+		std::string pathObj; // i.e "models/cube.obj"
+
+		forms::vec3 position;  // position of the model
+		forms::vec3 rotation;  // rotation of the model
+		forms::vec3 scale;     // scale of the model
+		float modelMatrix[16];
+		float projectionMatrix[16];
+		float viewMatrix[16];
+
+		bool isLoaded; // if object is loaded or not to prevent reloading
+		bool startObj; // wether is loaded at the start of the program or not
+
+
+		// default constructor:
+		model()
+			: materials(),
+			vertices(),
+			indices(),
+			pathObj(""),
+			position(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
+			rotation(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+			scale(forms::vec3(0.1f, 0.1f, 0.1f)),
+			isLoaded(false),
+			startObj(true)
+		{
+			std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
+		}
+	};
+
+	struct light { // omnidirectional light
+		float lightPos[3];
+		float lightColor[3];
+		float lightIntensity;
+	};
+
 	struct matrixUBO {
 		float model[16];
 		float view[16];
@@ -228,7 +223,10 @@ private:
 	};
 
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
+	std::vector<light> lights = {};
+	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
+
 	VkSurfaceKHR surface;
 	GLFWwindow* window;
 	VkInstance instance;
@@ -306,6 +304,11 @@ private:
 	forms formula;
 	std::mutex modelMtx;
 	std::mutex descMtx;
+
+	std::array<float, 3> toArray(const forms::vec3& v) {
+		return { v.x, v.y, v.z };
+	}
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -337,6 +340,32 @@ private:
 		std::cout << "indices: " << stru.indices.size() << std::endl;
 		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
+	}
+	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation) {
+		model m;
+		m.pathObj = path;
+		m.scale = scale;
+		m.rotation = rotation;
+		objects.push_back(m);
+	}
+	void createLight(forms::vec3 pos, forms::vec3 color, float intensity) {
+		light l;
+		l.lightColor[0] = color.x;
+		l.lightColor[1] = color.y;
+		l.lightColor[2] = color.z;
+
+		l.lightPos[0] = pos.x;
+		l.lightPos[1] = pos.y;
+		l.lightPos[2] = pos.z;
+
+		l.lightIntensity = intensity;
+		lights.push_back(l);
+	}
+
+	void setupObjects() {
+		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
+		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 50.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.1f);
 	}
 
 	void createInstance() {
@@ -2322,6 +2351,7 @@ private:
 	}
 
 	void initVulkan() { //initializes Vulkan functions
+		setupObjects();
 		createInstance();
 		createSurface();
 		pickDevice();
@@ -2409,19 +2439,6 @@ private:
 	// 22. collision detection
 };
 int main() {
-	objects[0].pathObj = "models/gear/Gear1.obj";
-	objects[0].rotation = { 0.0f, 70.0f, 0.0f };
-	objects[1].pathObj = "models/gear2/Gear2.obj";
-
-	lights[0].lightColor[0] = 1.0f;
-	lights[0].lightColor[1] = 1.0f;
-	lights[0].lightColor[2] = 1.0f;
-
-	lights[0].lightPos[0] = 0.0f;
-	lights[0].lightPos[1] = 50.0f;
-	lights[0].lightPos[2] = 0.0f;
-
-	lights[0].lightIntensity = 0.8f;
 	Engine app;
 	try {
 		app.run();
