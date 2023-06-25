@@ -186,12 +186,13 @@ private:
 		}
 	};
 	struct shadowMapDataObject {
-		VkImage shadowMap;
+		VkImage image;
 		VkImageView imageView;
 		VkSampler sampler;
 		VkFramebuffer frameBuffer;
 		VkCommandBuffer cmdBuffer;
-
+		uint32_t mipLevels; // placeholder (not used)
+		VkDeviceMemory memory;
 	};
 
 	struct light { // omnidirectional light
@@ -233,26 +234,15 @@ private:
 		forms::vec3 camAngle; //angle of the camera is facing
 		forms::vec3 camRads;
 	};
-	struct depthShadowMap {
-		VkImage image;
-		VkDeviceMemory imageMemory;
-		VkImageView imageView;
+	struct shadowMapProportionsObject {
 		uint32_t mapWidth = 1024;
 		uint32_t mapHeight = 1024;
 	};
-	struct pipelineDataObject { // used to store the pipeline data that works for multiple pipelines
-		VkPipelineInputAssemblyStateCreateInfo inputAssembly;
-		VkPipelineViewportStateCreateInfo viewportState;
-		VkPipelineRasterizationStateCreateInfo rasterizer;
-		VkPipelineMultisampleStateCreateInfo multisamp;
-	};
-
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	std::vector<light> lights = {};
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
-	depthShadowMap sMap;
-	pipelineDataObject pipelineData;
+	shadowMapProportionsObject shadowProps;
 
 	VkSurfaceKHR surface;
 	GLFWwindow* window;
@@ -843,11 +833,12 @@ private:
 		createDepthImage(depthImage, depthImageMemory, swapChainExtent.width, swapChainExtent.height, depthFormat);
 		depthImageView = createDepthView(depthImage, depthFormat);
 	}
-	void setupShadowMaps() {
-		createDepthImage(sMap.image, sMap.imageMemory, sMap.mapWidth, sMap.mapHeight, VK_FORMAT_D32_SFLOAT);
-		sMap.imageView = createDepthView(sMap.image, VK_FORMAT_D32_SFLOAT);
+
+	void setupShadowMaps() { // initialize the shadow maps for each light
 		for (size_t i = 0; i < lights.size(); i++) {
-			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, sMap.imageView, shadowMapRenderPass, sMap.mapWidth, sMap.mapHeight);
+			createDepthImage(lights[i].shadowMapData.image, lights[i].shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, VK_FORMAT_D32_SFLOAT);
+			lights[i].shadowMapData.imageView = createDepthView(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT);
+			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
 
@@ -1253,12 +1244,12 @@ private:
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
-		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightSize, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool4 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-		descriptorPool5 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightSize);
+		descriptorPool5 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1424,8 +1415,9 @@ private:
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
 	}
 
-	void createTS(Texture& tex, bool doMipmap, std::string type = "tex") { //create texture samplers for
-		VkSamplerCreateInfo samplerInf{}; // create sampler info
+	template<typename T>
+	void createTS(T& tex, bool doMipmap, std::string type = "tex") {
+		VkSamplerCreateInfo samplerInf{};
 		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
 		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
@@ -1434,28 +1426,40 @@ private:
 		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
 		samplerInf.maxAnisotropy = 16;
 		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerInf.unnormalizedCoordinates = VK_FALSE; // enable normalized coordinates
-		samplerInf.compareEnable = VK_FALSE; // compare enable (for shadow mapping)
-		samplerInf.compareOp = VK_COMPARE_OP_ALWAYS; // comparison operation result is always VK_TRUE
+		samplerInf.unnormalizedCoordinates = VK_FALSE;
+		if (type == "shadow") {
+			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerInf.compareEnable = VK_TRUE;
+			samplerInf.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+			samplerInf.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
+		}
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
 		samplerInf.maxLod = doMipmap ? static_cast<float>(tex.mipLevels) : 1;
-		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) { // create sampler
+		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture sampler!");
 		}
 	}
-	void createTextureImgView(Texture& tex, bool doMipmap, std::string type = "tex") {
+
+	template<typename T>
+	void createTextureImgView(T& tex, bool doMipmap, std::string type = "tex") {
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		if (type != "tex") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_SNORM; //signed format for the normal maps (-1 to 1)
+		if (type == "shadow") {
+			viewInf.format = VK_FORMAT_D32_SFLOAT;
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		}
+		else if (type != "tex") {
+			viewInf.format = VK_FORMAT_R8G8B8A8_SNORM; // for normal maps (signed format)
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else {
-			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for specular and diffuse maps
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for textures like diffuse and specular
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
-		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set aspect mask to color bit
 		viewInf.subresourceRange.baseMipLevel = 0;
 		viewInf.subresourceRange.levelCount = doMipmap ? tex.mipLevels - viewInf.subresourceRange.baseMipLevel : 1; //miplevel is influenced by the base 
 		viewInf.subresourceRange.baseArrayLayer = 0;
@@ -1464,6 +1468,7 @@ private:
 			throw std::runtime_error("failed to create texture image view!");
 		}
 	}
+
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
 		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -1761,7 +1766,6 @@ private:
 		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; //assign the struct type to the input assembly state
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
 		inputAssem.primitiveRestartEnable = VK_FALSE; //if true, then a special index value of 0xFFFF or 0xFFFFFFFF is treated as a restart index
-		pipelineData.inputAssembly = inputAssem;
 
 		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
 		vp.x = 0.0f;
@@ -1782,7 +1786,6 @@ private:
 
 		// copy the viewport state to the heap so it can be used in the pipeline data struct
 		VkPipelineViewportStateCreateInfo* viewportState = new VkPipelineViewportStateCreateInfo(vpState);
-		pipelineData.viewportState = *viewportState;
 
 		//rasterizer setup: Transforms 3D primitives into 3D fragments for display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
@@ -1797,7 +1800,6 @@ private:
 		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
 		rasterizer.depthBiasClamp = 0.0f;
 		rasterizer.depthBiasSlopeFactor = 0.0f;
-		pipelineData.rasterizer = rasterizer;
 
 		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
@@ -1808,7 +1810,6 @@ private:
 		multiSamp.pSampleMask = nullptr; //array of sample mask values
 		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, blending semi-transparent pixels based on alpha values
 		multiSamp.alphaToOneEnable = VK_FALSE; //used for testing right alpha values
-		pipelineData.multisamp = multiSamp;
 
 		//depth and stencil testing setup: Allows for fragments to be discarded based on depth and stencil values
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
@@ -1982,25 +1983,49 @@ private:
 		vertexInputInfo.vertexAttributeDescriptionCount = 0;
 		vertexInputInfo.pVertexAttributeDescriptions = nullptr; // no attribute descriptions
 
-		VkViewport shadowViewport{};
-		shadowViewport.x = 0.0f;
-		shadowViewport.y = 0.0f;
-		shadowViewport.width = static_cast<float>(sMap.mapWidth);
-		shadowViewport.height = static_cast<float>(sMap.mapHeight);
-		shadowViewport.minDepth = 0.0f;
-		shadowViewport.maxDepth = 1.0f;
+		VkPipelineInputAssemblyStateCreateInfo inputAssem{};
+		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		inputAssem.primitiveRestartEnable = VK_FALSE;
 
-		VkRect2D shadowScissor{};
+
+		VkViewport shadowVP{}; // shadow viewport
+		shadowVP.x = 0.0f;
+		shadowVP.y = 0.0f;
+		shadowVP.width = static_cast<float>(shadowProps.mapWidth);
+		shadowVP.height = static_cast<float>(shadowProps.mapHeight);
+		shadowVP.minDepth = 0.0f;
+		shadowVP.maxDepth = 1.0f;
+
+		VkRect2D shadowScissor{}; // shadow scissor
 		shadowScissor.offset = { 0, 0 };
-		shadowScissor.extent.width = sMap.mapWidth;
-		shadowScissor.extent.height = sMap.mapHeight;
+		shadowScissor.extent.width = shadowProps.mapWidth;
+		shadowScissor.extent.height = shadowProps.mapHeight;
 
-		VkPipelineViewportStateCreateInfo viewportState{};
-		viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
-		viewportState.viewportCount = 1;
-		viewportState.pViewports = &shadowViewport;
-		viewportState.scissorCount = 1;
-		viewportState.pScissors = &shadowScissor;
+		VkPipelineViewportStateCreateInfo vpState{}; // viewport state
+		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		vpState.viewportCount = 1;
+		vpState.pViewports = &shadowVP;
+		vpState.scissorCount = 1;
+		vpState.pScissors = &shadowScissor;
+
+		VkPipelineRasterizationStateCreateInfo rasterizer{};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE;
+		rasterizer.rasterizerDiscardEnable = VK_FALSE;
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterizer.lineWidth = 1.0f;
+		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_TRUE; // enable depth bias
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
+
+		VkPipelineMultisampleStateCreateInfo multiSamp{};
+		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multiSamp.sampleShadingEnable = VK_FALSE;
+		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
 
 		// creating the depth stencil state
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
@@ -2067,13 +2092,13 @@ private:
 		pipelineInfo.stageCount = 2;
 		pipelineInfo.pStages = stages;
 		pipelineInfo.pVertexInputState = &vertexInputInfo;
-		pipelineInfo.pInputAssemblyState = &pipelineData.inputAssembly;
-		pipelineInfo.pViewportState = &viewportState;
-		pipelineInfo.pRasterizationState = &pipelineData.rasterizer;
-		pipelineInfo.pMultisampleState = &pipelineData.multisamp;
+		pipelineInfo.pInputAssemblyState = &inputAssem;
+		pipelineInfo.pViewportState = &vpState;
+		pipelineInfo.pRasterizationState = &rasterizer;
+		pipelineInfo.pMultisampleState = &multiSamp;
 		pipelineInfo.pDepthStencilState = &dStencil;
 		pipelineInfo.pColorBlendState = &colorBlending;
-		pipelineInfo.layout = pipelineLayout;
+		pipelineInfo.layout = shadowMapPipelineLayout;
 		pipelineInfo.renderPass = shadowMapRenderPass;
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
@@ -2316,6 +2341,9 @@ private:
 
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
+		for (size_t i = 0; i < lights.size(); i++) {
+			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowMapRenderPass, shadowProps.mapWidth, shadowProps.mapHeight);
+		}
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
@@ -2348,7 +2376,7 @@ private:
 			renderPassInfo.renderPass = shadowMapRenderPass;
 			renderPassInfo.framebuffer = light.shadowMapData.frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = { sMap.mapWidth, sMap.mapHeight };
+			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
 
 			std::array<VkClearValue, 1> clearValues{};
 			clearValues[0].depthStencil = { 1.0f, 0 };
@@ -2683,11 +2711,12 @@ private:
 		createVertexBuffer();
 		createIndexBuffer();
 		setupShaders(); //read the shader files and create the shader modules
-		setupDescriptorSets();
 		setupDepthResources();
-		createShadowCommandBuffers();
-		createShadowPipeline(); // pipeline for my shadow maps
 		setupShadowMaps();
+		setupDescriptorSets();
+		createShadowPipeline(); // pipeline for my shadow maps
+		createShadowCommandBuffers();
+
 		createGraphicsPipelineOpaque();
 		imguiSetup();
 		createFrameBuffer();
