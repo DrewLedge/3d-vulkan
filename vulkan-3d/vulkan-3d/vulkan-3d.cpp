@@ -190,7 +190,6 @@ private:
 		VkImageView imageView;
 		VkSampler sampler;
 		VkFramebuffer frameBuffer;
-		VkCommandBuffer cmdBuffer;
 		uint32_t mipLevels; // placeholder (not used)
 		VkDeviceMemory memory;
 	};
@@ -306,6 +305,7 @@ private:
 	VkCommandPool commandPool;
 
 	std::vector<VkCommandBuffer> commandBuffers;
+	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
@@ -892,20 +892,6 @@ private:
 		return imageView;
 	}
 
-	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, VkRenderPass renderPass, uint32_t width, uint32_t height) {
-		VkFramebufferCreateInfo framebufferInfo{};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = renderPass;
-		framebufferInfo.attachmentCount = 1;
-		framebufferInfo.pAttachments = &depthImageView;
-		framebufferInfo.width = width;
-		framebufferInfo.height = height;
-		framebufferInfo.layers = 1;
-
-		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shadow framebuffer!");
-		}
-	}
 
 
 	void createImageViews() { //create the image views for the swap chain images
@@ -1250,7 +1236,7 @@ private:
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
-		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
@@ -1415,6 +1401,8 @@ private:
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
 
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
@@ -1874,7 +1862,7 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4 };
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2091,11 +2079,18 @@ private:
 		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlending.attachmentCount = 0;
 
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4, descriptorSetLayout5 }; // the layout for all of the lights
+		VkPushConstantRange pushConstantRange{};
+		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		pushConstantRange.offset = 0;
+		pushConstantRange.size = sizeof(int);
+
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4 }; // the only descriptorset needed is the lights matrix data
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
+		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipelineLayout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
@@ -2165,7 +2160,6 @@ private:
 	}
 
 	VkCommandPool createCommandPool() {
-		commandBuffers.resize(swapChainImages.size());
 		VkCommandPool cPool;
 		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
@@ -2353,35 +2347,45 @@ private:
 			}
 		}
 	}
+	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, VkRenderPass renderPass, uint32_t width, uint32_t height) {
+		VkFramebufferCreateInfo framebufferInfo{};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = &depthImageView;
+		framebufferInfo.width = width;
+		framebufferInfo.height = height;
+		framebufferInfo.layers = 1;
 
+		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow framebuffer!");
+		}
+	}
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
+		shadowMapCommandBuffers.resize(swapChainImages.size());
 		for (size_t i = 0; i < lights.size(); i++) {
 			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowMapRenderPass, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocInfo.commandPool = commandPool; // This should be your command pool
+		allocInfo.commandPool = commandPool;
 		allocInfo.commandBufferCount = static_cast<uint32_t>(lights.size());
 
-		std::vector<VkCommandBuffer> commandBuffers(lights.size());
-		if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+		if (vkAllocateCommandBuffers(device, &allocInfo, shadowMapCommandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
-		}
-
-		for (size_t i = 0; i < lights.size(); i++) {
-			lights[i].shadowMapData.cmdBuffer = commandBuffers[i];
 		}
 	}
 
 
 	void recordShadowCommandBuffers() {
-		// iterate through each light and record the command buffer
-		for (auto& light : lights) {
+		for (size_t i = 0; i < swapChainImages.size(); i++) {
+			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
+			vkResetCommandBuffer(shadowMapCommandBuffers[i], 0);
 			VkCommandBufferBeginInfo beginInfo{};
 			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			if (vkBeginCommandBuffer(light.shadowMapData.cmdBuffer, &beginInfo) != VK_SUCCESS) {
+			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
 
@@ -2389,7 +2393,7 @@ private:
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = shadowMapRenderPass;
-			renderPassInfo.framebuffer = light.shadowMapData.frameBuffer;
+			renderPassInfo.framebuffer = lights[i].shadowMapData.frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
 
@@ -2398,25 +2402,29 @@ private:
 
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
-			vkCmdBeginRenderPass(light.shadowMapData.cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(light.shadowMapData.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
+			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+			int lightIndex = static_cast<int>(i);
+			vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(int), &lightIndex);
+
+			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
 
 			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
-			VkDescriptorSet dSets[] = { descriptorSets[3], descriptorSets[4] };
-			vkCmdBindDescriptorSets(light.shadowMapData.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descriptorSets[3] };
+			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 1, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
-			for (size_t i = 0; i < objects.size(); ++i) {
-				const auto& object = objects[i];
-				VkBuffer vertexBuffers[] = { vertBuffers[i] };
+			for (size_t j = 0; j < objects.size(); ++j) {
+				const auto& object = objects[j];
+				VkBuffer vertexBuffers[] = { vertBuffers[j] };
 				VkDeviceSize offsets[] = { 0 };
-				vkCmdBindVertexBuffers(light.shadowMapData.cmdBuffer, 0, 1, vertexBuffers, offsets);
-				vkCmdBindIndexBuffer(light.shadowMapData.cmdBuffer, indBuffers[i], 0, VK_INDEX_TYPE_UINT32);
-				vkCmdDrawIndexed(light.shadowMapData.cmdBuffer, static_cast<uint32_t>(object.indices.size()), 1, 0, 0, 0);
+				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffers, offsets);
+				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indBuffers[j], 0, VK_INDEX_TYPE_UINT32);
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(object.indices.size()), 1, 0, 0, 0);
 			}
 
-			vkCmdEndRenderPass(light.shadowMapData.cmdBuffer);
-			if (vkEndCommandBuffer(light.shadowMapData.cmdBuffer) != VK_SUCCESS) {
+
+			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
+			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
 		}
@@ -2473,6 +2481,8 @@ private:
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
 		setupDescriptorSets();
 		vkDestroyImageView(device, depthImageView, nullptr);
 		vkDestroyImage(device, depthImage, nullptr);
@@ -2498,19 +2508,11 @@ private:
 	void submitShadowCommandBuffers() { // submit the shadow command buffers to the queue
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-
-		std::vector<VkCommandBuffer> commandBuffers(lights.size());
-		for (size_t i = 0; i < lights.size(); ++i) {
-			commandBuffers[i] = lights[i].shadowMapData.cmdBuffer;
-		}
-
-		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
-		submitInfo.pCommandBuffers = commandBuffers.data();
-
+		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
+		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit shadow command buffers!");
 		}
-
 		vkQueueWaitIdle(graphicsQueue);
 	}
 
@@ -2520,7 +2522,6 @@ private:
 		uint32_t imageIndex;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-		submitShadowCommandBuffers();
 
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
@@ -2545,6 +2546,7 @@ private:
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
 		submitInf.signalSemaphoreCount = 1; //number of semaphores to signal
 		submitInf.pSignalSemaphores = signalSemaphores; //list of semaphores to signal
+		submitShadowCommandBuffers();
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
@@ -2730,10 +2732,10 @@ private:
 		setupShadowMaps();
 		setupDescriptorSets();
 		createShadowPipeline(); // pipeline for my shadow maps
-		createShadowCommandBuffers();
-
 		createGraphicsPipelineOpaque();
 		imguiSetup();
+		createShadowCommandBuffers();
+		recordShadowCommandBuffers();
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
@@ -2800,8 +2802,9 @@ private:
 	// 18. mip mapping and optimizations (done)
 	// 19. lighting (done)
 	// 20. shadows
-	// 21. skybox
-	// 22. physcics
+	// 21. transfer all indexing code to push constants
+	// 22. skybox
+	// 23. physcics
 };
 int main() {
 	Engine app;

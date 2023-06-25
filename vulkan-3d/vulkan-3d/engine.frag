@@ -4,6 +4,8 @@
 
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
+layout(set = 4, binding = 4) uniform sampler2D shadowMapSamplers[];
+
 struct light {
     vec3 lPos;
     vec3 lColor;
