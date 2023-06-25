@@ -185,11 +185,22 @@ private:
 			std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 		}
 	};
+	struct shadowMapDataObject {
+		VkImage shadowMap;
+		VkImageView shadowMapView;
+		VkSampler shadowMapSampler;
+		VkFramebuffer shadowMapFrameBuffer;
+
+	};
 
 	struct light { // omnidirectional light
 		forms::vec3 lightPos;
 		forms::vec3 lightColor;
 		float lightIntensity;
+		float lightViewProj[16];
+		float modelMatrix[16];
+		float projectionMatrix[16];
+		shadowMapDataObject shadowMapData;
 	};
 
 
@@ -221,7 +232,7 @@ private:
 		forms::vec3 camAngle; //angle of the camera is facing
 		forms::vec3 camRads;
 	};
-	struct shadowMap {
+	struct depthShadowMap {
 		VkImage image;
 		VkDeviceMemory imageMemory;
 		VkImageView imageView;
@@ -239,7 +250,7 @@ private:
 	std::vector<light> lights = {};
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
-	shadowMap sMap;
+	depthShadowMap sMap;
 	pipelineDataObject pipelineData;
 
 	VkSurfaceKHR surface;
@@ -279,6 +290,8 @@ private:
 	VkDescriptorPool descriptorPool3;
 	VkDescriptorSetLayout descriptorSetLayout4;
 	VkDescriptorPool descriptorPool4;
+	VkDescriptorSetLayout descriptorSetLayout5;
+	VkDescriptorPool descriptorPool5;
 
 
 	VkBuffer matrixDataBuffer;
@@ -832,6 +845,9 @@ private:
 	void setupShadowMaps() {
 		createDepthImage(sMap.image, sMap.imageMemory, sMap.mapWidth, sMap.mapHeight, VK_FORMAT_D32_SFLOAT);
 		sMap.imageView = createDepthView(sMap.image, VK_FORMAT_D32_SFLOAT);
+		for (size_t i = 0; i < lights.size(); i++) {
+			createShadowFramebuffer(lights[i].shadowMapData.shadowMapFrameBuffer, sMap.imageView, shadowMapRenderPass, sMap.mapWidth, sMap.mapHeight);
+		}
 	}
 
 	void createDepthImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format) { //create the depth image and allocate memory for it
@@ -883,6 +899,23 @@ private:
 
 		return imageView;
 	}
+
+	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, VkRenderPass renderPass, uint32_t width, uint32_t height) {
+		VkFramebufferCreateInfo framebufferInfo{};
+		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.attachmentCount = 1;
+		framebufferInfo.pAttachments = &depthImageView;
+		framebufferInfo.width = width;
+		framebufferInfo.height = height;
+		framebufferInfo.layers = 1;
+
+		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow framebuffer!");
+		}
+	}
+
+
 	void createImageViews() { //create the image views for the swap chain images
 		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
@@ -1136,6 +1169,14 @@ private:
 		}
 		return allTextures;
 	}
+	std::vector<shadowMapDataObject> getAllShadowMaps() {
+		std::vector<shadowMapDataObject>allMaps;
+		allMaps.reserve(lights.size());
+		for (const auto& light : lights) {
+			allMaps.push_back(light.shadowMapData);
+		}
+		return allMaps;
+	}
 	std::vector<Materials> getAllMaterials() {
 		std::vector<Materials> allMaterials;
 
@@ -1203,26 +1244,29 @@ private:
 
 
 	void createDS() {
-		descriptorSets.resize(4);
+		descriptorSets.resize(5);
+		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
 		//initialize descriptor set layouts and pools
 		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT);
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
+		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
+		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightSize, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool4 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+		descriptorPool5 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightSize);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1; // 1 because we are allocating 1 descriptor set at a time
 
-		std::array<VkDescriptorSetLayout, 4> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4 };
-		std::array<VkDescriptorPool, 4> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4 };
+		std::array<VkDescriptorSetLayout, 5> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4,descriptorSetLayout5 };
+		std::array<VkDescriptorPool, 5> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5 };
 
-		std::array<uint32_t, 4> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1 };
+		std::array<uint32_t, 5> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1,lightSize };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -1244,6 +1288,7 @@ private:
 		setupMatrixUBO(); //create the matrix UBOs for each object
 		setupLighs();
 		std::vector<Texture> textures = getAllTextures(); // iterate through all objects and put all texture data into a vector
+		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
 		setupTexIndices(textures, mats);
 
@@ -1258,6 +1303,12 @@ private:
 			imageInfos[i].imageView = textures[i].imageView;
 			imageInfos[i].sampler = textures[i].sampler;
 		}
+		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
+		for (size_t i = 0; i < lights.size(); i++) {
+			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			shadowInfos[i].imageView = shadowMaps[i].shadowMapView;
+			shadowInfos[i].sampler = shadowMaps[i].shadowMapSampler;
+		}
 
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.buffer = sceneIndexBuffer;
@@ -1269,7 +1320,7 @@ private:
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = sizeof(light) * lights.size();
 
-		std::array<VkWriteDescriptorSet, 4> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, 5> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[0];
@@ -1302,6 +1353,14 @@ private:
 		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
 		descriptorWrites[3].descriptorCount = 1;
 		descriptorWrites[3].pBufferInfo = &lightBufferInfo;
+
+		descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[4].dstSet = descriptorSets[4];
+		descriptorWrites[4].dstBinding = 4;
+		descriptorWrites[4].dstArrayElement = 0;
+		descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[4].descriptorCount = static_cast<uint32_t>(lights.size());
+		descriptorWrites[4].pImageInfo = shadowInfos.data();
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1979,8 +2038,7 @@ private:
 		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlending.attachmentCount = 0;
 
-		/// TODO: finish this
-		VkDescriptorSetLayout setLayouts[0] = {};
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4 }; // the layout for all of the lights
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2518,9 +2576,9 @@ private:
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		setupDepthResources();
+		createShadowPipeline(); // pipeline for my shadow maps
 		setupShadowMaps();
 		createGraphicsPipelineOpaque();
-		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		createFrameBuffer();
 		createCommandBuffer();

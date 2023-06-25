@@ -4,10 +4,13 @@
 
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
-struct light { // omnidirectional light
-	float lPos[3];
-	float lColor[3];
-	float lightIntensity;
+struct light {
+    vec3 lightPos;
+    vec3 lightColor;
+    float lightIntensity;
+    mat4 lightViewProj;
+    mat4 modelMatrix;
+    mat4 projectionMatrix;
 };
 
 layout (set=3, binding = 3) buffer LightBuffer {
