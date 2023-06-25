@@ -2363,7 +2363,7 @@ private:
 	}
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
-		shadowMapCommandBuffers.resize(swapChainImages.size());
+		shadowMapCommandBuffers.resize(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {
 			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowMapRenderPass, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
@@ -2380,11 +2380,14 @@ private:
 
 
 	void recordShadowCommandBuffers() {
-		for (size_t i = 0; i < swapChainImages.size(); i++) {
+		size_t oIdx = 0;
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+		for (size_t i = 0; i < lights.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
 			vkResetCommandBuffer(shadowMapCommandBuffers[i], 0);
-			VkCommandBufferBeginInfo beginInfo{};
-			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -2413,13 +2416,22 @@ private:
 			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 1, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
-			for (size_t j = 0; j < objects.size(); ++j) {
-				const auto& object = objects[j];
-				VkBuffer vertexBuffers[] = { vertBuffers[j] };
-				VkDeviceSize offsets[] = { 0 };
-				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffers, offsets);
-				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indBuffers[j], 0, VK_INDEX_TYPE_UINT32);
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(object.indices.size()), 1, 0, 0, 0);
+			// this is the same code as in recordCommandBuffers()
+			size_t obj_size = objects.size();
+			size_t vertBuffers_size = vertBuffers.size();
+			size_t indBuffers_size = indBuffers.size();
+			VkBuffer vertexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkBuffer indexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkDeviceSize offsets[] = { 0 };
+			for (size_t j = 0; j < obj_size; j++) {
+				oIdx %= obj_size; // if object index > object size, reset to 0
+				vertexBuffersArray[0] = vertBuffers[oIdx];
+				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+				indexBuffersArray[0] = indBuffers[oIdx];
+				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
+				uint32_t objectVertexCount = static_cast<uint32_t>(objects[oIdx].vertices.size());
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(objects[oIdx].indices.size()), 1, 0, 0, 0);
+				oIdx++;
 			}
 
 
@@ -2510,7 +2522,7 @@ private:
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
 		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit shadow command buffers!");
 		}
 		vkQueueWaitIdle(graphicsQueue);
@@ -2522,7 +2534,6 @@ private:
 		uint32_t imageIndex;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
 			vkDeviceWaitIdle(device);
@@ -2546,10 +2557,10 @@ private:
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
 		submitInf.signalSemaphoreCount = 1; //number of semaphores to signal
 		submitInf.pSignalSemaphores = signalSemaphores; //list of semaphores to signal
-		submitShadowCommandBuffers();
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
+		submitShadowCommandBuffers();
 
 		//present the image:
 		VkPresentInfoKHR presentInf{};

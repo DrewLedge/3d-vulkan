@@ -11,7 +11,7 @@ struct light {
     mat4 projectionMatrix;
 };
 
-layout (set=3, binding = 3) buffer LightBuffer {
+layout(std430, binding = 3) buffer LightBuffer {
 	light lights[];
 };
 
