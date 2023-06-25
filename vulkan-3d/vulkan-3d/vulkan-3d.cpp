@@ -199,7 +199,7 @@ private:
 		forms::vec3 lightPos;
 		forms::vec3 lightColor;
 		float lightIntensity;
-		float lightViewProj[16];
+		float viewMatrix[16];
 		float modelMatrix[16];
 		float projectionMatrix[16];
 		shadowMapDataObject shadowMapData;
@@ -1070,13 +1070,19 @@ private:
 	}
 
 	void updateUBO(const camData& cam) {
+		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
-			// live light editing here
+			convertMatrix(forms::mat4::modelMatrix(lights[i].lightPos, forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(1.0f, 1.0f, 1.0f)), lights[i].modelMatrix);
+			convertMatrix(forms::mat4::viewMatrix(lights[i].lightPos, forms::vec3(0.0f, 0.0f, 0.0f)), lights[i].viewMatrix);
+			convertMatrix(forms::mat4::perspective(60.0f, 1.0f, 0.1f, 1000.0f), lights[i].projectionMatrix);
+			lights[i].projectionMatrix[5] *= -1; //flip the y for vulkan
 		}
 		void* lightData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lights), 0, &lightData);
 		memcpy(lightData, lights.data(), sizeof(lights));
 		vkUnmapMemory(device, lightBufferMem);
+
+		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcMatrixes(objects[i]);
 
@@ -1976,12 +1982,21 @@ private:
 		bindDesc.binding = 0;
 		bindDesc.stride = sizeof(light);
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+		std::array<VkVertexInputAttributeDescription, 1> attrDesc; // array of attribute descriptions
+
+		// vertex position attribute
+		attrDesc[0].binding = 0;
+		attrDesc[0].location = 0;
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
+		attrDesc[0].offset = offsetof(Vertex, pos);
+
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		vertexInputInfo.vertexBindingDescriptionCount = 1;
 		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
-		vertexInputInfo.vertexAttributeDescriptionCount = 0;
-		vertexInputInfo.pVertexAttributeDescriptions = nullptr; // no attribute descriptions
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssem{};
 		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2783,10 +2798,10 @@ private:
 	// 16. descriptor sett (done)
 	// 17. convert to 3d  (done)
 	// 18. mip mapping and optimizations (done)
-	// 19. lighting
+	// 19. lighting (done)
 	// 20. shadows
 	// 21. skybox
-	// 22. collision detection
+	// 22. physcics
 };
 int main() {
 	Engine app;

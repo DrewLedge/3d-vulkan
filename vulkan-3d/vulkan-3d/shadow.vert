@@ -2,14 +2,26 @@
 
 layout (location = 0) in vec3 inPosition;
 
-layout (binding = 0) uniform UBO {
-    mat4 lightViewProj; // light space view projection matrix
-} ubo;
+struct light {
+    vec3 lPos;
+    vec3 lColor;
+    float lightIntensity;
+    mat4 viewMatrix;
+    mat4 modelMatrix;
+    mat4 projectionMatrix;
+};
+layout (set=3, binding = 3) buffer LightBuffer {
+	light lights[];
+};
 
 layout (location = 0) out vec4 fragPosLightSpace;
 
 void main() {
-    fragPosLightSpace = ubo.lightViewProj * vec4(inPosition, 1.0);
+if (lights.length() >= 1) {
+ for (int i = 0; i < lights.length(); i++){ 
+    fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * vec4(inPosition, 1.0);
     gl_Position = fragPosLightSpace;
+}
+}
 }
 

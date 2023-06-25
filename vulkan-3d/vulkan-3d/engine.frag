@@ -5,10 +5,10 @@
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
 struct light {
-    vec3 lightPos;
-    vec3 lightColor;
+    vec3 lPos;
+    vec3 lColor;
     float lightIntensity;
-    mat4 lightViewProj;
+    mat4 viewMatrix;
     mat4 modelMatrix;
     mat4 projectionMatrix;
 };
@@ -27,8 +27,10 @@ layout(location = 8) in vec3 inNormal;
 layout(location = 9) in vec3 inViewDir;
 layout(location = 10) in vec3 inCamPos;
 layout(location = 0) out vec4 outColor;
+
 vec3 lightPos;
 vec3 lightColor;
+
 void main() {
 if (lights.length() >= 1) {
     vec4 sampled = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
