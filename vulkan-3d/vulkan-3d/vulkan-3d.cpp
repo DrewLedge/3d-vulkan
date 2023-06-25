@@ -187,9 +187,10 @@ private:
 	};
 	struct shadowMapDataObject {
 		VkImage shadowMap;
-		VkImageView shadowMapView;
-		VkSampler shadowMapSampler;
-		VkFramebuffer shadowMapFrameBuffer;
+		VkImageView imageView;
+		VkSampler sampler;
+		VkFramebuffer frameBuffer;
+		VkCommandBuffer cmdBuffer;
 
 	};
 
@@ -846,7 +847,7 @@ private:
 		createDepthImage(sMap.image, sMap.imageMemory, sMap.mapWidth, sMap.mapHeight, VK_FORMAT_D32_SFLOAT);
 		sMap.imageView = createDepthView(sMap.image, VK_FORMAT_D32_SFLOAT);
 		for (size_t i = 0; i < lights.size(); i++) {
-			createShadowFramebuffer(lights[i].shadowMapData.shadowMapFrameBuffer, sMap.imageView, shadowMapRenderPass, sMap.mapWidth, sMap.mapHeight);
+			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, sMap.imageView, shadowMapRenderPass, sMap.mapWidth, sMap.mapHeight);
 		}
 	}
 
@@ -1306,8 +1307,8 @@ private:
 		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {
 			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = shadowMaps[i].shadowMapView;
-			shadowInfos[i].sampler = shadowMaps[i].shadowMapSampler;
+			shadowInfos[i].imageView = shadowMaps[i].imageView;
+			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
 		VkDescriptorBufferInfo indexBufferInfo{};
@@ -1968,14 +1969,6 @@ private:
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
-		// creating the vertex input state
-		std::array<VkVertexInputAttributeDescription, 1> attrDesc;
-
-		// lights position
-		attrDesc[0].binding = 0;
-		attrDesc[0].location = 0;
-		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for the position
-		attrDesc[0].offset = offsetof(light, lightPos);
 
 		// vertex input setup:
 		VkVertexInputBindingDescription bindDesc{};
@@ -1986,8 +1979,28 @@ private:
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		vertexInputInfo.vertexBindingDescriptionCount = 1;
 		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
-		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
+		vertexInputInfo.vertexAttributeDescriptionCount = 0;
+		vertexInputInfo.pVertexAttributeDescriptions = nullptr; // no attribute descriptions
+
+		VkViewport shadowViewport{};
+		shadowViewport.x = 0.0f;
+		shadowViewport.y = 0.0f;
+		shadowViewport.width = static_cast<float>(sMap.mapWidth);
+		shadowViewport.height = static_cast<float>(sMap.mapHeight);
+		shadowViewport.minDepth = 0.0f;
+		shadowViewport.maxDepth = 1.0f;
+
+		VkRect2D shadowScissor{};
+		shadowScissor.offset = { 0, 0 };
+		shadowScissor.extent.width = sMap.mapWidth;
+		shadowScissor.extent.height = sMap.mapHeight;
+
+		VkPipelineViewportStateCreateInfo viewportState{};
+		viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		viewportState.viewportCount = 1;
+		viewportState.pViewports = &shadowViewport;
+		viewportState.scissorCount = 1;
+		viewportState.pScissors = &shadowScissor;
 
 		// creating the depth stencil state
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
@@ -2038,7 +2051,7 @@ private:
 		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlending.attachmentCount = 0;
 
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4 }; // the layout for all of the lights
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4, descriptorSetLayout5 }; // the layout for all of the lights
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2055,7 +2068,7 @@ private:
 		pipelineInfo.pStages = stages;
 		pipelineInfo.pVertexInputState = &vertexInputInfo;
 		pipelineInfo.pInputAssemblyState = &pipelineData.inputAssembly;
-		pipelineInfo.pViewportState = &pipelineData.viewportState;
+		pipelineInfo.pViewportState = &viewportState;
 		pipelineInfo.pRasterizationState = &pipelineData.rasterizer;
 		pipelineInfo.pMultisampleState = &pipelineData.multisamp;
 		pipelineInfo.pDepthStencilState = &dStencil;
@@ -2241,8 +2254,8 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
 
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3] };
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4] };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, dSets, 0, nullptr);
 
 			size_t obj_size = objects.size();
 			size_t vertBuffers_size = vertBuffers.size();
@@ -2300,6 +2313,74 @@ private:
 			}
 		}
 	}
+
+
+	void createShadowCommandBuffers() { // create a command buffer for each light
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandPool = commandPool; // This should be your command pool
+		allocInfo.commandBufferCount = static_cast<uint32_t>(lights.size());
+
+		std::vector<VkCommandBuffer> commandBuffers(lights.size());
+		if (vkAllocateCommandBuffers(device, &allocInfo, commandBuffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers!");
+		}
+
+		for (size_t i = 0; i < lights.size(); i++) {
+			lights[i].shadowMapData.cmdBuffer = commandBuffers[i];
+		}
+	}
+
+
+	void recordShadowCommandBuffers() {
+		// iterate through each light and record the command buffer
+		for (auto& light : lights) {
+			VkCommandBufferBeginInfo beginInfo{};
+			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+			if (vkBeginCommandBuffer(light.shadowMapData.cmdBuffer, &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording command buffer!");
+			}
+
+			// render pass
+			VkRenderPassBeginInfo renderPassInfo{};
+			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassInfo.renderPass = shadowMapRenderPass;
+			renderPassInfo.framebuffer = light.shadowMapData.frameBuffer;
+			renderPassInfo.renderArea.offset = { 0, 0 };
+			renderPassInfo.renderArea.extent = { sMap.mapWidth, sMap.mapHeight };
+
+			std::array<VkClearValue, 1> clearValues{};
+			clearValues[0].depthStencil = { 1.0f, 0 };
+
+			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+			renderPassInfo.pClearValues = clearValues.data();
+			vkCmdBeginRenderPass(light.shadowMapData.cmdBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+			vkCmdBindPipeline(light.shadowMapData.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
+
+			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
+			VkDescriptorSet dSets[] = { descriptorSets[3], descriptorSets[4] };
+			vkCmdBindDescriptorSets(light.shadowMapData.cmdBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 4, dSets, 0, nullptr);
+
+			// iterate through all objects that cast shadows
+			for (size_t i = 0; i < objects.size(); ++i) {
+				const auto& object = objects[i];
+				VkBuffer vertexBuffers[] = { vertBuffers[i] };
+				VkDeviceSize offsets[] = { 0 };
+				vkCmdBindVertexBuffers(light.shadowMapData.cmdBuffer, 0, 1, vertexBuffers, offsets);
+				vkCmdBindIndexBuffer(light.shadowMapData.cmdBuffer, indBuffers[i], 0, VK_INDEX_TYPE_UINT32);
+				vkCmdDrawIndexed(light.shadowMapData.cmdBuffer, static_cast<uint32_t>(object.indices.size()), 1, 0, 0, 0);
+			}
+
+			vkCmdEndRenderPass(light.shadowMapData.cmdBuffer);
+			if (vkEndCommandBuffer(light.shadowMapData.cmdBuffer) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer!");
+			}
+		}
+	}
+
+
+
 	void createFrameBuffer() {
 		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
 		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
@@ -2370,10 +2451,34 @@ private:
 		}
 		vkDestroySwapchainKHR(device, swapChain, nullptr);
 	}
+
+	void submitShadowCommandBuffers() { // submit the shadow command buffers to the queue
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+
+		std::vector<VkCommandBuffer> commandBuffers(lights.size());
+		for (size_t i = 0; i < lights.size(); ++i) {
+			commandBuffers[i] = lights[i].shadowMapData.cmdBuffer;
+		}
+
+		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBuffers.size());
+		submitInfo.pCommandBuffers = commandBuffers.data();
+
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit shadow command buffers!");
+		}
+
+		vkQueueWaitIdle(graphicsQueue);
+	}
+
+
+
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+		submitShadowCommandBuffers();
+
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
 			vkDeviceWaitIdle(device);
@@ -2383,6 +2488,7 @@ private:
 		else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
+
 		//submit the command buffer:
 		VkSubmitInfo submitInf{};
 		submitInf.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -2399,6 +2505,7 @@ private:
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
+
 		//present the image:
 		VkPresentInfoKHR presentInf{};
 		presentInf.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
@@ -2410,6 +2517,7 @@ private:
 		presentInf.pImageIndices = &imageIndex; //index of image in swap chain to present
 		presentInf.pResults = nullptr; //optional array to receive results of each swap chain's presentation
 		result = vkQueuePresentKHR(presentQueue, &presentInf);
+
 		//check if the swap chain is out of date (window was resized, etc):
 		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
 			vkDeviceWaitIdle(device);
@@ -2438,6 +2546,7 @@ private:
 		createIndexBuffer();
 		createVertexBuffer();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
+		recordShadowCommandBuffers();
 	}
 
 	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
@@ -2576,6 +2685,7 @@ private:
 		setupShaders(); //read the shader files and create the shader modules
 		setupDescriptorSets();
 		setupDepthResources();
+		createShadowCommandBuffers();
 		createShadowPipeline(); // pipeline for my shadow maps
 		setupShadowMaps();
 		createGraphicsPipelineOpaque();
