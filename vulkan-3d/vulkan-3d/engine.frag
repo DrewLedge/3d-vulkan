@@ -40,18 +40,23 @@ layout(location = 0) out vec4 outColor;
 
 vec3 lightDirection;
 
-float shadowPCF(int lightIndex, vec4 fragPosLightSpace) { // get the PCF shadow factor (used for softer shadows)
-    // define a 5x5 PCF kernel
+float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get the PCF shadow factor (used for softer shadows)
+    int halfSize = kernelSize / 2;
+
+    // get the PCF shadow factor (used for softer shadows)
     float shadow = 0.0; // start at 0
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w; // divide by w component
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0); // get the size of a texel from the reciprocal of the shadow map's dimensions
-    for(int x = -2; x <= 2; ++x) { // loop through the kernel
-        for(int y = -2; y <= 2; ++y) { 
-            float pcfDepth = texture(shadowMapSamplers[lightIndex], projCoords.xy + vec2(x, y) * texelSize).r;  // get the depth value of the current fragment
+
+    // loop through the kernel
+    for(int x = -halfSize; x <= halfSize; ++x) {
+        for(int y = -halfSize; y <= halfSize; ++y) {
+           float pcfDepth = textureProj(shadowMapSamplers[lightIndex], vec4(projCoords.xy, fragPosLightSpace.z / fragPosLightSpace.w, 1.0)).r; // get the depth value of the current fragment
             shadow += fragPosLightSpace.z > pcfDepth ? 1.0 : 0.0; // calculate if the fragment is in a shadow
-        }    
+        }
     }
-    shadow /= 25.0; // divide by number of samples
+
+    shadow /= float(kernelSize * kernelSize); // divide by number of samples
     return shadow;
 }
 
@@ -78,7 +83,7 @@ if (lights.length() >= 1) {
 
         // shadow factor computation:
         vec4 fragPosLightSpace = lights[i].viewMatrix * lights[i].modelMatrix * vec4(inFragPos, 1.0); // the position of the fragment in light space
-        float shadowFactor = shadowPCF(i, fragPosLightSpace);
+        float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
 
         // blinn-Phong lighting model:
         float diff = max(dot(normal, lightDirection), 0.0); // calculates the cosine of the angle between the normal vector and light direction

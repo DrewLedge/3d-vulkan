@@ -365,11 +365,12 @@ private:
 		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
-	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation) {
+	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation, forms::vec3 pos) {
 		model m;
 		m.pathObj = path;
 		m.scale = scale;
 		m.rotation = rotation;
+		m.position = pos;
 		objects.push_back(m);
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot, float fieldOfView) {
@@ -383,10 +384,9 @@ private:
 	}
 
 	void setupObjects() {
-		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
-		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { -1.0f, 0.0f, 0.0f }, 90);
-		createLight({ -100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 1.0f, 0.0f, 0.0f }, 90);
+		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.3f, { -1.0f, 0.0f, 0.0f }, 190);
 	}
 
 	void createInstance() {
@@ -1402,19 +1402,15 @@ private:
 		}
 		createDS(); //create the descriptor set
 	}
-
-	void realtimeLoad(std::string p) {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		model m = objects[1];
-		forms::mat4 test;
+	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec3 rotation) {
+		model m = objects[object];
 
 		// convert the CamPos to World Space
-		forms::vec3 worldPos = { 0.0f, 0.0f, 0.0f };
-		worldPos = forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos);
-		m.scale = { 0.01f, 0.01f, 0.01f };
-		forms::vec3 fac = 0.1f / m.scale;
-		m.position = worldPos * fac;
+		forms::vec3 fac = 0.1f / scale;
+		m.scale = scale;
+		m.position = pos * fac;
 		m.startObj = false;
+		m.rotation = rotation;
 		uint32_t objSize = static_cast<uint32_t>(objects.size());
 		uint32_t texInd = -1;
 
@@ -1437,11 +1433,17 @@ private:
 
 		//create the model and reset the descriptor sets
 		objects.push_back(m);
+	}
+
+	void realtimeLoad(std::string p) {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		model m = objects[1];
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
-		std::cout << "Current Object Count: " << objSize << std::endl;
+		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
