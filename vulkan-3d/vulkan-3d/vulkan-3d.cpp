@@ -386,6 +386,7 @@ private:
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { -1.0f, 0.0f, 0.0f }, 90);
+		createLight({ -100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 1.0f, 0.0f, 0.0f }, 90);
 	}
 
 	void createInstance() {
@@ -1440,7 +1441,6 @@ private:
 		setupShadowMaps();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
-		createShadowPipeline();
 		std::cout << "Current Object Count: " << objSize << std::endl;
 	}
 	void cleanupDS() {
@@ -2395,10 +2395,10 @@ private:
 			}
 		}
 	}
-	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, VkRenderPass renderPass, uint32_t width, uint32_t height) {
+	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, uint32_t width, uint32_t height) {
 		VkFramebufferCreateInfo framebufferInfo{};
 		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = renderPass;
+		framebufferInfo.renderPass = shadowMapRenderPass;
 		framebufferInfo.attachmentCount = 1;
 		framebufferInfo.pAttachments = &depthImageView;
 		framebufferInfo.width = width;
@@ -2413,7 +2413,7 @@ private:
 	void createShadowCommandBuffers() { // create a command buffer for each light
 		shadowMapCommandBuffers.resize(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {
-			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowMapRenderPass, shadowProps.mapWidth, shadowProps.mapHeight);
+			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -2574,8 +2574,6 @@ private:
 		}
 		vkQueueWaitIdle(graphicsQueue);
 	}
-
-
 
 	void drawF() { //draw frame function
 		uint32_t imageIndex;
@@ -2792,6 +2790,7 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		createGraphicsPipelineOpaque();
 		imguiSetup();
+		finishStartup();
 		createShadowCommandBuffers();
 		recordShadowCommandBuffers();
 		createFrameBuffer();
@@ -2799,6 +2798,13 @@ private:
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
+	void finishStartup() { // shadowmaps need to be recreated after the normal pipe is created for accuracy
+		updateUBO(cam);
+		cleanupDS();
+		setupShadowMaps();
+		setupDescriptorSets();
+	}
+
 	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);

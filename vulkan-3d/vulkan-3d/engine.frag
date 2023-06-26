@@ -40,7 +40,23 @@ layout(location = 0) out vec4 outColor;
 
 vec3 lightDirection;
 
+float shadowPCF(int lightIndex, vec4 fragPosLightSpace) { // get the PCF shadow factor (used for softer shadows)
+    // define a 5x5 PCF kernel
+    float shadow = 0.0; // start at 0
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w; // divide by w component
+    vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0); // get the size of a texel from the reciprocal of the shadow map's dimensions
+    for(int x = -2; x <= 2; ++x) { // loop through the kernel
+        for(int y = -2; y <= 2; ++y) { 
+            float pcfDepth = texture(shadowMapSamplers[lightIndex], projCoords.xy + vec2(x, y) * texelSize).r;  // get the depth value of the current fragment
+            shadow += fragPosLightSpace.z > pcfDepth ? 1.0 : 0.0; // calculate if the fragment is in a shadow
+        }    
+    }
+    shadow /= 25.0; // divide by number of samples
+    return shadow;
+}
+
 void main() {
+float shinyness=32.0f;
 if (lights.length() >= 1) {
     vec4 sampled = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
     vec4 sampledSpec = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
@@ -58,19 +74,18 @@ if (lights.length() >= 1) {
         vec3 lightColor = vec3(lights[i].lColor.x, lights[i].lColor.y, lights[i].lColor.z);
 
         // directional lighting:
-       vec3 lightDirection = normalize(-lightPos);
-
+        vec3 lightDirection = normalize(-lightPos);
 
         // shadow factor computation:
         vec4 fragPosLightSpace = lights[i].viewMatrix * lights[i].modelMatrix * vec4(inFragPos, 1.0); // the position of the fragment in light space
-        float shadowFactor = textureProj(shadowMapSamplers[i], fragPosLightSpace); 
+        float shadowFactor = shadowPCF(i, fragPosLightSpace);
 
         // blinn-Phong lighting model:
-        float diff = max(dot(normal, lightDirection), 0.0); // represents the amount of light hitting the surface from that direction
+        float diff = max(dot(normal, lightDirection), 0.0); // calculates the cosine of the angle between the normal vector and light direction
         diffuse += lightColor * diff * lights[i].lightIntensity * shadowFactor; // modulate with shadow factor
 
-        vec3 halfwayDir = normalize(lightDirection + inViewDir); 
-        float spec = pow(max(dot(normal, halfwayDir), 0.0), 32.0); 
+        vec3 halfwayDir = normalize(lightDirection + inViewDir); // normalized vector that's halfway between the light direction and the view direction.
+        float spec = pow(max(dot(normal, halfwayDir), 0.0), shinyness); //get the cos of the angle between the surface normal and the halfway direction and raise it to the power of 32
         specular += lightColor * sampledSpec.rgb * spec * lights[i].lightIntensity * shadowFactor; // adds the specular component to the final color and modulates with shadow factor
     }
 
