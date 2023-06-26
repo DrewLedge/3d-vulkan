@@ -386,9 +386,6 @@ private:
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { -1.0f, 0.0f, 0.0f }, 90);
-		createLight({ -100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 1.0f, 0.0f, 0.0f }, 90);
-		createLight({ 0.0f, 100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 0.0f, -1.0f, 0.0f }, 90);
-		createLight({ 0.0f, -100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 0.0f, 1.0f, 0.0f }, 90);
 	}
 
 	void createInstance() {
@@ -848,6 +845,46 @@ private:
 			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) { // only used for depth images for now
+		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+
+		VkImageMemoryBarrier barrier{};
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.oldLayout = oldLayout;
+		barrier.newLayout = newLayout;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = image;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		barrier.subresourceRange.baseMipLevel = 0; // no mipmapping for depth images
+		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseArrayLayer = 0;
+		barrier.subresourceRange.layerCount = 1;
+
+		// earliest stage in the pipeline that will wait on the barrier to be passed
+		VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+		VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+
+		if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) { // if we are transitioning to a depth attachment
+			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) { // if we are transitioning to a shader read only layout for the shaders
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+		else {
+			throw std::invalid_argument("Unsupported layout transition!");
+		}
+
+		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
+
+		endSingleTimeCommands(commandBuffer, commandPool);
+	}
+
+
 
 	void createDepthImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format) { //create the depth image and allocate memory for it
 		VkImageCreateInfo imageInfo{};
@@ -1400,8 +1437,10 @@ private:
 		//create the model and reset the descriptor sets
 		objects.push_back(m);
 		cleanupDS();
+		setupShadowMaps();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
+		createShadowPipeline();
 		std::cout << "Current Object Count: " << objSize << std::endl;
 	}
 	void cleanupDS() {
@@ -1414,6 +1453,8 @@ private:
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout4, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout5, nullptr);
 	}
 
 	template<typename T>
@@ -1570,7 +1611,7 @@ private:
 			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
 			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED; /// TODO
+			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 			barrier.image = tex.image;
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -2397,7 +2438,7 @@ private:
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-
+			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -2440,6 +2481,7 @@ private:
 
 
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
+			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}

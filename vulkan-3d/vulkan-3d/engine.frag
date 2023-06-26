@@ -58,7 +58,8 @@ if (lights.length() >= 1) {
         vec3 lightColor = vec3(lights[i].lColor.x, lights[i].lColor.y, lights[i].lColor.z);
 
         // directional lighting:
-        lightDirection = normalize(inFragPos - lightPos); 
+       vec3 lightDirection = normalize(-lightPos);
+
 
         // shadow factor computation:
         vec4 fragPosLightSpace = lights[i].viewMatrix * lights[i].modelMatrix * vec4(inFragPos, 1.0); // the position of the fragment in light space
