@@ -194,9 +194,11 @@ private:
 		VkDeviceMemory memory;
 	};
 
-	struct light { // omnidirectional light
+	struct light { // directional light
 		forms::vec3 lightPos;
 		forms::vec3 lightColor;
+		forms::vec3 rotation;
+		float FOV;
 		float lightIntensity;
 		float viewMatrix[16];
 		float modelMatrix[16];
@@ -370,18 +372,23 @@ private:
 		m.rotation = rotation;
 		objects.push_back(m);
 	}
-	void createLight(forms::vec3 pos, forms::vec3 color, float intensity) {
+	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot, float fieldOfView) {
 		light l;
 		l.lightColor = color;
 		l.lightPos = pos;
 		l.lightIntensity = intensity;
+		l.rotation = rot;
+		l.FOV = fieldOfView;
 		lights.push_back(l);
 	}
 
 	void setupObjects() {
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f);
+		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { -1.0f, 0.0f, 0.0f }, 90);
+		createLight({ -100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 1.0f, 0.0f, 0.0f }, 90);
+		createLight({ 0.0f, 100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 0.0f, -1.0f, 0.0f }, 90);
+		createLight({ 0.0f, -100.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.5f, { 0.0f, 1.0f, 0.0f }, 90);
 	}
 
 	void createInstance() {
@@ -1059,8 +1066,8 @@ private:
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			convertMatrix(forms::mat4::modelMatrix(lights[i].lightPos, forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(1.0f, 1.0f, 1.0f)), lights[i].modelMatrix);
-			convertMatrix(forms::mat4::viewMatrix(lights[i].lightPos, forms::vec3(0.0f, 0.0f, 0.0f)), lights[i].viewMatrix);
-			convertMatrix(forms::mat4::perspective(60.0f, 1.0f, 0.1f, 1000.0f), lights[i].projectionMatrix);
+			convertMatrix(forms::mat4::viewMatrix(lights[i].lightPos, lights[i].rotation), lights[i].viewMatrix);
+			convertMatrix(forms::mat4::perspective(lights[i].FOV, static_cast<float> (shadowProps.mapWidth / shadowProps.mapHeight), 0.1f, 1000.0f), lights[i].projectionMatrix);
 			lights[i].projectionMatrix[5] *= -1; //flip the y for vulkan
 		}
 		void* lightData;
@@ -1968,7 +1975,7 @@ private:
 		// vertex input setup:
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(light);
+		bindDesc.stride = sizeof(Vertex);
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
 		std::array<VkVertexInputAttributeDescription, 1> attrDesc; // array of attribute descriptions
@@ -2380,13 +2387,12 @@ private:
 
 
 	void recordShadowCommandBuffers() {
-		size_t oIdx = 0;
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < lights.size(); i++) {
-			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
+			vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 			vkResetCommandBuffer(shadowMapCommandBuffers[i], 0);
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
@@ -2424,14 +2430,12 @@ private:
 			VkBuffer indexBuffersArray[1] = { VK_NULL_HANDLE };
 			VkDeviceSize offsets[] = { 0 };
 			for (size_t j = 0; j < obj_size; j++) {
-				oIdx %= obj_size; // if object index > object size, reset to 0
-				vertexBuffersArray[0] = vertBuffers[oIdx];
+				vertexBuffersArray[0] = vertBuffers[j];
 				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
-				indexBuffersArray[0] = indBuffers[oIdx];
+				indexBuffersArray[0] = indBuffers[j];
 				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
-				uint32_t objectVertexCount = static_cast<uint32_t>(objects[oIdx].vertices.size());
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(objects[oIdx].indices.size()), 1, 0, 0, 0);
-				oIdx++;
+				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].vertices.size());
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
 			}
 
 
@@ -2502,6 +2506,7 @@ private:
 		setupDepthResources();
 		createGraphicsPipelineOpaque();
 		createFrameBuffer();
+		recordShadowCommandBuffers();
 		recordCommandBuffers();
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
@@ -2522,7 +2527,7 @@ private:
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
 		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, nullptr) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit shadow command buffers!");
 		}
 		vkQueueWaitIdle(graphicsQueue);
@@ -2535,7 +2540,7 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
-		if (result == VK_ERROR_OUT_OF_DATE_KHR) { //fix
+		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
 			return;
@@ -2601,8 +2606,8 @@ private:
 		}
 		createIndexBuffer();
 		createVertexBuffer();
-		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 		recordShadowCommandBuffers();
+		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
 
 	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
@@ -2814,8 +2819,9 @@ private:
 	// 19. lighting (done)
 	// 20. shadows
 	// 21. transfer all indexing code to push constants
-	// 22. skybox
-	// 23. physcics
+	// 22. omnidirectional lighting using cubemaps
+	// 23. skybox
+	// 24. physcics
 };
 int main() {
 	Engine app;
