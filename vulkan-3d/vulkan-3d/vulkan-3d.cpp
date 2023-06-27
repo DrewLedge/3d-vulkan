@@ -239,6 +239,15 @@ private:
 		uint32_t mapWidth = 1024;
 		uint32_t mapHeight = 1024;
 	};
+
+	struct bufData {
+		uint32_t vertexOffset;
+		uint32_t vertexCount;
+		uint32_t indexOffset;
+		uint32_t indexCount;
+	};
+
+	std::vector<bufData> bufferData;
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	std::vector<light> lights = {};
 	std::vector<model> objects = { };
@@ -312,10 +321,10 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 
-	std::vector<VkBuffer> vertBuffers;
-	std::vector<VkDeviceMemory> vertBufferMems;
-	std::vector<VkBuffer> indBuffers;
-	std::vector<VkDeviceMemory> indBufferMems;
+	VkBuffer vertBuffer;
+	VkDeviceMemory vertBufferMem;
+	VkBuffer indBuffer;
+	VkDeviceMemory indBufferMem;
 
 	uint32_t fps;
 	ImFont* font_small;
@@ -383,7 +392,7 @@ private:
 		lights.push_back(l);
 	}
 
-	void setupObjects() {
+	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.3f, { -1.0f, 0.0f, 0.0f }, 190);
@@ -450,6 +459,7 @@ private:
 		std::cout << "Max Vertex Input Bindings: " << deviceProperties.limits.maxVertexInputBindings << std::endl;
 		std::cout << "Max Vertex Input Attribute Offset: " << deviceProperties.limits.maxVertexInputAttributeOffset << std::endl;
 		std::cout << "Max Vertex Input Binding Stride: " << deviceProperties.limits.maxVertexInputBindingStride << std::endl;
+		std::cout << "Max Vertex Output Components: " << deviceProperties.limits.maxVertexOutputComponents << std::endl;
 		std::cout << "---------------------------------" << std::endl;
 	}
 
@@ -1008,7 +1018,7 @@ private:
 		memcpy(data, &matData, bufferCreateInfo.size);
 		vkUnmapMemory(device, matrixDataBufferMem);
 	}
-	void setupLighs() {
+	void setupLights() {
 		VkBufferCreateInfo bufferCreateInfo = {};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(light) * lights.size();
@@ -1315,7 +1325,7 @@ private:
 
 
 		setupMatrixUBO(); //create the matrix UBOs for each object
-		setupLighs();
+		setupLights();
 		std::vector<Texture> textures = getAllTextures(); // iterate through all objects and put all texture data into a vector
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
@@ -2245,71 +2255,77 @@ private:
 		}
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
-	void createVertexBuffer() {
-		vertBuffers.resize(objects.size());
-		vertBufferMems.resize(objects.size());
-		for (size_t i = 0; i < objects.size(); i++) {
-			VkDeviceSize bufferSize = sizeof(Vertex) * objects[i].vertices.size(); //size of the buffer. formula is: size of the data * number of vertices
-			VkBufferCreateInfo bufferInf{};
-			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferInf.size = bufferSize; //size of the buffer
-			bufferInf.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT; //buffer will be used as a vertex buffer
-			bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
-			if (vkCreateBuffer(device, &bufferInf, nullptr, &vertBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create vertex buffer!");
-			}
-			VkMemoryRequirements memRequirements;
-			vkGetBufferMemoryRequirements(device, vertBuffers[i], &memRequirements); //get the memory requirements for the vertex buffer
-			VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
-			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocInf.allocationSize = memRequirements.size;
 
-			//params are: memory requirements, properties of the memory, and the memory type we are looking for
-			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //bitwise OR the memory properties to find the memory type
-			if (vkAllocateMemory(device, &allocInf, nullptr, &vertBufferMems[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to allocate vertex buffer memory!");
-			}
-			vkBindBufferMemory(device, vertBuffers[i], vertBufferMems[i], 0); //bind the vertex buffer to the vertex buffer memory
-			void* data;
-			vkMapMemory(device, vertBufferMems[i], 0, bufferSize, 0, &data);
-			memcpy(data, objects[i].vertices.data(), bufferSize);
-			vkUnmapMemory(device, vertBufferMems[i]);
+	void createBuffers() {
+		bufferData.resize(objects.size());
+		VkDeviceSize totalVertexBufferSize = 0;
+		VkDeviceSize totalIndexBufferSize = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			totalVertexBufferSize += sizeof(Vertex) * objects[i].vertices.size();
+			totalIndexBufferSize += sizeof(uint32_t) * objects[i].indices.size();
 		}
+
+		createBuffer(totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertBuffer, vertBufferMem); // create the combined vertex buffer
+
+		char* vertexData;
+		vkMapMemory(device, vertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData)); // fill vertex buffer and save object data
+		VkDeviceSize currentVertexOffset = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			bufferData[i].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
+			bufferData[i].vertexCount = static_cast<uint32_t>(objects[i].vertices.size());
+			memcpy(vertexData, objects[i].vertices.data(), bufferData[i].vertexCount * sizeof(Vertex));
+			vertexData += bufferData[i].vertexCount * sizeof(Vertex);
+			currentVertexOffset += bufferData[i].vertexCount;
+		}
+
+		vkUnmapMemory(device, vertBufferMem);
+		createBuffer(totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indBuffer, indBufferMem); // create the combined index buffer
+
+		// map index buffer memory into the applications address space and save the pointer in indexData as a void*
+		char* indexData;
+		vkMapMemory(device, indBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+		VkDeviceSize currentIndexOffset = 0;
+
+		// iterate through all objects and copy their index data into the index buffer
+		for (size_t i = 0; i < objects.size(); i++) {
+			bufferData[i].indexOffset = static_cast<uint32_t>(currentIndexOffset);
+			bufferData[i].indexCount = static_cast<uint32_t>(objects[i].indices.size());
+			memcpy(indexData, objects[i].indices.data(), bufferData[i].indexCount * sizeof(uint32_t));
+			indexData += bufferData[i].indexCount * sizeof(uint32_t);
+			currentIndexOffset += bufferData[i].indexCount;
+		}
+
+		vkUnmapMemory(device, indBufferMem);
 	}
-	void createIndexBuffer() {
-		indBuffers.resize(objects.size());
-		indBufferMems.resize(objects.size());
-		for (size_t i = 0; i < objects.size(); i++) {
-			VkDeviceSize bufferSize = sizeof(uint32_t) * objects[i].indices.size(); //size of the buffer. formula is: size of the data * number of indices
-			VkBufferCreateInfo bufferInf{};
-			bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-			bufferInf.size = bufferSize; //size of the buffer
-			bufferInf.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT; //buffer will be used as a index buffer
-			bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE; //buffer will be exclusive to a single queue family at a time
-			if (vkCreateBuffer(device, &bufferInf, nullptr, &indBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create index buffer!");
-			}
-			VkMemoryRequirements memRequirements;
-			vkGetBufferMemoryRequirements(device, indBuffers[i], &memRequirements); //get the memory requirements for the index buffer
-			VkMemoryAllocateInfo allocInf{}; //struct to hold memory allocation info
-			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocInf.allocationSize = memRequirements.size;
 
-			//params are: memory requirements, properties of the memory, and the memory type we are looking for
-			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT); //bitwise OR the memory properties to find the memory type
-			if (vkAllocateMemory(device, &allocInf, nullptr, &indBufferMems[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to allocate index buffer memory!");
-			}
-			vkBindBufferMemory(device, indBuffers[i], indBufferMems[i], 0); //bind the index buffer to the index buffer memory
-			void* data;
-			vkMapMemory(device, indBufferMems[i], 0, bufferSize, 0, &data);
-			memcpy(data, objects[i].indices.data(), bufferSize);
-			vkUnmapMemory(device, indBufferMems[i]);
+
+	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
+		VkBufferCreateInfo bufferInfo{};
+		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferInfo.size = size;
+		bufferInfo.usage = usage;
+		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create buffer!");
 		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
+
+		VkMemoryAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate buffer memory!");
+		}
+
+		vkBindBufferMemory(device, buffer, bufferMemory, 0);
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
-		size_t oIdx = 0; // object index
 		std::array<VkClearValue, 2> clearValues = {
 		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
 		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
@@ -2341,40 +2357,14 @@ private:
 			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4] };
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, dSets, 0, nullptr);
 
-			size_t obj_size = objects.size();
-			size_t vertBuffers_size = vertBuffers.size();
-			size_t indBuffers_size = indBuffers.size();
-			VkBuffer vertexBuffersArray[1] = { VK_NULL_HANDLE };
-			VkBuffer indexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkBuffer vertexBuffersArray[1] = { vertBuffer };
+			VkBuffer indexBuffer = indBuffer;
 			VkDeviceSize offsets[] = { 0 };
-			for (size_t j = 0; j < obj_size; j++) {
-				oIdx %= obj_size; // if object index > object size, reset to 0
-				if (oIdx >= vertBuffers_size) {
-					std::cerr << "Warning: missing vertex buffer for object " << oIdx + 1 << std::endl;
-					oIdx++;
-					continue;
-				}
-				vertexBuffersArray[0] = vertBuffers[oIdx];
-				vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
-				if (oIdx >= indBuffers_size) {
-					std::cerr << "Warning: missing index buffer for object " << oIdx + 1 << std::endl;
-					oIdx++;
-					continue;
-				}
-				indexBuffersArray[0] = indBuffers[oIdx];
-				vkCmdBindIndexBuffer(commandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-				// check object size
-				uint32_t objectVertexCount = static_cast<uint32_t>(objects[oIdx].vertices.size());
-				if (objectVertexCount == 0) {
-					std::cerr << "Warning: object " << oIdx + 1 << " has an invalid size" << std::endl;
-					oIdx++;
-					continue;
-				}
-				vkCmdDrawIndexed(commandBuffers[i], static_cast<uint32_t>(objects[oIdx].indices.size()), 1, 0, 0, 0);
-
-				// increment object index
-				oIdx++;
+			for (size_t j = 0; j < objects.size(); j++) {
+				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
 
 			// prepare for next frame in ImGui:
@@ -2466,21 +2456,15 @@ private:
 
 			// iterate through all objects that cast shadows
 			// this is the same code as in recordCommandBuffers()
-			size_t obj_size = objects.size();
-			size_t vertBuffers_size = vertBuffers.size();
-			size_t indBuffers_size = indBuffers.size();
-			VkBuffer vertexBuffersArray[1] = { VK_NULL_HANDLE };
-			VkBuffer indexBuffersArray[1] = { VK_NULL_HANDLE };
+			VkBuffer vertexBuffersArray[1] = { vertBuffer };
+			VkBuffer indexBuffer = indBuffer;
 			VkDeviceSize offsets[] = { 0 };
-			for (size_t j = 0; j < obj_size; j++) {
-				vertexBuffersArray[0] = vertBuffers[j];
-				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
-				indexBuffersArray[0] = indBuffers[j];
-				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffersArray[0], 0, VK_INDEX_TYPE_UINT32);
-				uint32_t objectVertexCount = static_cast<uint32_t>(objects[j].vertices.size());
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], static_cast<uint32_t>(objects[j].indices.size()), 1, 0, 0, 0);
-			}
+			vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
+			for (size_t j = 0; j < objects.size(); j++) {
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
+			}
 
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
 			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
@@ -2634,20 +2618,11 @@ private:
 
 	void recreateObjectBuffers() {
 		vkDeviceWaitIdle(device);  // wait for all frames to finish
-		for (auto vertBuffer : vertBuffers) {
-			vkDestroyBuffer(device, vertBuffer, nullptr);
-		}
-		for (auto vertBufferMemory : vertBufferMems) {
-			vkFreeMemory(device, vertBufferMemory, nullptr);
-		}
-		for (auto indexBuffer : indBuffers) {
-			vkDestroyBuffer(device, indexBuffer, nullptr);
-		}
-		for (auto indexBufferMemory : indBufferMems) {
-			vkFreeMemory(device, indexBufferMemory, nullptr);
-		}
-		createIndexBuffer();
-		createVertexBuffer();
+		vkDestroyBuffer(device, vertBuffer, nullptr);
+		vkFreeMemory(device, vertBufferMem, nullptr);
+		vkDestroyBuffer(device, indBuffer, nullptr);
+		vkFreeMemory(device, indBufferMem, nullptr);
+		createBuffers();
 		recordShadowCommandBuffers();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
@@ -2772,7 +2747,7 @@ private:
 	}
 
 	void initVulkan() { //initializes Vulkan functions
-		setupObjects();
+		loadUniqueObjects();
 		createInstance();
 		createSurface();
 		pickDevice();
@@ -2783,8 +2758,8 @@ private:
 		createSemaphores();
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
-		createVertexBuffer();
-		createIndexBuffer();
+		testPerformance(200);
+		createBuffers();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDepthResources();
 		setupShadowMaps();
@@ -2805,6 +2780,11 @@ private:
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();
+	}
+	void testPerformance(size_t count) {
+		for (size_t i = 0; i < count; ++i) {
+			cloneObject({ 0.0f,0.0f,0.0f }, 0, { 0.1f,0.1f,0.1f }, { 0.0f, 0.0f, 0.0f });
+		}
 	}
 
 	void cleanup() { //FIX
@@ -2830,12 +2810,10 @@ private:
 		ImGui::DestroyContext();
 
 		// clean up vertex buffer and its memory
-		for (size_t i = 0; i < vertBuffers.size(); i++) {
-			vkDestroyBuffer(device, vertBuffers[i], nullptr);
-		}
-		for (size_t i = 0; i < vertBufferMems.size(); i++) {
-			vkFreeMemory(device, vertBufferMems[i], nullptr);
-		}
+		vkDestroyBuffer(device, vertBuffer, nullptr);
+		vkFreeMemory(device, vertBufferMem, nullptr);
+		vkDestroyBuffer(device, indBuffer, nullptr);
+		vkFreeMemory(device, indBufferMem, nullptr);
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
