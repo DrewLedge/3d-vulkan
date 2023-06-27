@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
+#include "ext/taskflow/taskflow.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -335,6 +336,8 @@ private:
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
 	forms formula;
+
+	// mutexes for multithreading
 	std::mutex modelMtx;
 	std::mutex descMtx;
 
