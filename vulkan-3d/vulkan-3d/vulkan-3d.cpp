@@ -2585,23 +2585,31 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
 
-		//submit the command buffer:
-		VkSubmitInfo submitInf{};
-		submitInf.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		//submit the main command buffers to the queue based off the image index
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
-		submitInf.waitSemaphoreCount = 1;
-		submitInf.pWaitSemaphores = waitSemaphores;
-		submitInf.pWaitDstStageMask = waitStages;
-		submitInf.commandBufferCount = 1;
-		submitInf.pCommandBuffers = &commandBuffers[imageIndex];
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
-		submitInf.signalSemaphoreCount = 1; //number of semaphores to signal
-		submitInf.pSignalSemaphores = signalSemaphores; //list of semaphores to signal
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInf, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		VkSubmitInfo submitInfos[2] = {};
+
+		// first submission (main command buffers)
+		submitInfos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[0].waitSemaphoreCount = 1;
+		submitInfos[0].pWaitSemaphores = waitSemaphores;
+		submitInfos[0].pWaitDstStageMask = waitStages;
+		submitInfos[0].commandBufferCount = 1;
+		submitInfos[0].pCommandBuffers = &commandBuffers[imageIndex];
+		submitInfos[0].signalSemaphoreCount = 1;
+		submitInfos[0].pSignalSemaphores = signalSemaphores;
+
+		// second submission (shadow command buffers)
+		submitInfos[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[1].commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
+		submitInfos[1].pCommandBuffers = shadowMapCommandBuffers.data();
+
+		// submit both command buffers in one call
+		if (vkQueueSubmit(graphicsQueue, 2, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
-		submitShadowCommandBuffers();
 
 		//present the image:
 		VkPresentInfoKHR presentInf{};
@@ -2666,7 +2674,7 @@ private:
 		}
 		ImGui::End();
 	}
-	void calcFps(auto& start, auto& prev, uint8_t frameCount) {
+	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
 		auto endTime = std::chrono::steady_clock::now();
 		auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - start).count();
 		frameCount++;
