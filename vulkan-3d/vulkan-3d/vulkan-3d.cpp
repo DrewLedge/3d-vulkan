@@ -339,7 +339,7 @@ private:
 
 	// mutexes for multithreading
 	std::mutex modelMtx;
-	std::mutex descMtx;
+	std::mutex mtx;
 
 	std::array<float, 3> toArray(const forms::vec3& v) {
 		return { v.x, v.y, v.z };
@@ -725,28 +725,32 @@ private:
 		throw std::runtime_error("failed to find suitable depth format! :(");
 	}
 	void loadModels() {
-		std::vector<std::thread> threads;
+		tf::Executor executor;
+		tf::Taskflow taskFlow;
+
 		uint32_t texInd = 0;
 		uint32_t modInd = 0;
 
-		// parallel loading using multiple threads:
+		// parallel loading using taskflow:
 		for (auto& object : objects) {
 			if (!object.isLoaded) {
-				threads.push_back(std::thread([&]() { // lambda function to create a new thread to load the model
+				auto loadModelTask = taskFlow.emplace([&]() {
 					std::cout << "loading model: " << object.pathObj << std::endl;
 					const std::string& objFilePath = object.pathObj;
-					const std::string& mtl_basepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
+					const std::string& mtlBasepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
 					tinyobj::attrib_t attrib;
 					std::vector<tinyobj::shape_t> shapes;
 					std::vector<tinyobj::material_t> materials;
 					std::string warn, err;
-					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtl_basepath.c_str());
+					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtlBasepath.c_str());
+
 					if (!warn.empty()) {
 						std::cout << "Warning: " << warn << std::endl;
 					}
 					if (!err.empty()) {
 						throw std::runtime_error(err);
 					}
+
 					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 					std::vector<Vertex> tempVertices;
 					std::vector<uint32_t> tempIndices;
@@ -757,9 +761,9 @@ private:
 
 					for (const auto& material : materials) {
 						Materials texture;
-						texture.diffuseTex.path = mtl_basepath + material.diffuse_texname;
-						texture.specularTex.path = mtl_basepath + material.specular_texname;
-						texture.normalMap.path = mtl_basepath + material.bump_texname;
+						texture.diffuseTex.path = mtlBasepath + material.diffuse_texname;
+						texture.specularTex.path = mtlBasepath + material.specular_texname;
+						texture.normalMap.path = mtlBasepath + material.bump_texname;
 
 						//get the texture index for each texture:
 						texture.diffuseTex.texIndex = texInd;
@@ -805,9 +809,15 @@ private:
 							tempIndices.push_back(uniqueVertices[vertex]);
 						}
 					}
+
 					modInd += 1;
 
-					//load texture data
+					modelMtx.lock();
+					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
+					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
+					object.isLoaded = true;
+					modelMtx.unlock();
+
 					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
 						//also create miplmaps for each texture
@@ -825,25 +835,12 @@ private:
 						createTextureImgView(object.materials[i].diffuseTex, true);
 						createTS(object.materials[i].diffuseTex, true);
 					}
+					debugStruct(object);
+					}).name("load_model");
 
-					// batch insert vertices and indices into object:
-					modelMtx.lock();
-					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
-					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
-					object.isLoaded = true;
-					modelMtx.unlock();
-					}));
 			}
 		}
-		for (auto& t : threads) {
-			t.join();
-		}
-
-		for (auto& object : objects) {
-			if (object.isLoaded) {
-				debugStruct(object);
-			}
-		}
+		executor.run(taskFlow).get();
 	}
 
 	void setupDepthResources() {
@@ -1446,30 +1443,6 @@ private:
 
 		//create the model and reset the descriptor sets
 		objects.push_back(m);
-	}
-
-	void realtimeLoad(std::string p) {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
-		cleanupDS();
-		setupShadowMaps();
-		setupDescriptorSets();
-		createGraphicsPipelineOpaque();
-		std::cout << "Current Object Count: " << objects.size() << std::endl;
-	}
-	void cleanupDS() {
-		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
-
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout4, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout5, nullptr);
 	}
 
 	template<typename T>
@@ -2328,6 +2301,39 @@ private:
 		vkBindBufferMemory(device, buffer, bufferMemory, 0);
 	}
 
+	void realtimeLoad(std::string p) {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		model m = objects[1];
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		cleanupDS();
+		setupShadowMaps();
+		setupDescriptorSets();
+		createGraphicsPipelineOpaque();
+		recreateBuffers();
+		std::cout << "Current Object Count: " << objects.size() << std::endl;
+	}
+	void recreateBuffers() {
+		vkDeviceWaitIdle(device);  // wait for all frames to finish
+		vkDestroyBuffer(device, vertBuffer, nullptr);
+		vkFreeMemory(device, vertBufferMem, nullptr);
+		vkDestroyBuffer(device, indBuffer, nullptr);
+		vkFreeMemory(device, indBufferMem, nullptr);
+		createBuffers();
+	}
+	void cleanupDS() {
+		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
+
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout4, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout5, nullptr);
+	}
+
 	void recordCommandBuffers() { //records and submits the command buffers
 		std::array<VkClearValue, 2> clearValues = {
 		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
@@ -2564,7 +2570,8 @@ private:
 		vkQueueWaitIdle(graphicsQueue);
 	}
 
-	void drawF() { //draw frame function
+
+	void drawFrame() { //draw frame function
 		uint32_t imageIndex;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
@@ -2620,12 +2627,6 @@ private:
 	}
 
 	void recreateObjectBuffers() {
-		vkDeviceWaitIdle(device);  // wait for all frames to finish
-		vkDestroyBuffer(device, vertBuffer, nullptr);
-		vkFreeMemory(device, vertBufferMem, nullptr);
-		vkDestroyBuffer(device, indBuffer, nullptr);
-		vkFreeMemory(device, indBufferMem, nullptr);
-		createBuffers();
 		recordShadowCommandBuffers();
 		recordCommandBuffers();  // re-record command buffers to reference the new buffers
 	}
@@ -2665,30 +2666,33 @@ private:
 		}
 		ImGui::End();
 	}
+	void calcFps(auto& start, auto& prev, uint8_t frameCount) {
+		auto endTime = std::chrono::steady_clock::now();
+		auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - start).count();
+		frameCount++;
+		start = endTime;
+
+		auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - prev).count();
+		if (timeSincePrevious >= 100) {
+			fps = static_cast<uint32_t>(std::round(frameCount / (timeSincePrevious / 1000.0f)));
+			frameCount = 0;
+			prev = endTime;
+		}
+	}
 
 	void mainLoop() {
-		int frameCount = 0;
+		uint8_t frameCount = 0;
 		auto startTime = std::chrono::steady_clock::now();
 		auto previousTime = startTime;
 
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
-			drawF();
+			drawFrame();
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
 			handleKeyboardInput(window); // handle keyboard input to change cam position
 			recreateObjectBuffers();
 			updateUBO(cam); // update ubo matrices and populate the buffer
-			auto endTime = std::chrono::steady_clock::now();
-			auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
-			frameCount++;
-			startTime = endTime;
-
-			auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - previousTime).count();
-			if (timeSincePrevious >= 50) {
-				fps = static_cast<uint32_t>(std::round(frameCount / (timeSincePrevious / 1000.0f)));
-				frameCount = 0;
-				previousTime = endTime;
-			}
+			calcFps(startTime, previousTime, frameCount);
 		}
 
 		vkDeviceWaitIdle(device);
