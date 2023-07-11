@@ -2,8 +2,8 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define MAX_TEXTURES 1000 // this number must be the same as in the main code!!!
-#define MAX_MODELS 300
+#define MAX_TEXTURES 4000 // this number must be the same as in the main code!!!
+#define MAX_MODELS 1200
 
 layout(location = 0) in vec3 inPosition; 
 layout(location = 1) in vec3 inColor; 

@@ -27,8 +27,8 @@
 #include <ctime> //random seed based on time
 #include <chrono> // random seed based on time
 #include <cmath>
-#define MAX_TEXTURES 1000 // temp max num of textures and models (used for passing data to shaders)
-#define MAX_MODELS 300
+#define MAX_TEXTURES 4000 // temp max num of textures and models (used for passing data to shaders)
+#define MAX_MODELS 1200
 
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
@@ -206,7 +206,6 @@ private:
 		float projectionMatrix[16];
 		shadowMapDataObject shadowMapData;
 	};
-
 
 	struct matrixUBO {
 		float model[16];
@@ -2773,7 +2772,7 @@ private:
 		createSemaphores();
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
-		testPerformance(200);
+		//testPerformance(1000);
 		createBuffers();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDepthResources();
@@ -2801,7 +2800,6 @@ private:
 			cloneObject({ 0.0f,0.0f,0.0f }, 0, { 0.1f,0.1f,0.1f }, { 0.0f, 0.0f, 0.0f });
 		}
 	}
-
 	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
