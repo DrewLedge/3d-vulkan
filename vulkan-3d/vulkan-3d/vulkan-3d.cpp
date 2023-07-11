@@ -196,11 +196,11 @@ private:
 	};
 
 	struct light { // directional light
-		forms::vec3 lightPos;
-		forms::vec3 lightColor;
-		forms::vec3 rotation;
+		forms::vec3 pos;
+		forms::vec3 col;
+		forms::vec3 rot;
 		float FOV;
-		float lightIntensity;
+		float intensity;
 		float viewMatrix[16];
 		float modelMatrix[16];
 		float projectionMatrix[16];
@@ -386,10 +386,10 @@ private:
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot, float fieldOfView) {
 		light l;
-		l.lightColor = color;
-		l.lightPos = pos;
-		l.lightIntensity = intensity;
-		l.rotation = rot;
+		l.col = color;
+		l.pos = pos;
+		l.intensity = intensity;
+		l.rot = rot;
 		l.FOV = fieldOfView;
 		lights.push_back(l);
 	}
@@ -397,7 +397,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 0.3f, { -1.0f, 0.0f, 0.0f }, 190);
+		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 0.3f, 1.0f }, 0.3f, { 0.0f, 0.0f, 0.0f }, 190);
 	}
 
 	void createInstance() {
@@ -1112,10 +1112,11 @@ private:
 	void updateUBO(const camData& cam) {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
-			convertMatrix(forms::mat4::modelMatrix(lights[i].lightPos, forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(1.0f, 1.0f, 1.0f)), lights[i].modelMatrix);
-			convertMatrix(forms::mat4::viewMatrix(lights[i].lightPos, lights[i].rotation), lights[i].viewMatrix);
+			convertMatrix(forms::mat4::modelMatrix(lights[i].pos, forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(1.0f, 1.0f, 1.0f)), lights[i].modelMatrix);
+			convertMatrix(forms::mat4::viewMatrix(lights[i].pos, lights[i].rot), lights[i].viewMatrix);
 			convertMatrix(forms::mat4::perspective(lights[i].FOV, static_cast<float> (shadowProps.mapWidth / shadowProps.mapHeight), 0.1f, 1000.0f), lights[i].projectionMatrix);
 			lights[i].projectionMatrix[5] *= -1; //flip the y for vulkan
+
 		}
 		void* lightData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lights), 0, &lightData);
@@ -2447,11 +2448,12 @@ private:
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
 
-			std::array<VkClearValue, 1> clearValues{};
-			clearValues[0].depthStencil = { 1.0f, 0 };
+			VkClearValue clearValue = {};
+			clearValue.depthStencil.depth = 1.0f;
+			clearValue.depthStencil.stencil = 0;
 
-			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-			renderPassInfo.pClearValues = clearValues.data();
+			renderPassInfo.clearValueCount = 1;
+			renderPassInfo.pClearValues = &clearValue;
 			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			int lightIndex = static_cast<int>(i);
 			vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(int), &lightIndex);
@@ -2773,6 +2775,7 @@ private:
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
 		//testPerformance(1000);
+		debugLights();
 		createBuffers();
 		setupShaders(); //read the shader files and create the shader modules
 		setupDepthResources();
@@ -2788,6 +2791,12 @@ private:
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
 		std::cout << "Vulkan initialized successfully!" << std::endl;
+	}
+
+	void debugLights() {
+		for (auto& l : lights) {
+			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.rot);
+		}
 	}
 	void finishStartup() { // shadowmaps need to be recreated after the normal pipe is created for accuracy
 		updateUBO(cam);

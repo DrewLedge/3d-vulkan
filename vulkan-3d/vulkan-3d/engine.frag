@@ -82,7 +82,9 @@ if (lights.length() >= 1) {
         vec3 lightDirection = normalize(-lightPos);
 
         // shadow factor computation:
-        vec4 fragPosLightSpace = lights[i].viewMatrix * lights[i].modelMatrix * vec4(inFragPos, 1.0); // the position of the fragment in light space
+        vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * vec4(inFragPos, 1.0); 
+        fragPosLightSpace /= fragPosLightSpace.w; // perspective divide
+
         float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
 
         // blinn-Phong lighting model:
