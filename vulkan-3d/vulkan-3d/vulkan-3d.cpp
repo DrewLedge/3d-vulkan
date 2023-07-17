@@ -193,6 +193,15 @@ private:
 		VkFramebuffer frameBuffer;
 		uint32_t mipLevels; // placeholder (not used)
 		VkDeviceMemory memory;
+
+		shadowMapDataObject() {
+			image = VK_NULL_HANDLE;
+			imageView = VK_NULL_HANDLE;
+			sampler = VK_NULL_HANDLE;
+			frameBuffer = VK_NULL_HANDLE;
+			mipLevels = 0;
+			memory = VK_NULL_HANDLE;
+		}
 	};
 
 	struct light { // directional light
@@ -397,7 +406,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 100.0f, 0.0f, 0.0f }, { 1.0f, 0.3f, 1.0f }, 0.3f, { 0.0f, 0.0f, 0.0f }, 190);
+		createLight({ 0.0f, 0.0f, -100.0f }, { 1.0f, 0.3f, 1.0f }, 0.3f, { 0.0f, 0.0f, 0.0f }, 190);
 	}
 
 	void createInstance() {
@@ -850,8 +859,8 @@ private:
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
 		for (size_t i = 0; i < lights.size(); i++) {
-			createDepthImage(lights[i].shadowMapData.image, lights[i].shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, VK_FORMAT_D32_SFLOAT);
-			lights[i].shadowMapData.imageView = createDepthView(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT);
+			createDepthImage(lights[i].shadowMapData.image, lights[i].shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat);
+			lights[i].shadowMapData.imageView = createDepthView(lights[i].shadowMapData.image, depthFormat);
 			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
@@ -1403,6 +1412,43 @@ private:
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
+
+	void updateShadowDescriptorSets() {
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorPool = descriptorPool5;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pSetLayouts = &descriptorSetLayout5;
+
+		// destroy and recreate descriptor sets related to lights and shadows
+		vkFreeDescriptorSets(device, descriptorPool5, 1, &descriptorSets[4]);
+		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[4]) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate descriptor sets for lights and shadows!");
+		}
+
+		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // Collect all shadow map data
+
+		// prepare image info for shadow maps
+		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
+		for (size_t i = 0; i < lights.size(); i++) {
+			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			shadowInfos[i].imageView = shadowMaps[i].imageView;
+			shadowInfos[i].sampler = shadowMaps[i].sampler;
+		}
+
+		VkWriteDescriptorSet descWrites{};
+		descWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descWrites.dstSet = descriptorSets[4];
+		descWrites.dstBinding = 4; // 4 is for shadow map samplers
+		descWrites.dstArrayElement = 0;
+		descWrites.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		descWrites.descriptorCount = static_cast<uint32_t>(lights.size());
+		descWrites.pImageInfo = shadowInfos.data();
+
+		std::array<VkWriteDescriptorSet, 1> descriptorWritesArray = { descWrites };
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWritesArray.size()), descriptorWritesArray.data(), 0, nullptr);
+	}
+
 
 	void setupDescriptorSets() {
 		descriptorSets.clear();
@@ -2079,7 +2125,7 @@ private:
 
 		// creating the shadow map render pass
 		VkAttachmentDescription depthAttachment{};
-		depthAttachment.format = findDepthFormat();
+		depthAttachment.format = depthFormat;
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2396,24 +2442,28 @@ private:
 			}
 		}
 	}
-	void createShadowFramebuffer(VkFramebuffer& framebuffer, VkImageView depthImageView, uint32_t width, uint32_t height) {
-		VkFramebufferCreateInfo framebufferInfo{};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = shadowMapRenderPass;
-		framebufferInfo.attachmentCount = 1;
-		framebufferInfo.pAttachments = &depthImageView;
-		framebufferInfo.width = width;
-		framebufferInfo.height = height;
-		framebufferInfo.layers = 1;
+	void createShadowFramebuffer(VkFramebuffer& shadowFrameBuf, VkImageView depthIV, uint32_t width, uint32_t height) {
+		VkFramebufferCreateInfo frameBufferInfo{};
+		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		frameBufferInfo.renderPass = shadowMapRenderPass;
+		frameBufferInfo.attachmentCount = 1;
+		frameBufferInfo.pAttachments = &depthIV; // depth image view
+		frameBufferInfo.width = width;
+		frameBufferInfo.height = height;
+		frameBufferInfo.layers = 1;
 
-		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffer) != VK_SUCCESS) {
+		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &shadowFrameBuf) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow framebuffer!");
 		}
 	}
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
 		shadowMapCommandBuffers.resize(lights.size());
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
+			if (lights[i].shadowMapData.frameBuffer != VK_NULL_HANDLE) {
+				vkDestroyFramebuffer(device, lights[i].shadowMapData.frameBuffer, nullptr);
+			}
 			createShadowFramebuffer(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
@@ -2426,9 +2476,18 @@ private:
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
-
+	void recreateShadowMaps() { // will be used when moving lights are implemented (needs HEAVY optimization lol)
+		for (auto& l : lights) {
+			vkDestroyImage(device, l.shadowMapData.image, nullptr);
+			vkDestroyImageView(device, l.shadowMapData.imageView, nullptr);
+		}
+		setupShadowMaps();
+		createShadowCommandBuffers();
+		updateShadowDescriptorSets();
+	}
 
 	void recordShadowCommandBuffers() {
+		//recreateShadowMaps();
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
