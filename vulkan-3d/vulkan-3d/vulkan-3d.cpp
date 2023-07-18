@@ -210,7 +210,6 @@ private:
 		forms::vec3 rot;
 		float baseIntensity;
 		float viewMatrix[16];
-		float modelMatrix[16];
 		float projectionMatrix[16];
 		float innerConeAngle; // in radians
 		float outerConeAngle; // in radians
@@ -1127,25 +1126,23 @@ private:
 	}
 
 	void calcShadowMats(light& l) {
-		forms::vec3 rotRadians = forms::vec3::toRads(l.rot);
+		float nearPlane = 0.1f, farPlane = 200.0f;
 
-		// get the forward, up, and right vectors using the rotation vector
-		forms::vec3 forward = forms::vec3::getForward(rotRadians);
-		forms::vec3 up = forms::vec3::getUp(rotRadians);
-		forms::vec3 right = forms::vec3::getRight(rotRadians);
+		forms::vec3 dir = forms::vec3::getForward(l.rot); // get forward vector (direction) from the light's rotation
+		forms::vec3 target = l.pos + dir;
+		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
 
-		forms::mat4 translationMatrix = forms::mat4::translate(-l.pos.x, -l.pos.y, -l.pos.z);
-		forms::mat4 rotationMatrix = forms::mat4::rotate(forms::vec3::toRads(l.rot) * -1); // takes in euler angles and then converts them to radians inside the function
-		forms::mat4 viewMatrix = rotationMatrix * translationMatrix;
+		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, target, up);
 
 		//convert matrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
-		convertMatrix(forms::mat4::modelMatrix(l.pos, l.rot, forms::vec3(1.0f, 1.0f, 1.0f)), l.modelMatrix);
 		convertMatrix(viewMatrix, l.viewMatrix);
-		convertMatrix(forms::mat4::perspective(60.0, static_cast<float> (shadowProps.mapWidth / shadowProps.mapHeight), 0.1f, 1000.0f), l.projectionMatrix);
+		convertMatrix(forms::mat4::perspective(forms::vec3::toDeg(l.outerConeAngle), 1.0f, nearPlane, farPlane), l.projectionMatrix);
 		l.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
-	void updateUBO(const camData& cam, bool map = true) {
+
+
+	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			calcShadowMats(lights[i]);
@@ -2735,7 +2732,7 @@ private:
 			currentFrame = (currentFrame + 1) % swapChainImages.size();
 			handleKeyboardInput(window); // handle keyboard input to change cam position
 			recreateObjectBuffers();
-			updateUBO(cam); // update ubo matrices and populate the buffer
+			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 		}
 
@@ -2831,7 +2828,7 @@ private:
 		}
 	}
 	void finishStartup() { // shadowmaps need to be recreated after the normal pipe is created for accuracy
-		updateUBO(cam);
+		updateUBO();
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();

@@ -41,7 +41,6 @@ public:
 			return vec3(scalar / v.x, scalar / v.y, scalar / v.z);
 		}
 
-
 		vec3& operator+=(const vec3& other) {
 			x += other.x;
 			y += other.y;
@@ -110,6 +109,10 @@ public:
 				v.y * PI / 180.0f,
 				v.z * PI / 180.0f
 			);
+		}
+		static float toDeg(const float radian) {
+			return radian * (180.0f / PI);
+
 		}
 	};
 	struct vec2 {
@@ -300,6 +303,30 @@ public:
 			mat4 result;
 			result = mat4::rotate(rotation)
 				* mat4::translate(-position.x, -position.y, -position.z);
+			return result;
+		}
+		static mat4 lookAt(const vec3& eye, const vec3& target, const vec3& up) {
+			vec3 f = (target - eye).normalize(); // forward vector
+			vec3 r = up.crossProd(f).normalize(); // right vector
+			vec3 u = f.crossProd(r); // up vector
+
+			mat4 result;
+			result.m[0][0] = r.x;
+			result.m[0][1] = r.y;
+			result.m[0][2] = r.z;
+			result.m[0][3] = -r.dotProd(eye);
+			result.m[1][0] = u.x;
+			result.m[1][1] = u.y;
+			result.m[1][2] = u.z;
+			result.m[1][3] = -u.dotProd(eye);
+			result.m[2][0] = -f.x;
+			result.m[2][1] = -f.y;
+			result.m[2][2] = -f.z;
+			result.m[2][3] = f.dotProd(eye);
+			result.m[3][0] = 0.0f;
+			result.m[3][1] = 0.0f;
+			result.m[3][2] = 0.0f;
+			result.m[3][3] = 1.0f;
 			return result;
 		}
 

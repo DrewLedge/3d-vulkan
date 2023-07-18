@@ -16,7 +16,7 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-    gl_Position = lights[pc.lightIndex].viewMatrix* lights[pc.lightIndex].projectionMatrix* vec4(inPosition, 1.0);
+    gl_Position = lights[pc.lightIndex].projectionMatrix* lights[pc.lightIndex].viewMatrix* vec4(inPosition, 1.0);
 }
 
 

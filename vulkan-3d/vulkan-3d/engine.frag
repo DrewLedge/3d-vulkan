@@ -18,7 +18,6 @@ struct light {
     formsVec3 rot;
     float lightIntensity;
     mat4 viewMatrix;
-    mat4 modelMatrix;
     mat4 projectionMatrix;
     float innerConeAngle; // in radians
 	float outerConeAngle; // in radians
@@ -84,7 +83,7 @@ if (lights.length() >= 1) {
 		 vec3 lightRot = vec3(lights[i].rot.x, lights[i].rot.y, lights[i].rot.z);
 
 		 // shadow factor computation:
-		 vec4 fragPosModelSpace = lights[i].modelMatrix * vec4(inFragPos, 1.0);
+		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
 		 vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * fragPosModelSpace;
 		 fragPosLightSpace /= fragPosLightSpace.w; 
 
