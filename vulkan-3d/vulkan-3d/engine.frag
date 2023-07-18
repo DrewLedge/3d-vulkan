@@ -16,11 +16,15 @@ struct light {
     formsVec3 lPos;
     formsVec3 lColor;
     formsVec3 rot;
-    float FOV;
     float lightIntensity;
     mat4 viewMatrix;
     mat4 modelMatrix;
     mat4 projectionMatrix;
+    float innerConeAngle; // in radians
+	float outerConeAngle; // in radians
+	float constantAttenuation;
+	float linearAttenuation;
+	float quadraticAttenuation;
 };
 
 layout (set=3, binding = 3) buffer LightBuffer {
@@ -74,27 +78,38 @@ if (lights.length() >= 1) {
     vec3 specular = vec3(0.0);
 
     for (int i = 0; i < lights.length(); i++){ 
-        // convert light struct to vec3s so I can use them in calculations
-        vec3 lightPos = vec3(lights[i].lPos.x, lights[i].lPos.y, lights[i].lPos.z);
-        vec3 lightColor = vec3(lights[i].lColor.x, lights[i].lColor.y, lights[i].lColor.z);
+		 // convert light struct to vec3s so I can use them in calculations
+		 vec3 lightPos = vec3(lights[i].lPos.x, lights[i].lPos.y, lights[i].lPos.z);
+		 vec3 lightDirection = normalize(lightPos - inFragPos);
+		 vec3 lightRot = vec3(lights[i].rot.x, lights[i].rot.y, lights[i].rot.z);
 
-        // directional lighting:
-        vec3 lightDirection = normalize(-lightPos);
+		 // shadow factor computation:
+		 vec4 fragPosModelSpace = lights[i].modelMatrix * vec4(inFragPos, 1.0);
+		 vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * fragPosModelSpace;
+		 fragPosLightSpace /= fragPosLightSpace.w; 
 
-        // shadow factor computation:
-        vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * vec4(inFragPos, 1.0); 
-        fragPosLightSpace /= fragPosLightSpace.w; // perspective divide
+		 // shadow factor computation:
+		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
 
-        float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
+		 // spotlight attenuation and cone effect
+		 float theta = dot(lightDirection, normalize(-lightRot));
 
-        // blinn-Phong lighting model:
-        float diff = max(dot(normal, lightDirection), 0.0); // calculates the cosine of the angle between the normal vector and light direction
-        diffuse += lightColor * diff * lights[i].lightIntensity * shadowFactor; // modulate with shadow factor
+		 float epsilon = lights[i].outerConeAngle - lights[i].innerConeAngle;
+		 float intensity = clamp((theta - lights[i].outerConeAngle) / epsilon, 0.0, 1.0);
+		 float distanceToLight = length(lightPos - inFragPos);
+		 float attenuation = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * distanceToLight + lights[i].quadraticAttenuation * (distanceToLight * distanceToLight));
 
-        vec3 halfwayDir = normalize(lightDirection + inViewDir); // normalized vector that's halfway between the light direction and the view direction.
-        float spec = pow(max(dot(normal, halfwayDir), 0.0), shinyness); //get the cos of the angle between the surface normal and the halfway direction and raise it to the power of 32
-        specular += lightColor * sampledSpec.rgb * spec * lights[i].lightIntensity * shadowFactor; // adds the specular component to the final color and modulates with shadow factor
-    }
+		 vec3 lightColor = vec3(lights[i].lColor.x, lights[i].lColor.y, lights[i].lColor.z);
+
+		 // blinn-Phong lighting model:
+		 float diff = max(dot(normal, lightDirection), 0.0);
+		 diffuse += lightColor * diff * lights[i].lightIntensity * shadowFactor * intensity * attenuation; 
+
+		 vec3 halfwayDir = normalize(lightDirection + inViewDir); 
+		 float spec = pow(max(dot(normal, halfwayDir), 0.0), shinyness); 
+		 specular += lightColor * sampledSpec.rgb * spec * lights[i].lightIntensity * shadowFactor * intensity * attenuation;
+	 }
+
 
     vec3 result = ambient + diffuse + specular; 
     outColor = vec4(result, 1.0) * inAlpha;

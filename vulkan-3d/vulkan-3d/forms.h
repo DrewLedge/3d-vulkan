@@ -198,11 +198,11 @@ public:
 			result.m[3][3] = 1.0f;
 			return result;
 		}
-		static mat4 rotate(float angleX, float angleY, float angleZ) {
+		static mat4 rotate(const vec3 s) {
 			mat4 result;
-			float radX = angleX * (PI / 180.0f);
-			float radY = angleY * (PI / 180.0f);
-			float radZ = angleZ * (PI / 180.0f);
+			float radX = s.x * (PI / 180.0f);
+			float radY = s.y * (PI / 180.0f);
+			float radZ = s.z * (PI / 180.0f);
 
 			mat4 rotX;
 			rotX.m[1][1] = cosf(radX);
@@ -251,7 +251,7 @@ public:
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s.x, s.y, s.z)
-				* mat4::rotate(rot.x, rot.y, rot.z)
+				* mat4::rotate(rot)
 				* mat4::translate(trans.x, trans.y, trans.z);
 			return result;
 		}
@@ -298,7 +298,7 @@ public:
 
 		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
 			mat4 result;
-			result = mat4::rotate(rotation.x, rotation.y, rotation.z)
+			result = mat4::rotate(rotation)
 				* mat4::translate(-position.x, -position.y, -position.z);
 			return result;
 		}

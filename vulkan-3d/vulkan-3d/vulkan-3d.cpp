@@ -204,15 +204,19 @@ private:
 		}
 	};
 
-	struct light { // directional light
+	struct light { // spotlight
 		forms::vec3 pos;
 		forms::vec3 col;
 		forms::vec3 rot;
-		float FOV;
-		float intensity;
+		float baseIntensity;
 		float viewMatrix[16];
 		float modelMatrix[16];
 		float projectionMatrix[16];
+		float innerConeAngle; // in radians
+		float outerConeAngle; // in radians
+		float constantAttenuation;
+		float linearAttenuation;
+		float quadraticAttenuation;
 		shadowMapDataObject shadowMapData;
 	};
 
@@ -393,20 +397,24 @@ private:
 		m.position = pos;
 		objects.push_back(m);
 	}
-	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot, float fieldOfView) {
+	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot) {
 		light l;
 		l.col = color;
 		l.pos = pos;
-		l.intensity = intensity;
+		l.baseIntensity = intensity;
 		l.rot = rot;
-		l.FOV = fieldOfView;
+		l.constantAttenuation = 1.0f;
+		l.linearAttenuation = 0.1f;
+		l.quadraticAttenuation = 0.032f;
+		l.innerConeAngle = 0.9f; // 52 degrees
+		l.outerConeAngle = 1.2f; // 68 degrees
 		lights.push_back(l);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -100.0f }, { 1.0f, 0.3f, 1.0f }, 0.3f, { 0.0f, 0.0f, 0.0f }, 190);
+		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 0.3f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1111,37 +1119,47 @@ private:
 		vkUnmapMemory(device, sceneIndexBufferMem);
 	}
 
-	void calcMatrixes(model& o) {
+	void calcObjectMats(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
 		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
-	void updateUBO(const camData& cam) {
+	void calcShadowMats(light& l) {
+		forms::vec3 rotRadians = forms::vec3::toRads(l.rot);
+
+		// get the forward, up, and right vectors using the rotation vector
+		forms::vec3 forward = forms::vec3::getForward(rotRadians);
+		forms::vec3 up = forms::vec3::getUp(rotRadians);
+		forms::vec3 right = forms::vec3::getRight(rotRadians);
+
+		forms::mat4 translationMatrix = forms::mat4::translate(-l.pos.x, -l.pos.y, -l.pos.z);
+		forms::mat4 rotationMatrix = forms::mat4::rotate(forms::vec3::toRads(l.rot) * -1); // takes in euler angles and then converts them to radians inside the function
+		forms::mat4 viewMatrix = rotationMatrix * translationMatrix;
+
+		//convert matrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
+		convertMatrix(forms::mat4::modelMatrix(l.pos, l.rot, forms::vec3(1.0f, 1.0f, 1.0f)), l.modelMatrix);
+		convertMatrix(viewMatrix, l.viewMatrix);
+		convertMatrix(forms::mat4::perspective(60.0, static_cast<float> (shadowProps.mapWidth / shadowProps.mapHeight), 0.1f, 1000.0f), l.projectionMatrix);
+		l.projectionMatrix[5] *= -1; //flip the y for vulkan
+	}
+
+	void updateUBO(const camData& cam, bool map = true) {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
-			convertMatrix(forms::mat4::modelMatrix(lights[i].pos, forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(1.0f, 1.0f, 1.0f)), lights[i].modelMatrix);
-			convertMatrix(forms::mat4::viewMatrix(lights[i].pos, lights[i].rot), lights[i].viewMatrix);
-			convertMatrix(forms::mat4::perspective(lights[i].FOV, static_cast<float> (shadowProps.mapWidth / shadowProps.mapHeight), 0.1f, 1000.0f), lights[i].projectionMatrix);
-			lights[i].projectionMatrix[5] *= -1; //flip the y for vulkan
-
+			calcShadowMats(lights[i]);
 		}
 		void* lightData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lights), 0, &lightData);
 		memcpy(lightData, lights.data(), sizeof(lights));
 		vkUnmapMemory(device, lightBufferMem);
 
-		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			calcMatrixes(objects[i]);
-
-			// create and populate the UBO:
+			calcObjectMats(objects[i]);
 			memcpy(matData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
 			memcpy(matData.objectMatrixData[i].view, objects[i].viewMatrix, sizeof(objects[i].viewMatrix));
 			memcpy(matData.objectMatrixData[i].proj, objects[i].projectionMatrix, sizeof(objects[i].projectionMatrix));
-
-			// transfer the ubo struct into the buffer:
 		}
 		void* matrixData;
 		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &matrixData);
@@ -1289,8 +1307,6 @@ private:
 		return descriptorPool;
 	}
 
-
-
 	void createDS() {
 		descriptorSets.resize(5);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
@@ -1413,48 +1429,12 @@ private:
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
-	void updateShadowDescriptorSets() {
-		VkDescriptorSetAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorPool = descriptorPool5;
-		allocInfo.descriptorSetCount = 1;
-		allocInfo.pSetLayouts = &descriptorSetLayout5;
-
-		// destroy and recreate descriptor sets related to lights and shadows
-		vkFreeDescriptorSets(device, descriptorPool5, 1, &descriptorSets[4]);
-		if (vkAllocateDescriptorSets(device, &allocInfo, &descriptorSets[4]) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate descriptor sets for lights and shadows!");
-		}
-
-		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // Collect all shadow map data
-
-		// prepare image info for shadow maps
-		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
-		for (size_t i = 0; i < lights.size(); i++) {
-			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = shadowMaps[i].imageView;
-			shadowInfos[i].sampler = shadowMaps[i].sampler;
-		}
-
-		VkWriteDescriptorSet descWrites{};
-		descWrites.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descWrites.dstSet = descriptorSets[4];
-		descWrites.dstBinding = 4; // 4 is for shadow map samplers
-		descWrites.dstArrayElement = 0;
-		descWrites.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		descWrites.descriptorCount = static_cast<uint32_t>(lights.size());
-		descWrites.pImageInfo = shadowInfos.data();
-
-		std::array<VkWriteDescriptorSet, 1> descriptorWritesArray = { descWrites };
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWritesArray.size()), descriptorWritesArray.data(), 0, nullptr);
-	}
-
 
 	void setupDescriptorSets() {
 		descriptorSets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			totalTextureCount += object.materials.size() * 3;  // Each material has 3 textures
+			totalTextureCount += object.materials.size() * 3;  // each material has 3 textures
 		}
 		createDS(); //create the descriptor set
 	}
@@ -1760,13 +1740,6 @@ private:
 		vkFreeCommandBuffers(device, cPool, 1, &cBuffer); //free the command buffer
 	}
 
-	void setupShaders() {
-		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
-		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
-		vertShaderModule = createShaderModule(vertShaderCode);
-		fragShaderModule = createShaderModule(fragShaderCode);
-	}
-
 	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
 		if (err == 0)
 			return;
@@ -1774,6 +1747,10 @@ private:
 		assert(err == 0); //if true, continue, if false, throw error
 	}
 	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects
+		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
+		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
+		vertShaderModule = createShaderModule(vertShaderCode);
+		fragShaderModule = createShaderModule(fragShaderCode);
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2278,7 +2255,7 @@ private:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	void createBuffers() {
+	void createModelBuffers() { // creates the vertex and index buffers for the models into a single buffer
 		bufferData.resize(objects.size());
 		VkDeviceSize totalVertexBufferSize = 0;
 		VkDeviceSize totalIndexBufferSize = 0;
@@ -2364,7 +2341,7 @@ private:
 		vkFreeMemory(device, vertBufferMem, nullptr);
 		vkDestroyBuffer(device, indBuffer, nullptr);
 		vkFreeMemory(device, indBufferMem, nullptr);
-		createBuffers();
+		createModelBuffers();
 	}
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
@@ -2483,7 +2460,6 @@ private:
 		}
 		setupShadowMaps();
 		createShadowCommandBuffers();
-		updateShadowDescriptorSets();
 	}
 
 	void recordShadowCommandBuffers() {
@@ -2833,18 +2809,15 @@ private:
 		createSemaphores();
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
-		//testPerformance(1000);
 		debugLights();
-		createBuffers();
-		setupShaders(); //read the shader files and create the shader modules
+		createModelBuffers();
 		setupDepthResources();
 		setupShadowMaps();
 		setupDescriptorSets();
 		createShadowPipeline(); // pipeline for my shadow maps
 		createGraphicsPipelineOpaque();
 		imguiSetup();
-		finishStartup();
-		createShadowCommandBuffers();
+		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
 		createFrameBuffer();
 		createCommandBuffer();
