@@ -413,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 0.3f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -970,7 +970,7 @@ private:
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 			newinfo.image = swapChainImages[i]; // assign the current swap chain image
-			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D; // 2d image for now
+			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			newinfo.format = swapChainImageFormat;
 			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -988,6 +988,7 @@ private:
 
 		}
 	}
+
 	VkShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
 		VkShaderModuleCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
@@ -1128,7 +1129,7 @@ private:
 	void calcShadowMats(light& l) {
 		float nearPlane = 0.1f, farPlane = 200.0f;
 
-		forms::vec3 dir = forms::vec3::getForward(l.rot); // get forward vector (direction) from the light's rotation
+		forms::vec3 dir = forms::vec3::getForward(forms::vec3::toRads(l.rot)); // get forward vector (direction) from the light's rotation
 		forms::vec3 target = l.pos + dir;
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
 
@@ -1139,8 +1140,6 @@ private:
 		convertMatrix(forms::mat4::perspective(forms::vec3::toDeg(l.outerConeAngle), 1.0f, nearPlane, farPlane), l.projectionMatrix);
 		l.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
-
-
 
 	void updateUBO() {
 		// calc matrixes for lights
@@ -1352,6 +1351,7 @@ private:
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
 		setupTexIndices(textures, mats);
+		updateUBO();
 
 		VkDescriptorBufferInfo matrixBufferInfo{};
 		matrixBufferInfo.buffer = matrixDataBuffer;
@@ -2130,7 +2130,6 @@ private:
 			throw std::runtime_error("failed to create shadow map render pass!");
 		}
 
-		// enable color blending
 		VkPipelineColorBlendStateCreateInfo colorBlending{};
 		colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBlending.attachmentCount = 0;
@@ -2618,43 +2617,52 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
 
+		// two semaphores for synchronization
+		VkSemaphore shadowSemaphore;
+		VkSemaphoreCreateInfo semaphoreInfo = {};
+		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+		if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &shadowSemaphore) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create semaphore!");
+		}
+
 		//submit the main command buffers to the queue based off the image index
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
 		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
-		VkSubmitInfo submitInfos[2] = {};
+		VkSubmitInfo submitInfo{};
 
-		// first submission (main command buffers)
-		submitInfos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfos[0].waitSemaphoreCount = 1;
-		submitInfos[0].pWaitSemaphores = waitSemaphores;
-		submitInfos[0].pWaitDstStageMask = waitStages;
-		submitInfos[0].commandBufferCount = 1;
-		submitInfos[0].pCommandBuffers = &commandBuffers[imageIndex];
-		submitInfos[0].signalSemaphoreCount = 1;
-		submitInfos[0].pSignalSemaphores = signalSemaphores;
+		// submit shadow command buffer
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = waitSemaphores;
+		submitInfo.pWaitDstStageMask = waitStages;
+		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
+		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = signalSemaphores;
 
-		// second submission (shadow command buffers)
-		submitInfos[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfos[1].commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
-		submitInfos[1].pCommandBuffers = shadowMapCommandBuffers.data();
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit shadow command buffer!");
+		}
 
-		// submit both command buffers in one call
-		if (vkQueueSubmit(graphicsQueue, 2, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		waitSemaphores[0] = shadowSemaphore;  // wait until shadow command buffer is done
+		signalSemaphores[0] = renderFinishedSemaphore;
+		submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; //only thing that changes from shadow command buffer
+
+		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
 		}
 
-		//present the image:
-		VkPresentInfoKHR presentInf{};
-		presentInf.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
-		presentInf.waitSemaphoreCount = 1;
-		presentInf.pWaitSemaphores = signalSemaphores;
+		// present the image
+		VkPresentInfoKHR presentInfo{};
+		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+		presentInfo.waitSemaphoreCount = 1;
+		presentInfo.pWaitSemaphores = signalSemaphores;
 		VkSwapchainKHR swapChains[] = { swapChain };
-		presentInf.swapchainCount = 1; //number of swap chains to present to
-		presentInf.pSwapchains = swapChains; //list of swap chains to present to
-		presentInf.pImageIndices = &imageIndex; //index of image in swap chain to present
-		presentInf.pResults = nullptr; //optional array to receive results of each swap chain's presentation
-		result = vkQueuePresentKHR(presentQueue, &presentInf);
+		presentInfo.swapchainCount = 1;
+		presentInfo.pSwapchains = swapChains;
+		presentInfo.pImageIndices = &imageIndex;
+		result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
 		//check if the swap chain is out of date (window was resized, etc):
 		if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
@@ -2664,8 +2672,11 @@ private:
 		else if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to present swap chain image! " + resultStr(result));
 		}
+
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
+		vkDestroySemaphore(device, shadowSemaphore, nullptr);
 	}
+
 
 	void recreateObjectBuffers() {
 		recordShadowCommandBuffers();
@@ -2807,10 +2818,10 @@ private:
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
 		debugLights();
-		createModelBuffers();
+		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
-		setupShadowMaps();
-		setupDescriptorSets();
+		setupShadowMaps(); // create the inital textures for the shadow maps
+		setupDescriptorSets(); //setup and create all the descriptor sets
 		createShadowPipeline(); // pipeline for my shadow maps
 		createGraphicsPipelineOpaque();
 		imguiSetup();
@@ -2818,7 +2829,7 @@ private:
 		recordShadowCommandBuffers();
 		createFrameBuffer();
 		createCommandBuffer();
-		recordCommandBuffers(); //record and submit the command buffers (includes code for binding the descriptor set)
+		recordCommandBuffers(); //record and submit the command buffers
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 
@@ -2828,9 +2839,7 @@ private:
 		}
 	}
 	void finishStartup() { // shadowmaps need to be recreated after the normal pipe is created for accuracy
-		updateUBO();
 		cleanupDS();
-		setupShadowMaps();
 		setupDescriptorSets();
 	}
 	void testPerformance(size_t count) {

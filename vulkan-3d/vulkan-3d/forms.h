@@ -112,7 +112,9 @@ public:
 		}
 		static float toDeg(const float radian) {
 			return radian * (180.0f / PI);
-
+		}
+		static float toRad(const float degree) {
+			return degree * (PI / 180.0f);
 		}
 	};
 	struct vec2 {
