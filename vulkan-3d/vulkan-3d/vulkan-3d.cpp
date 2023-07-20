@@ -1351,7 +1351,6 @@ private:
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
 		setupTexIndices(textures, mats);
-		updateUBO();
 
 		VkDescriptorBufferInfo matrixBufferInfo{};
 		matrixBufferInfo.buffer = matrixDataBuffer;
@@ -2091,7 +2090,7 @@ private:
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth test
 		dStencil.depthWriteEnable = VK_TRUE;
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
 		dStencil.maxDepthBounds = 1.0f;
@@ -2106,7 +2105,7 @@ private:
 		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		// create the depth attachment reference
 		VkAttachmentReference depthAttachmentRef{};
@@ -2625,10 +2624,9 @@ private:
 			throw std::runtime_error("failed to create semaphore!");
 		}
 
-		//submit the main command buffers to the queue based off the image index
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
-		VkSemaphore signalSemaphores[] = { renderFinishedSemaphore }; //semaphore to signal when command buffer finishes execution
+		VkSemaphore signalSemaphores[] = { shadowSemaphore }; // signal shadowSemaphore when shadow command buffer finishes execution
 		VkSubmitInfo submitInfo{};
 
 		// submit shadow command buffer
@@ -2646,7 +2644,7 @@ private:
 		}
 
 		waitSemaphores[0] = shadowSemaphore;  // wait until shadow command buffer is done
-		signalSemaphores[0] = renderFinishedSemaphore;
+		signalSemaphores[0] = renderFinishedSemaphore; // signal renderFinishedSemaphore when main command buffer finishes execution
 		submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; //only thing that changes from shadow command buffer
 
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
@@ -2825,6 +2823,7 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		createGraphicsPipelineOpaque();
 		imguiSetup();
+		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
 		createFrameBuffer();
