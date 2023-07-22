@@ -178,7 +178,7 @@ public:
 			return *this;
 		}
 
-		static mat4 translate(float tx, float ty, float tz) {
+		static mat4 translate(const vec3 t) {
 			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
@@ -190,16 +190,16 @@ public:
 					}
 				}
 			}
-			result.m[0][3] = tx;
-			result.m[1][3] = ty;
-			result.m[2][3] = tz;
+			result.m[0][3] = t.x;
+			result.m[1][3] = t.y;
+			result.m[2][3] = t.z;
 			return result;
 		}
-		static mat4 scale(float sx, float sy, float sz) {
+		static mat4 scale(const vec3 s) {
 			mat4 result;
-			result.m[0][0] = sx;
-			result.m[1][1] = sy;
-			result.m[2][2] = sz;
+			result.m[0][0] = s.x;
+			result.m[1][1] = s.y;
+			result.m[2][2] = s.z;
 			result.m[3][3] = 1.0f;
 			return result;
 		}
@@ -255,9 +255,9 @@ public:
 		}
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
-			mat4 result = mat4::scale(s.x, s.y, s.z)
+			mat4 result = mat4::scale(s)
 				* mat4::rotate(rot)
-				* mat4::translate(trans.x, trans.y, trans.z);
+				* mat4::translate(trans);
 			return result;
 		}
 		static mat4 inverseMatrix(mat4 m) {
@@ -304,7 +304,7 @@ public:
 		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
 			mat4 result;
 			result = mat4::rotate(rotation)
-				* mat4::translate(-position.x, -position.y, -position.z);
+				* mat4::translate(position * -1);
 			return result;
 		}
 		static mat4 lookAt(const vec3& eye, const vec3& target, const vec3& up) {
@@ -321,17 +321,23 @@ public:
 			result.m[1][1] = u.y;
 			result.m[1][2] = u.z;
 			result.m[1][3] = -u.dotProd(eye);
-			result.m[2][0] = -f.x;
-			result.m[2][1] = -f.y;
-			result.m[2][2] = -f.z;
-			result.m[2][3] = f.dotProd(eye);
+			result.m[2][0] = f.x;
+			result.m[2][1] = f.y;
+			result.m[2][2] = f.z;
+			result.m[2][3] = -f.dotProd(eye);
 			result.m[3][0] = 0.0f;
 			result.m[3][1] = 0.0f;
 			result.m[3][2] = 0.0f;
 			result.m[3][3] = 1.0f;
 			return result;
 		}
-
+		static mat4 depthRangeMatrix() { // used for shadow mapping and getting the correct projection matrix
+			mat4 result;
+			vec3 scaleVector(1.0f, 1.0f, 0.5f);
+			vec3 translateVector(0.0f, 0.0f, 0.5f);
+			result = mat4::scale(scaleVector) * mat4::translate(translateVector);
+			return result;
+		}
 	};
 };
 

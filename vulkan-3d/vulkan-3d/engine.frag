@@ -85,7 +85,6 @@ if (lights.length() >= 1) {
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
 		 vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * fragPosModelSpace;
-		 fragPosLightSpace /= fragPosLightSpace.w; 
 
 		 // shadow factor computation:
 		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);

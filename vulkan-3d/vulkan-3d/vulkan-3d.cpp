@@ -1127,17 +1127,22 @@ private:
 	}
 
 	void calcShadowMats(light& l) {
+		// spotlight shadow mapping math code
+		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 0.1f, farPlane = 200.0f;
 
 		forms::vec3 dir = forms::vec3::getForward(forms::vec3::toRads(l.rot)); // get forward vector (direction) from the light's rotation
 		forms::vec3 target = l.pos + dir;
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
-
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, target, up);
+
+		// get the projection matrix
+		forms::mat4 standardProjMatrix = forms::mat4::perspective(forms::vec3::toDeg(l.outerConeAngle), aspectRatio, nearPlane, farPlane);
+		forms::mat4 vulkanProjMatrix = forms::mat4::depthRangeMatrix() * standardProjMatrix;
 
 		//convert matrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
-		convertMatrix(forms::mat4::perspective(forms::vec3::toDeg(l.outerConeAngle), 1.0f, nearPlane, farPlane), l.projectionMatrix);
+		convertMatrix(vulkanProjMatrix, l.projectionMatrix);
 		l.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
