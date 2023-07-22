@@ -1323,7 +1323,7 @@ private:
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1; // 1 because we are allocating 1 descriptor set at a time
 
-		std::array<VkDescriptorSetLayout, 5> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4,descriptorSetLayout5 };
+		std::array<VkDescriptorSetLayout, 5> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5 };
 		std::array<VkDescriptorPool, 5> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5 };
 
 		std::array<uint32_t, 5> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1,lightSize };
@@ -2136,9 +2136,9 @@ private:
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = sizeof(int);
+		pushConstantRange.size = sizeof(int) * 2; // 2 ints for the light index and the objects model matrix index
 
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout4 }; // the only descriptorset needed is the lights matrix data
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout4 }; // the object's ubo data and the light data
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2485,17 +2485,14 @@ private:
 			renderPassInfo.clearValueCount = 1;
 			renderPassInfo.pClearValues = &clearValue;
 			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			int lightIndex = static_cast<int>(i);
-			vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(int), &lightIndex);
 
 			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
 
 			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
-			VkDescriptorSet dSets[] = { descriptorSets[3] };
-			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 1, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[3] };
+			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 2, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
-			// this is the same code as in recordCommandBuffers()
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
 			VkBuffer indexBuffer = indBuffer;
 			VkDeviceSize offsets[] = { 0 };
@@ -2503,9 +2500,17 @@ private:
 			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 			for (size_t j = 0; j < objects.size(); j++) {
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
-			}
+				struct {
+					int modelIndex;
+					int lightIndex;
+				} pushConst;
+				pushConst.modelIndex = static_cast<int>(j);
+				pushConst.lightIndex = static_cast<int>(i);
 
+				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0); // 3d models vert and index buffers
+			}
+			// end the render pass and transition the shadowmap image to shader read only optimal
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
 			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
