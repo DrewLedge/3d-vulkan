@@ -27,8 +27,11 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-    mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model;
-    gl_Position = lights[pc.lightIndex].projectionMatrix * lights[pc.lightIndex].viewMatrix * modelMatrix * vec4(inPosition, 1.0);
+    mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the object
+    mat4 mvp = lights[pc.lightIndex].projectionMatrix * lights[pc.lightIndex].viewMatrix * modelMatrix; // model view proj matrix
+    vec4 lightSpacePos = mvp * vec4(inPosition, 1.0); 
+    lightSpacePos = lightSpacePos / lightSpacePos.w; // perspective divide
+    gl_Position = lightSpacePos;
 }
 
 

@@ -1129,7 +1129,7 @@ private:
 	void calcShadowMats(light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
-		float nearPlane = 0.1f, farPlane = 200.0f;
+		float nearPlane = 5.0f, farPlane = 50.0f;
 
 		forms::vec3 dir = forms::vec3::getForward(forms::vec3::toRads(l.rot)); // get forward vector (direction) from the light's rotation
 		forms::vec3 target = l.pos + dir;
@@ -1156,6 +1156,7 @@ private:
 		memcpy(lightData, lights.data(), sizeof(lights));
 		vkUnmapMemory(device, lightBufferMem);
 
+		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcObjectMats(objects[i]);
 			memcpy(matData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
@@ -2009,18 +2010,18 @@ private:
 		// get shader data
 		auto vertShaderSPV = readFile("shadow_vert_shader.spv");
 		auto fragShaderSPV = readFile("shadow_frag_shader.spv");
-		VkShaderModule vertShaderModule = createShaderModule(vertShaderSPV);
-		VkShaderModule fragShaderModule = createShaderModule(fragShaderSPV);
+		VkShaderModule shadowVertShaderModule = createShaderModule(vertShaderSPV);
+		VkShaderModule shadowFragShaderModule = createShaderModule(fragShaderSPV);
 
 		VkPipelineShaderStageCreateInfo vertStage{};
 		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertStage.module = vertShaderModule;
+		vertStage.module = shadowVertShaderModule;
 		vertStage.pName = "main";
 		VkPipelineShaderStageCreateInfo fragStage{};
 		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragStage.module = fragShaderModule;
+		fragStage.module = shadowFragShaderModule;
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
@@ -2078,12 +2079,12 @@ private:
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+		rasterizer.cullMode = VK_CULL_MODE_NONE;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_TRUE; // enable depth bias
-		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasConstantFactor = 0.005f;
+		rasterizer.depthBiasSlopeFactor = 0.005f;
 		rasterizer.depthBiasClamp = 0.0f;
-		rasterizer.depthBiasSlopeFactor = 0.0f;
 
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -2686,9 +2687,9 @@ private:
 	}
 
 
-	void recreateObjectBuffers() {
+	void recreateObjectBuffers() { // re-record command buffers to reference the new buffers
 		recordShadowCommandBuffers();
-		recordCommandBuffers();  // re-record command buffers to reference the new buffers
+		recordCommandBuffers();
 	}
 
 	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
@@ -2825,7 +2826,7 @@ private:
 		createSemaphores();
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
-		debugLights();
+		//debugLights();
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
@@ -2847,11 +2848,7 @@ private:
 			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.rot);
 		}
 	}
-	void finishStartup() { // shadowmaps need to be recreated after the normal pipe is created for accuracy
-		cleanupDS();
-		setupDescriptorSets();
-	}
-	void testPerformance(size_t count) {
+	void stressTest(size_t count) {
 		for (size_t i = 0; i < count; ++i) {
 			cloneObject({ 0.0f,0.0f,0.0f }, 0, { 0.1f,0.1f,0.1f }, { 0.0f, 0.0f, 0.0f });
 		}
