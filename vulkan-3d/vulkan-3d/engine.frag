@@ -65,6 +65,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get
 
 void main() {
 float shinyness=32.0f;
+float PI = acos(-1.0);
 if (lights.length() >= 1) {
     vec4 sampled = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
     vec4 sampledSpec = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
@@ -77,6 +78,9 @@ if (lights.length() >= 1) {
     vec3 specular = vec3(0.0);
 
     for (int i = 0; i < lights.length(); i++){ 
+         float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);
+         float outerConeRads = lights[i].outerConeAngle * (PI/180.0f);
+
 		 // convert light struct to vec3s so I can use them in calculations
 		 vec3 lightPos = vec3(lights[i].lPos.x, lights[i].lPos.y, lights[i].lPos.z);
 		 vec3 lightDirection = normalize(lightPos - inFragPos);
@@ -93,7 +97,7 @@ if (lights.length() >= 1) {
 		 // spotlight attenuation and cone effect
 		 float theta = dot(lightDirection, normalize(-lightRot));
 
-		 float epsilon = lights[i].outerConeAngle - lights[i].innerConeAngle;
+		 float epsilon = outerConeRads - innerConeRads;
 		 float intensity = clamp((theta - lights[i].outerConeAngle) / epsilon, 0.0, 1.0);
 		 float distanceToLight = length(lightPos - inFragPos);
 		 float attenuation = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * distanceToLight + lights[i].quadraticAttenuation * (distanceToLight * distanceToLight));

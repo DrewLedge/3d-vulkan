@@ -211,8 +211,8 @@ private:
 		float baseIntensity;
 		float viewMatrix[16];
 		float projectionMatrix[16];
-		float innerConeAngle; // in radians
-		float outerConeAngle; // in radians
+		float innerConeAngle; // in degrees
+		float outerConeAngle; // in degrees
 		float constantAttenuation;
 		float linearAttenuation;
 		float quadraticAttenuation;
@@ -245,7 +245,7 @@ private:
 	struct camData {
 		forms::vec3 camPos; //x, y, z
 		forms::vec3 camAngle; //angle of the camera is facing
-		forms::vec3 camRads;
+		forms::vec3 camRads; // radians of the camera is facing
 	};
 	struct shadowMapProportionsObject {
 		uint32_t mapWidth = 1024;
@@ -405,8 +405,8 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 0.9f; // 52 degrees
-		l.outerConeAngle = 1.2f; // 68 degrees
+		l.innerConeAngle = 52.0f;
+		l.outerConeAngle = 70.0f;
 		lights.push_back(l);
 	}
 
@@ -1119,26 +1119,39 @@ private:
 		vkUnmapMemory(device, sceneIndexBufferMem);
 	}
 
+	void printMatrix(const forms::mat4& matrix) {
+		for (int i = 0; i < 4; i++) {
+			for (int j = 0; j < 4; j++) {
+				std::cout << std::fixed << std::setw(10) << std::setprecision(2) << matrix.m[i][j] << " ";
+			}
+			std::cout << std::endl; // end of row
+		}
+		std::cout << "---------------------------------" << std::endl;
+	}
+
+
 	void calcObjectMats(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.1f, 1000.0f), o.projectionMatrix);
+		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 100.0f), o.projectionMatrix);
 		o.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
 	void calcShadowMats(light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
-		float nearPlane = 5.0f, farPlane = 50.0f;
+		float nearPlane = 1.0f, farPlane = 100.0f;
 
 		forms::vec3 dir = forms::vec3::getForward(forms::vec3::toRads(l.rot)); // get forward vector (direction) from the light's rotation
 		forms::vec3 target = l.pos + dir;
-		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
+		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f);
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, target, up);
 
-		// get the projection matrix
-		forms::mat4 standardProjMatrix = forms::mat4::perspective(forms::vec3::toDeg(l.outerConeAngle), aspectRatio, nearPlane, farPlane);
+		// get the projection matrix and the right depth ranges (0-1 for vulkan)
+		forms::mat4 standardProjMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
 		forms::mat4 vulkanProjMatrix = forms::mat4::depthRangeMatrix() * standardProjMatrix;
+		printMatrix(vulkanProjMatrix);
+		printMatrix(viewMatrix);
 
 		//convert matrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
@@ -2789,10 +2802,10 @@ private:
 			cam.camPos -= forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			cam.camPos += right * cameraSpeed;
+			cam.camPos -= right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			cam.camPos -= right * cameraSpeed;
+			cam.camPos += right * cameraSpeed;
 		}
 
 		// camera rotation

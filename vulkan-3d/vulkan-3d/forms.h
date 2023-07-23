@@ -67,8 +67,8 @@ public:
 			return vec3(x * sx, y * sy, z * sz);
 		}
 		static vec3 getForward(const vec3& camData) { //camdata in radians
-			float pitch = camData.x;
-			float yaw = camData.y;
+			float pitch = camData.x; // rotation around x axis
+			float yaw = camData.y; // rotation around y axis
 			return vec3(
 				-std::sin(yaw) * std::cos(pitch),
 				-std::sin(pitch),
@@ -78,7 +78,7 @@ public:
 
 		static vec3 getRight(const vec3& camData) {
 			vec3 forward = getForward(camData);
-			vec3 up(0.0f, 1.0f, 0.0f);
+			vec3 up(0.0f, -1.0f, 0.0f);
 			return forward.crossProd(up);
 		}
 		static vec3 getUp(const vec3& camData) {
