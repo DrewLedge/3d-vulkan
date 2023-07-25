@@ -66,9 +66,37 @@ public:
 		vec3 multiply(float sx, float sy, float sz) const {
 			return vec3(x * sx, y * sy, z * sz);
 		}
-		static vec3 getForward(const vec3& camData) { //camdata in radians
-			float pitch = camData.x; // rotation around x axis
-			float yaw = camData.y; // rotation around y axis
+
+		static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
+			// convert pitch and yaw from degrees to radians
+			float pitch = rotation.x * (PI / 180.0f); // x rot
+			float yaw = rotation.y * (PI / 180.0f); // y rot
+
+			vec3 direction;
+			direction.x = cos(yaw) * cos(pitch);
+			direction.y = sin(pitch);
+			direction.z = sin(yaw) * cos(pitch);
+			return direction;
+		}
+
+		static vec3 getTargetVec(const vec3& pos, const vec3& rotation) { // computes target position from current position and rotation
+			vec3 forwardDir = eulerToDir(rotation);
+			return pos + forwardDir;
+		}
+
+		static vec3 dirToEuler(const vec3& direction) { // converts direction vector to Euler rot (right handed coordinate system)
+			vec3 normalizedDir = direction.normalize();
+
+			vec3 rotation;
+			rotation.y = atan2(normalizedDir.z, normalizedDir.x) * (180.0 / PI); // yaw
+			rotation.x = atan2(normalizedDir.y, sqrt(normalizedDir.x * normalizedDir.x + normalizedDir.z * normalizedDir.z)) * (180.0 / PI); // pitch
+			rotation.z = 0; // roll
+			return rotation;
+		}
+
+		static vec3 getForward(const vec3& camData) { // computes camera's forward direction (left handed coordinate system) (only use for camera)
+			float pitch = camData.x;
+			float yaw = camData.y;
 			return vec3(
 				-std::sin(yaw) * std::cos(pitch),
 				-std::sin(pitch),
@@ -76,12 +104,12 @@ public:
 			);
 		}
 
-		static vec3 getRight(const vec3& camData) {
+		static vec3 getRight(const vec3& camData) { // computes camera's right direction (left handed coordinate system) (only use for camera)
 			vec3 forward = getForward(camData);
 			vec3 up(0.0f, -1.0f, 0.0f);
 			return forward.crossProd(up);
 		}
-		static vec3 getUp(const vec3& camData) {
+		static vec3 getUp(const vec3& camData) { // computes camera's up direction (left handed coordinate system) (only use for camera)
 			vec3 forward = getForward(camData);
 			vec3 right = getRight(camData);
 			return right.crossProd(forward);
@@ -244,7 +272,8 @@ public:
 		}
 		static mat4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
 			mat4 result;
-			float f = 1.0f / tanf(fov * (PI / 360.0f));
+			float radians = fov * (PI / 360.0f);
+			float f = 1.0f / tanf(radians);
 			result.m[0][0] = f / aspect_ratio;
 			result.m[1][1] = f;
 			result.m[2][2] = far_clip / (far_clip - near_clip);

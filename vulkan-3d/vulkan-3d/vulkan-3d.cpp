@@ -413,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 20.0f, 15.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1142,8 +1142,10 @@ private:
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 1.0f, farPlane = 100.0f;
 
-		forms::vec3 dir = forms::vec3::getForward(forms::vec3::toRads(l.rot)); // get forward vector (direction) from the light's rotation
-		forms::vec3 target = l.pos + dir;
+		forms::vec3 target = forms::vec3::getTargetVec(l.pos, l.rot); // expects l.rot in euler angles
+		std::cout << target.x << " " << target.y << " " << target.z << std::endl;
+		forms::vec3 debugTarget = target - l.pos; debugTarget = forms::vec3::dirToEuler(debugTarget); std::cout << debugTarget.x << " " << debugTarget.y << " " << debugTarget.z << std::endl;
+
 		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f);
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, target, up);
 
@@ -2790,7 +2792,7 @@ private:
 		}
 
 		cam.camRads = forms::vec3::toRads(cam.camAngle);
-		forms::vec3 forward = cam.camPos.getForward(cam.camRads);
+		forms::vec3 forward = forms::vec3::getForward(cam.camRads);
 		forms::vec3 right = cam.camPos.getRight(cam.camRads);
 		forward.y *= -1; //for vulkan
 
