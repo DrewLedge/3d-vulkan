@@ -413,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 20.0f, 15.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 22.0f, 15.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1140,14 +1140,14 @@ private:
 	void calcShadowMats(light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
-		float nearPlane = 1.0f, farPlane = 100.0f;
+		float nearPlane = 1.0f, farPlane = 100.0f; // tempoarary
+        
+        forms::vec3 targetCords = {0,0,0};
+		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, targetCords);
+		std::cout << targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
 
-		forms::vec3 target = forms::vec3::getTargetVec(l.pos, l.rot); // expects l.rot in euler angles
-		std::cout << target.x << " " << target.y << " " << target.z << std::endl;
-		forms::vec3 debugTarget = target - l.pos; debugTarget = forms::vec3::dirToEuler(debugTarget); std::cout << debugTarget.x << " " << debugTarget.y << " " << debugTarget.z << std::endl;
-
-		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f);
-		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, target, up);
+		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f); // vulkan
+		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, targetVec, up);
 
 		// get the projection matrix and the right depth ranges (0-1 for vulkan)
 		forms::mat4 standardProjMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
@@ -1155,7 +1155,7 @@ private:
 		printMatrix(vulkanProjMatrix);
 		printMatrix(viewMatrix);
 
-		//convert matrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
+		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
 		convertMatrix(vulkanProjMatrix, l.projectionMatrix);
 		l.projectionMatrix[5] *= -1; //flip the y for vulkan
