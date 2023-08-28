@@ -1,7 +1,7 @@
 #pragma once
 #ifndef FORMULAS_H
 #define FORMULAS_H
-const float PI = 3.14159f;
+const float PI = acos(-1.0f);
 class forms {
 public:
 	int rng(int m, int mm);
@@ -82,17 +82,6 @@ public:
 		static vec3 getTargetVec(const vec3& pos, const vec3& targetPos) {
 			vec3 dir = targetPos - pos;
 			return dir;
-		}
-
-
-		static vec3 dirToEuler(const vec3& direction) { // converts direction vector to Euler rot (right handed coordinate system)
-			vec3 normalizedDir = direction.normalize();
-
-			vec3 rotation;
-			rotation.y = atan2(normalizedDir.z, normalizedDir.x) * (180.0 / PI); // yaw
-			rotation.x = atan2(normalizedDir.y, sqrt(normalizedDir.x * normalizedDir.x + normalizedDir.z * normalizedDir.z)) * (180.0 / PI); // pitch
-			rotation.z = 0; // roll
-			return rotation;
 		}
 
 		static vec3 getForward(const vec3& camData) { // computes camera's forward direction (left handed coordinate system) (only use for camera)
@@ -273,16 +262,18 @@ public:
 		}
 		static mat4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
 			mat4 result;
-			float radians = fov * (PI / 360.0f);
-			float f = 1.0f / tanf(radians);
+			float radians = fov * (PI / 180.0f); 	
+			float f = 1.0f / tanf(radians / 2.0f);
 			result.m[0][0] = f / aspect_ratio;
-			result.m[1][1] = f;
+			result.m[1][1] = -f;  // flip y axis for vulkan
 			result.m[2][2] = far_clip / (far_clip - near_clip);
 			result.m[2][3] = -(far_clip * near_clip) / (far_clip - near_clip);
 			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
+
 			return result;
 		}
+
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s)

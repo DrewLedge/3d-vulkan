@@ -207,7 +207,7 @@ private:
 	struct light { // spotlight
 		forms::vec3 pos;
 		forms::vec3 col;
-		forms::vec3 rot;
+		forms::vec3 target;
 		float baseIntensity;
 		float viewMatrix[16];
 		float projectionMatrix[16];
@@ -396,12 +396,12 @@ private:
 		m.position = pos;
 		objects.push_back(m);
 	}
-	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 rot) {
+	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 t) {
 		light l;
 		l.col = color;
 		l.pos = pos;
 		l.baseIntensity = intensity;
-		l.rot = rot;
+		l.target = t;
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
@@ -413,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 22.0f, 15.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1133,17 +1133,15 @@ private:
 	void calcObjectMats(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 100.0f), o.projectionMatrix);
-		o.projectionMatrix[5] *= -1; //flip the y for vulkan
+		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 10.0f), o.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
-		float nearPlane = 1.0f, farPlane = 100.0f; // tempoarary
-        
-        forms::vec3 targetCords = {0,0,0};
-		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, targetCords);
+		float nearPlane = 0.01f, farPlane = 10.0f;
+
+		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, l.target);
 		std::cout << targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
 
 		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f); // vulkan
@@ -1158,7 +1156,6 @@ private:
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
 		convertMatrix(vulkanProjMatrix, l.projectionMatrix);
-		l.projectionMatrix[5] *= -1; //flip the y for vulkan
 	}
 
 	void updateUBO() {
@@ -2067,7 +2064,6 @@ private:
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		inputAssem.primitiveRestartEnable = VK_FALSE;
 
-
 		VkViewport shadowVP{}; // shadow viewport
 		shadowVP.x = 0.0f;
 		shadowVP.y = 0.0f;
@@ -2094,7 +2090,7 @@ private:
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_NONE;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_TRUE; // enable depth bias
 		rasterizer.depthBiasConstantFactor = 0.005f;
@@ -2111,7 +2107,7 @@ private:
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth test
 		dStencil.depthWriteEnable = VK_TRUE;
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
 		dStencil.maxDepthBounds = 1.0f;
@@ -2860,7 +2856,7 @@ private:
 
 	void debugLights() {
 		for (auto& l : lights) {
-			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.rot);
+			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.target);
 		}
 	}
 	void stressTest(size_t count) {
