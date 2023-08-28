@@ -4,8 +4,6 @@ layout (location = 0) in vec3 inPosition;
 
 struct matrixUBO {
     mat4 model;
-    mat4 view;
-    mat4 proj;
 };
 
 layout(set = 0, binding = 0) buffer matBufferObject {
@@ -27,11 +25,14 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-    mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the object
-    mat4 mvp = lights[pc.lightIndex].projectionMatrix * lights[pc.lightIndex].viewMatrix * modelMatrix; // model view proj matrix
-    vec4 lightSpacePos = mvp * vec4(inPosition, 1.0); 
-    lightSpacePos = lightSpacePos / lightSpacePos.w; // perspective divide
-    gl_Position = lightSpacePos;
+	// get the model matrix of the model from the SSBO
+    mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
+    mat4 lightView = lights[pc.lightIndex].viewMatrix;
+    mat4 lightProj = lights[pc.lightIndex].projectionMatrix;
+    mat4 lightSpaceMatrix = lightProj * lightView;
+    
+    // transform the vertex into light space
+    gl_Position = lightSpaceMatrix * modelMatrix * vec4(inPosition, 1.0);
 }
 
 

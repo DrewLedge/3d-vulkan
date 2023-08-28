@@ -405,15 +405,15 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 52.0f;
-		l.outerConeAngle = 70.0f;
+		l.innerConeAngle = 30.0f;
+		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1144,7 +1144,7 @@ private:
 		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, l.target);
 		std::cout << targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
 
-		forms::vec3 up = forms::vec3(0.0f, -1.0f, 0.0f); // vulkan
+		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, targetVec, up);
 
 		// get the projection matrix and the right depth ranges (0-1 for vulkan)
@@ -2036,7 +2036,6 @@ private:
 		fragStage.module = shadowFragShaderModule;
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
-
 
 		// vertex input setup:
 		VkVertexInputBindingDescription bindDesc{};
