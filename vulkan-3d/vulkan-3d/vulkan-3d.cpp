@@ -458,26 +458,38 @@ private:
 
 	void pickDevice() {
 		uint32_t deviceCount = 0;
-		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+		vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr); // get number of devices
 		if (deviceCount == 0) {
 			throw std::runtime_error("failed to find GPUs with Vulkan support!");
 		}
 		std::vector<VkPhysicalDevice> devices(deviceCount);
 		vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+		VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
+		int highestScore = -1;
 		for (const auto& device : devices) {
 			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) {
-				physicalDevice = device;
 				VkPhysicalDeviceProperties deviceProperties;
 				vkGetPhysicalDeviceProperties(device, &deviceProperties);
-				printCapabilities(deviceProperties);
-				break;
-			}
 
+				int score = scoreDevice(device);
+				if (score > highestScore) {
+					bestDevice = device;
+					highestScore = score;
+				}
+			}
 		}
-		if (physicalDevice == VK_NULL_HANDLE) {
+		if (bestDevice == VK_NULL_HANDLE) {
 			throw std::runtime_error("failed to find a suitable GPU for graphics and presentation");
 		}
+
+		// use the best device
+		physicalDevice = bestDevice;
+		VkPhysicalDeviceProperties deviceProperties;
+		vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+		printCapabilities(deviceProperties);
 	}
+
 	void printCapabilities(VkPhysicalDeviceProperties deviceProperties) {
 		std::cout << "---------------------------------" << std::endl;
 		std::cout << "Device Name: " << deviceProperties.deviceName << std::endl;
@@ -499,7 +511,7 @@ private:
 		QueueFamilyIndices indices = findQueueFamiliesG(physicalDevice);
 		float queuePriority = 1.0f;
 		VkDeviceQueueCreateInfo queueInf{};
-		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold que family info
+		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold queue family info
 		queueInf.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
 		queueInf.queueCount = 1;
 		queueInf.pQueuePriorities = &queuePriority;
@@ -507,12 +519,11 @@ private:
 		VkPhysicalDeviceFeatures deviceFeatures{};
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
 		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
-		descIndexing.pNext = nullptr; // nullptr because we are not chaining any other structures to this one
-		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE; // combined image samplers non uniform indexing
-		descIndexing.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE; // ubo non uniform indexing
-		descIndexing.runtimeDescriptorArray = VK_TRUE; // calculates descriptor arrays at runtime
-		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE; // descriptors can be bound by specifying a descriptor count
-		descIndexing.descriptorBindingPartiallyBound = VK_TRUE; // descriptors can be partially bound which means that only some of the array elements need to be valid
+		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+		descIndexing.shaderUniformBufferArrayNonUniformIndexing = VK_TRUE;
+		descIndexing.runtimeDescriptorArray = VK_TRUE;
+		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE;
+		descIndexing.descriptorBindingPartiallyBound = VK_TRUE;
 
 		VkDeviceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -520,6 +531,7 @@ private:
 		newInfo.pQueueCreateInfos = &queueInf;
 		newInfo.queueCreateInfoCount = 1;
 		newInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
+
 		// specify the device extensions to enable
 		const std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
@@ -527,6 +539,7 @@ private:
 		VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME
 		};
+
 		newInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		newInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		newInfo.enabledLayerCount = 0;
