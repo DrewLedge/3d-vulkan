@@ -441,6 +441,20 @@ private:
 			throw std::runtime_error("Failed to create instance!");
 		}
 	}
+	int scoreDevice(VkPhysicalDevice device) {
+		VkPhysicalDeviceProperties deviceProperties;
+		VkPhysicalDeviceFeatures deviceFeatures;
+		vkGetPhysicalDeviceProperties(device, &deviceProperties);
+		vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+		int score = 0;
+		if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+			score += 1000;
+		}
+		else if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+			score += 100;
+		}
+		return score;
+	}
 
 	void pickDevice() {
 		uint32_t deviceCount = 0;
@@ -507,13 +521,21 @@ private:
 		newInfo.queueCreateInfoCount = 1;
 		newInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
 		// specify the device extensions to enable
-		const std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME,VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME };
+		const std::vector<const char*> deviceExtensions = {
+		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+		VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
+		VK_KHR_MAINTENANCE3_EXTENSION_NAME
+		};
 		newInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		newInfo.ppEnabledExtensionNames = deviceExtensions.data();
 		newInfo.enabledLayerCount = 0;
 		newInfo.ppEnabledLayerNames = nullptr;
-		if (vkCreateDevice(physicalDevice, &newInfo, nullptr, &device) != VK_SUCCESS) { // if logic device creation fails, output error
-			throw std::runtime_error("failed to create logical device! " + resultStr(vkCreateDevice(physicalDevice, &newInfo, nullptr, &device)));
+		VkResult result = vkCreateDevice(physicalDevice, &newInfo, nullptr, &device);
+		if (result != VK_SUCCESS) {
+			std::stringstream errorMessage;
+			errorMessage << "Failed to create logical device! VkResult: " << result;
+			throw std::runtime_error(errorMessage.str());
 		}
 	}
 
