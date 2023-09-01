@@ -425,15 +425,20 @@ private:
 		instanceInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
 		instanceInfo.apiVersion = VK_API_VERSION_1_0;
 
-		VkInstanceCreateInfo newInfo{};
-		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
-		newInfo.pApplicationInfo = &instanceInfo;
-
 		uint32_t glfwExtensionCount = 0;
 		const char** glfwExtensions;
 		glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
-		newInfo.enabledExtensionCount = glfwExtensionCount;
-		newInfo.ppEnabledExtensionNames = glfwExtensions;
+		std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
+
+		extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+		extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+
+		VkInstanceCreateInfo newInfo{};
+		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+		newInfo.pApplicationInfo = &instanceInfo;
+		
+		newInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+		newInfo.ppEnabledExtensionNames = extensions.data();
 		newInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
 		newInfo.ppEnabledLayerNames = validationLayers.data();
 
@@ -536,9 +541,17 @@ private:
 		const std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-		VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME
 		};
+
+		for (auto& e : deviceExtensions) {
+			if (checkExtensionSupport(e)) {
+				std::cout<<"---- "<< e << " is supported!" <<" ----"<< std::endl;
+			}
+			else {
+				throw std::runtime_error("Device contains unsupported extensions!");
+			}
+		}
 
 		newInfo.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size());
 		newInfo.ppEnabledExtensionNames = deviceExtensions.data();
@@ -552,6 +565,19 @@ private:
 		}
 	}
 
+	bool checkExtensionSupport(const char* extensionName) {
+		uint32_t extensionCount;
+		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+
+		for (const auto& availableExtension : availableExtensions) {
+			if (strcmp(extensionName, availableExtension.extensionName) == 0) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	std::vector<char> readFile(const std::string& filename) { //reads shader code from file. it should reads SPIRV binary files
 		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
