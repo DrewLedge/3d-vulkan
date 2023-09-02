@@ -340,22 +340,17 @@ public:
 			result.m[0][0] = r.x;
 			result.m[1][0] = r.y;
 			result.m[2][0] = r.z;
-			result.m[3][0] = -r.dotProd(eye);
 
 			result.m[0][1] = u.x;
 			result.m[1][1] = u.y;
 			result.m[2][1] = u.z;
-			result.m[3][1] = -u.dotProd(eye);
 
 			result.m[0][2] = -f.x;
 			result.m[1][2] = -f.y;
 			result.m[2][2] = -f.z;
 			result.m[3][2] = f.dotProd(eye);
 
-			result.m[0][3] = 0.0f;
-			result.m[1][3] = 0.0f;
-			result.m[2][3] = 0.0f;
-			result.m[3][3] = 1.0f;
+			result.m[3][3] = 1.0f; 
 
 			return result;
 		}

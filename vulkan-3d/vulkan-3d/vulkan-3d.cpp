@@ -1203,9 +1203,14 @@ private:
 		float nearPlane = 0.01f, farPlane = 10.0f;
 
 		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, l.target);
-		std::cout << targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
+		std::cout << "target: "<<targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
 
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
+
+		if (l.pos == targetVec) {
+			throw std::runtime_error("Light position and target are the same!");
+		}
+
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, targetVec, up);
 
 		// get the projection matrix and the right depth ranges (0-1 for vulkan)
