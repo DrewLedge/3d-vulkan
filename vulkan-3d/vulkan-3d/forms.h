@@ -262,17 +262,19 @@ public:
 		}
 		static mat4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
 			mat4 result;
-			float radians = fov * (PI / 180.0f); 	
-			float f = 1.0f / tanf(radians / 2.0f);
-			result.m[0][0] = f / aspect_ratio;
-			result.m[1][1] = -f;  // flip y axis for vulkan
-			result.m[2][2] = far_clip / (far_clip - near_clip);
-			result.m[2][3] = -(far_clip * near_clip) / (far_clip - near_clip);
+			float tanHalf = 1.0f / tan((fov * (PI / 180.0f)) * 0.5f);
+			float k = far_clip / (far_clip - near_clip);
+
+			result.m[0][0] = tanHalf / aspect_ratio;
+			result.m[1][1] = -tanHalf;
+			result.m[2][2] = k;
+			result.m[2][3] = -near_clip * k;
 			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
 
 			return result;
 		}
+
 
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
@@ -329,6 +331,7 @@ public:
 			return result;
 		}
 		static mat4 lookAt(const vec3& eye, const vec3& target, const vec3& up) {
+			// f, u and r are all orthogonal to each other
 			vec3 f = (target - eye).normalize(); // forward vector
 			vec3 r = up.crossProd(f).normalize(); // right vector
 			vec3 u = f.crossProd(r).normalize(); // up vector
@@ -338,25 +341,29 @@ public:
 			result.m[1][0] = r.y;
 			result.m[2][0] = r.z;
 			result.m[3][0] = -r.dotProd(eye);
+
 			result.m[0][1] = u.x;
 			result.m[1][1] = u.y;
 			result.m[2][1] = u.z;
 			result.m[3][1] = -u.dotProd(eye);
+
 			result.m[0][2] = -f.x;
 			result.m[1][2] = -f.y;
 			result.m[2][2] = -f.z;
 			result.m[3][2] = f.dotProd(eye);
+
 			result.m[0][3] = 0.0f;
 			result.m[1][3] = 0.0f;
 			result.m[2][3] = 0.0f;
 			result.m[3][3] = 1.0f;
+
 			return result;
 		}
 
 		static mat4 depthRangeMatrix() { // used for shadow mapping and getting the correct projection matrix
 			mat4 result;
 			vec3 scaleVector(1.0f, 1.0f, 0.5f);
-			vec3 translateVector(0.0f, 0.0f, 0.5f);
+			vec3 translateVector(0.0f, 0.0f, 1.0f);
 			result = mat4::scale(scaleVector) * mat4::translate(translateVector);
 			return result;
 		}

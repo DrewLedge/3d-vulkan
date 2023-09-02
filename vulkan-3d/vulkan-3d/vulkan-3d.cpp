@@ -1213,6 +1213,7 @@ private:
 		forms::mat4 vulkanProjMatrix = forms::mat4::depthRangeMatrix() * standardProjMatrix;
 		printMatrix(vulkanProjMatrix);
 		printMatrix(viewMatrix);
+		printMatrix(forms::mat4::depthRangeMatrix());
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
