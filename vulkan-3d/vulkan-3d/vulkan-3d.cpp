@@ -7,7 +7,6 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
 #include "ext/taskflow/taskflow.hpp"
-#include <glm.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -414,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1249,30 +1248,12 @@ private:
 		vkUnmapMemory(device, matrixDataBufferMem);
 	}
 
-	// converts a matrix data type into a flat array of floats
-	template <typename T>
-		void convertMatrix(const T& source, float destination[16]); // Declare the template, but don't define it
-
-	// for glm::mat4
-	template <>
-	void convertMatrix<glm::mat4>(const glm::mat4& source, float destination[16]) {
+	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		size_t index = 0;
-		for (size_t column = 0; column < 4; ++column) {
-			for (size_t row = 0; row < 4; ++row) {
-				destination[index] = source[column][row];
-				++index;
-			}
-		}
-	}
-
-	// for forms::mat4
-	template <>
-	void convertMatrix<forms::mat4>(const forms::mat4& source, float destination[16]) {
-		size_t index = 0;
-		for (size_t column = 0; column < 4; ++column) {
-			for (size_t row = 0; row < 4; ++row) {
+		for (size_t column = 0; column < 4; column++) {
+			for (size_t row = 0; row < 4; row++) {
 				destination[index] = source.m[row][column];
-				++index;
+				index++;
 			}
 		}
 	}
