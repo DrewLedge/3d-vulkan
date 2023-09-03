@@ -263,16 +263,16 @@ public:
 			return vec3(x, y, z);
 		}
 		static mat4 perspective(float fov, float aspect, float near, float far) {
-			mat4 result;
-			float tanHalf = 1.0f / tan((fov * (PI / 180.0f)) * 0.5f);
-			float k = far / (far - near);
+			mat4 result(0);
+			float fovRad = fov * (PI / 180.0f);
+			float tanHalf = tan(fovRad * 0.5f);
 
-			// column major and right handed
-			result.m[0][0] = tanHalf / aspect;
-			result.m[1][1] = tanHalf;
-			result.m[2][2] = k;
-			result.m[2][3] = -near * k;
-			result.m[3][2] = 1.0f; // homogenous coordinate
+			// column major
+			result.m[0][0] = 1.0f / (aspect * tanHalf);
+			result.m[1][1] = 1.0f / tanHalf;
+			result.m[2][2] = far / (far - near);
+			result.m[2][3] = -(2 * far * near) / (far - near);
+			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
 
 			return result;
@@ -280,6 +280,7 @@ public:
 
 
 
+	
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s)
 				* mat4::rotate(rot)

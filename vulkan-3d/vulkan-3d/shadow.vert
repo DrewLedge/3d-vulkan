@@ -25,16 +25,18 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-	// get the model matrix of the model from the SSBO
+    // get the model matrix of the model from the SSBO
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
     mat4 lightView = lights[pc.lightIndex].viewMatrix;
     mat4 lightProj = lights[pc.lightIndex].projectionMatrix;
+
     mat4 lightSpaceMatrix = lightProj * lightView;
-    
-    // transform the vertex into light space
-    gl_Position = lightSpaceMatrix * modelMatrix * vec4(inPosition, 1.0);
-    gl_Position.z = (gl_Position.z + gl_Position.w) / 2.0; // get the right depth val
-    gl_Position.y *= -1; // flip the y axis for vulkan
+    vec4 transformedPos = lightSpaceMatrix * modelMatrix * vec4(inPosition, 1.0);
+    transformedPos.z = (transformedPos.z + transformedPos.w) / 2.0; // depth range adjustment for vulkan
+    transformedPos.y *= -1; // flip y
+
+    gl_Position = transformedPos;
+
 }
 
 
