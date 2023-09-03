@@ -33,6 +33,8 @@ void main() {
     
     // transform the vertex into light space
     gl_Position = lightSpaceMatrix * modelMatrix * vec4(inPosition, 1.0);
+    gl_Position.z = (gl_Position.z + gl_Position.w) / 2.0; // get the right depth val
+    gl_Position.y *= -1; // flip the y axis for vulkan
 }
 
 

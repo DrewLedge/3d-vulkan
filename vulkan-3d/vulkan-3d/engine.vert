@@ -50,6 +50,7 @@ void main() {
     vec3 viewDirection = normalize(cameraPosition - vec3(model * vec4(inPosition, 1.0)));
 
     gl_Position = proj*view*model * vec4(inPosition, 1.0);
+    gl_Position.y *= -1.0; // flip y axis
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;

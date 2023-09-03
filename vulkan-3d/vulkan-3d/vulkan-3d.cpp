@@ -1521,7 +1521,6 @@ private:
 	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec3 rotation) {
 		model m = objects[object];
 
-		// convert the CamPos to World Space
 		forms::vec3 fac = 0.1f / scale;
 		m.scale = scale;
 		m.position = pos * fac;
@@ -2404,7 +2403,7 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos*-1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();
@@ -2903,6 +2902,7 @@ private:
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
 		//debugLights();
+		scatterObjects(120, 30); //scatter the objects around the scene
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
@@ -2924,11 +2924,22 @@ private:
 			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.target);
 		}
 	}
-	void stressTest(size_t count) {
-		for (size_t i = 0; i < count; ++i) {
-			cloneObject({ 0.0f,0.0f,0.0f }, 0, { 0.1f,0.1f,0.1f }, { 0.0f, 0.0f, 0.0f });
+
+	void scatterObjects(int count, float radius) {
+		for (int i = 0; i < count; i++) {
+			// generate random angles (rads)
+			float theta = (float(rand()) / float(RAND_MAX)) * 2.0f * 3.14159f;
+			float phi = acos(2.0f * (float(rand()) / float(RAND_MAX)) - 1.0f);
+
+			// convert to cartesian coordinates
+			float x = radius * sin(phi) * cos(theta);
+			float y = radius * sin(phi) * sin(theta);
+			float z = radius * cos(phi);
+
+			cloneObject({ x, y, z }, 0, { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
 		}
 	}
+
 	void cleanup() { //FIX
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);

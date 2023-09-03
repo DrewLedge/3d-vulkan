@@ -155,6 +155,13 @@ public:
 				}
 			}
 		}
+		mat4(float zero) {
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
+					m[i][j] = 0.0f;
+				}
+			}
+		}
 		bool operator==(const mat4& other) const {
 			const float epsilon = 0.00001f;
 			bool equal = true;
@@ -262,7 +269,7 @@ public:
 
 			// column major and right handed
 			result.m[0][0] = tanHalf / aspect;
-			result.m[1][1] = -tanHalf;
+			result.m[1][1] = tanHalf;
 			result.m[2][2] = k;
 			result.m[2][3] = -near * k;
 			result.m[3][2] = 1.0f; // homogenous coordinate
@@ -270,6 +277,8 @@ public:
 
 			return result;
 		}
+
+
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s)
