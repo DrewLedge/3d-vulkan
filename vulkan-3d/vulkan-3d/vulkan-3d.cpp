@@ -413,7 +413,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -436,7 +436,7 @@ private:
 		VkInstanceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		newInfo.pApplicationInfo = &instanceInfo;
-		
+
 		newInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		newInfo.ppEnabledExtensionNames = extensions.data();
 		newInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -546,7 +546,7 @@ private:
 
 		for (auto& e : deviceExtensions) {
 			if (checkExtensionSupport(e)) {
-				std::cout<<"---- "<< e << " is supported!" <<" ----"<< std::endl;
+				std::cout << "---- " << e << " is supported!" << " ----" << std::endl;
 			}
 			else {
 				throw std::runtime_error("Device contains unsupported extensions!");
@@ -1190,6 +1190,10 @@ private:
 		std::cout << "---------------------------------" << std::endl;
 	}
 
+	void printVector(const forms::vec3& vector) {
+		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}";
+	}
+
 
 	void calcObjectMats(model& o) {
 		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
@@ -1202,16 +1206,13 @@ private:
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 0.01f, farPlane = 10.0f;
 
-		forms::vec3 targetVec = forms::vec3::getTargetVec(l.pos, l.target);
-		std::cout << "target: "<<targetVec.x << " " << targetVec.y << " " << targetVec.z << std::endl;
-
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
 
-		if (l.pos == targetVec) {
+		if (l.pos == l.target) {
 			throw std::runtime_error("Light position and target are the same!");
 		}
 
-		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, targetVec, up);
+		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 
 		// get the projection matrix and the right depth ranges (0-1 for vulkan)
 		forms::mat4 standardProjMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
@@ -2862,16 +2863,16 @@ private:
 
 		// camera movement:
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
-			cam.camPos += forward * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
 			cam.camPos -= forward * cameraSpeed;
 		}
+		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+			cam.camPos += forward * cameraSpeed;
+		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			cam.camPos -= right * cameraSpeed;
+			cam.camPos += right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
-			cam.camPos += right * cameraSpeed;
+			cam.camPos -= right * cameraSpeed;
 		}
 
 		// camera rotation

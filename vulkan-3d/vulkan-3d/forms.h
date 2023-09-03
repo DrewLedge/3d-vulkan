@@ -79,11 +79,6 @@ public:
 			return direction;
 		}
 
-		static vec3 getTargetVec(const vec3& pos, const vec3& targetPos) {
-			vec3 dir = targetPos - pos;
-			return dir;
-		}
-
 		static vec3 getForward(const vec3& camData) { // computes camera's forward direction (left handed coordinate system) (only use for camera)
 			float pitch = camData.x;
 			float yaw = camData.y;
@@ -260,22 +255,21 @@ public:
 			}
 			return vec3(x, y, z);
 		}
-		static mat4 perspective(float fov, float aspect_ratio, float near_clip, float far_clip) {
+		static mat4 perspective(float fov, float aspect, float near, float far) {
 			mat4 result;
 			float tanHalf = 1.0f / tan((fov * (PI / 180.0f)) * 0.5f);
-			float k = far_clip / (far_clip - near_clip);
+			float k = far / (far - near);
 
-			result.m[0][0] = tanHalf / aspect_ratio;
+			// column major and right handed
+			result.m[0][0] = tanHalf / aspect;
 			result.m[1][1] = -tanHalf;
 			result.m[2][2] = k;
-			result.m[2][3] = -near_clip * k;
+			result.m[2][3] = -near * k;
 			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
 
 			return result;
 		}
-
-
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s)
@@ -327,7 +321,7 @@ public:
 		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
 			mat4 result;
 			result = mat4::rotate(rotation)
-				* mat4::translate(position * -1);
+				* mat4::translate(position);
 			return result;
 		}
 		static mat4 lookAt(const vec3& eye, const vec3& target, const vec3& up) {
@@ -335,7 +329,6 @@ public:
 			vec3 f = (target - eye).normalize(); // forward vector
 			vec3 r = up.crossProd(f).normalize(); // right vector
 			vec3 u = f.crossProd(r).normalize(); // up vector
-
 			mat4 result;
 
 			// column major format
