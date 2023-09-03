@@ -265,7 +265,7 @@ public:
 			result.m[1][1] = -tanHalf;
 			result.m[2][2] = k;
 			result.m[2][3] = -near * k;
-			result.m[3][2] = 1.0f;
+			result.m[3][2] = 1.0f; // homogenous coordinate
 			result.m[3][3] = 0.0f;
 
 			return result;
@@ -328,7 +328,7 @@ public:
 			// f, u, and r are all orthogonal to each other
 			vec3 f = (target - eye).normalize(); // forward vector
 			vec3 r = up.crossProd(f).normalize(); // right vector
-			vec3 u = f.crossProd(r).normalize(); // up vector
+			vec3 u = f.crossProd(r); // up vector
 			mat4 result;
 
 			// column major format

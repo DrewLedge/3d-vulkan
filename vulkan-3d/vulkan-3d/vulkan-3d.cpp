@@ -1191,7 +1191,7 @@ private:
 	}
 
 	void printVector(const forms::vec3& vector) {
-		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}";
+		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
 	}
 
 
@@ -1207,23 +1207,19 @@ private:
 		float nearPlane = 0.01f, farPlane = 10.0f;
 
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
-
+		std::cout << aspectRatio << std::endl;
 		if (l.pos == l.target) {
 			throw std::runtime_error("Light position and target are the same!");
 		}
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
-
-		// get the projection matrix and the right depth ranges (0-1 for vulkan)
-		forms::mat4 standardProjMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-		forms::mat4 vulkanProjMatrix = forms::mat4::depthRangeMatrix() * standardProjMatrix;
-		printMatrix(vulkanProjMatrix);
+		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
+		printMatrix(projMatrix);
 		printMatrix(viewMatrix);
-		printMatrix(forms::mat4::depthRangeMatrix());
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.viewMatrix);
-		convertMatrix(vulkanProjMatrix, l.projectionMatrix);
+		convertMatrix(projMatrix, l.projectionMatrix);
 	}
 
 	void updateUBO() {
