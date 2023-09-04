@@ -209,14 +209,17 @@ private:
 		forms::vec3 col;
 		forms::vec3 target;
 		float baseIntensity;
-		float viewMatrix[16];
-		float projectionMatrix[16];
+		float clipSpaceMatrix[16];
 		float innerConeAngle; // in degrees
 		float outerConeAngle; // in degrees
 		float constantAttenuation;
 		float linearAttenuation;
 		float quadraticAttenuation;
 		shadowMapDataObject shadowMapData;
+	};
+
+	struct lightDataSSBO {
+		light lights[20]; // max 20 lights
 	};
 
 	struct matrixUBO {
@@ -248,8 +251,8 @@ private:
 		forms::vec3 camRads; // radians of the camera is facing
 	};
 	struct shadowMapProportionsObject {
-		uint32_t mapWidth = 1024;
-		uint32_t mapHeight = 1024;
+		uint32_t mapWidth = 2048;
+		uint32_t mapHeight = 2048;
 	};
 
 	struct bufData {
@@ -261,9 +264,10 @@ private:
 
 	std::vector<bufData> bufferData;
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
-	std::vector<light> lights = {};
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
+	lightDataSSBO lightData = {};
+	std::vector<light> lights = {};
 	shadowMapProportionsObject shadowProps;
 
 	VkSurfaceKHR surface;
@@ -1098,7 +1102,7 @@ private:
 	void setupLights() {
 		VkBufferCreateInfo bufferCreateInfo = {};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(light) * lights.size();
+		bufferCreateInfo.size = sizeof(lightDataSSBO);
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
@@ -1118,7 +1122,7 @@ private:
 
 		void* data;
 		vkMapMemory(device, lightBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, lights.data(), bufferCreateInfo.size);
+		memcpy(data, &lightData, bufferCreateInfo.size);
 		vkUnmapMemory(device, lightBufferMem);
 	}
 
@@ -1181,8 +1185,8 @@ private:
 	}
 
 	void printMatrix(const forms::mat4& matrix) {
-		for (int i = 0; i < 4; i++) {
-			for (int j = 0; j < 4; j++) {
+		for (int j = 0; j < 4; j++) {
+			for (int i = 0; i < 4; i++) {
 				std::cout << std::fixed << std::setw(10) << std::setprecision(2) << matrix.m[i][j] << " ";
 			}
 			std::cout << std::endl; // end of row
@@ -1192,6 +1196,21 @@ private:
 
 	void printVector(const forms::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
+	}
+
+	float getMatrixElement(const float* matrix, int col, int row) {
+		return matrix[col * 4 + row];
+	}
+
+	void printFlatMatrix(const float* matrix) {
+		for (int col = 0; col < 4; ++col) {
+			for (int row = 0; row < 4; ++row) {
+				float element = getMatrixElement(matrix, col, row);
+				std::cout << element << "\t";
+			}
+			std::cout << std::endl;
+		}
+		std::cout << "---------------------------------" << std::endl;
 	}
 
 
@@ -1213,34 +1232,23 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-
-
-		std::cout<<"\n before transformation:" <<std::endl;
-		forms::vec3 before = objects[0].vertices[5].pos;
-		std::cout << before.x << " " << before.y << " " << before.z << std::endl;
-		forms::mat4 projView = projMatrix * viewMatrix;
-		forms::vec3 worldSpace = unflattenMatrix(objects[0].modelMatrix) * before;
-		std::cout<<"\n world space:" <<std::endl;
-		std::cout << worldSpace.x << " " << worldSpace.y << " " << worldSpace.z << std::endl;
-
-		forms::vec3 after = projView * worldSpace;
-		std::cout<<"\n after transformation:" <<std::endl;
-		std::cout << after.x << " " << after.y << " " << after.z << std::endl;
-
+		forms::mat4 clip = projMatrix * viewMatrix;
+		printMatrix(clip);
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
-		convertMatrix(viewMatrix, l.viewMatrix);
-		convertMatrix(projMatrix, l.projectionMatrix);
+		convertMatrix(clip, l.clipSpaceMatrix);
 	}
 
 	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			calcShadowMats(lights[i]);
+			memcpy(lightData.lights[i].clipSpaceMatrix, lights[i].clipSpaceMatrix, sizeof(lights[i].clipSpaceMatrix));
+			printFlatMatrix(lights[i].clipSpaceMatrix);
 		}
-		void* lightData;
-		vkMapMemory(device, lightBufferMem, 0, sizeof(lights), 0, &lightData);
-		memcpy(lightData, lights.data(), sizeof(lights));
+		void* lData;
+		vkMapMemory(device, lightBufferMem, 0, sizeof(lightData), 0, &lData);
+		memcpy(lData, &lightData, sizeof(lightData));
 		vkUnmapMemory(device, lightBufferMem);
 
 		// calc matrixes for objects
@@ -1473,7 +1481,7 @@ private:
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
 		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = sizeof(light) * lights.size();
+		lightBufferInfo.range = sizeof(lightDataSSBO);
 
 		std::array<VkWriteDescriptorSet, 5> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
@@ -2414,7 +2422,7 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos*-1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();
@@ -2610,7 +2618,6 @@ private:
 			}
 		}
 	}
-
 
 
 	void createFrameBuffer() {
