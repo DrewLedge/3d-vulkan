@@ -197,6 +197,18 @@ public:
 			*this = temp;
 			return *this;
 		}
+		friend vec3 operator *(const mat4& mat, const vec3& vec) {
+			float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3];
+			float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3];
+			float z = mat.m[2][0] * vec.x + mat.m[2][1] * vec.y + mat.m[2][2] * vec.z + mat.m[2][3];
+			float w = mat.m[3][0] * vec.x + mat.m[3][1] * vec.y + mat.m[3][2] * vec.z + mat.m[3][3];
+			if (w != 1.0f && w != 0.0f) {
+				x /= w;
+				y /= w;
+				z /= w;
+			}
+			return vec3(x, y, z);
+		}
 
 		static mat4 translate(const vec3 t) {
 			mat4 result;
@@ -334,11 +346,10 @@ public:
 				* mat4::translate(position);
 			return result;
 		}
-		static mat4 lookAt(const vec3& eye, const vec3& target, const vec3& up) {
-			// f, u, and r are all orthogonal to each other
+		static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
 			vec3 f = (target - eye).normalize(); // forward vector
-			vec3 r = up.crossProd(f).normalize(); // right vector
-			vec3 u = f.crossProd(r); // up vector
+			vec3 r = f.crossProd(inputUpVector).normalize(); // right vector
+			vec3 u = r.crossProd(f).normalize(); // up vector
 			mat4 result;
 
 			// column major format
