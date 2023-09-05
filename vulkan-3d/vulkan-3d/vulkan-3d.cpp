@@ -236,7 +236,7 @@ private:
 	};
 
 	struct lightDataSSBO {
-		lightMatrixUBO lights[20]; // max 20 lights
+		lightMatrixUBO lightsMatricies[20]; // max 20 lights
 		lightCords lightCords[20]; // max 20 lights
 	};
 
@@ -437,7 +437,6 @@ private:
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 4.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
-		createLight({ 10.0f, 0.0f, 5.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1262,8 +1261,9 @@ private:
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			calcShadowMats(lights[i]);
-			memcpy(lightData.lights[i].proj, lights[i].proj, sizeof(lights[i].proj));
-			memcpy(lightData.lights[i].view, lights[i].view, sizeof(lights[i].view));
+			memcpy(lightData.lightsMatricies[i].proj, lights[i].proj, sizeof(lights[i].proj));
+			memcpy(lightData.lightsMatricies[i].view, lights[i].view, sizeof(lights[i].view));
+			copyLightToLightCords(lights[i], lightData.lightCords[i]);
 		}
 		void* lData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lightData), 0, &lData);
@@ -1281,6 +1281,18 @@ private:
 		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &matrixData);
 		memcpy(matrixData, &matData, sizeof(matData));
 		vkUnmapMemory(device, matrixDataBufferMem);
+	}
+
+	void copyLightToLightCords(const light& src, lightCords& dest) {
+		memcpy(&dest.pos, &src.pos, sizeof(forms::vec3));
+		memcpy(&dest.col, &src.col, sizeof(forms::vec3));
+		memcpy(&dest.target, &src.target, sizeof(forms::vec3));
+		memcpy(&dest.baseIntensity, &src.baseIntensity, sizeof(float));
+		memcpy(&dest.innerConeAngle, &src.innerConeAngle, sizeof(float));
+		memcpy(&dest.outerConeAngle, &src.outerConeAngle, sizeof(float));
+		memcpy(&dest.constantAttenuation, &src.constantAttenuation, sizeof(float));
+		memcpy(&dest.linearAttenuation, &src.linearAttenuation, sizeof(float));
+		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
 	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
