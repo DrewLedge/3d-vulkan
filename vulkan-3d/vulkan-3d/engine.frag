@@ -17,9 +17,9 @@ struct lightMatrix {
     mat4 projectionMatrix;
 };
 struct lightData {
-    formsVec3 lPos;
-    formsVec3 lColor;
-    formsVec3 rot;
+    formsVec3 pos;
+    formsVec3 color;
+    formsVec3 targetVec;
     float intensity;
 	float innerConeAngle; // in degrees
 	float outerConeAngle; // in degrees
@@ -86,9 +86,9 @@ if (lights.length() >= 1) {
          float outerConeRads = lights[i].outerConeAngle * (PI/180.0f);
 
 		 // convert light struct to vec3s so I can use them in calculations
-		 vec3 lightPos = vec3(lights[i].lPos.x, lights[i].lPos.y, lights[i].lPos.z);
-		 vec3 lightDirection = normalize(lightPos - inFragPos);
-		 vec3 lightRot = vec3(lights[i].rot.x, lights[i].rot.y, lights[i].rot.z);
+		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
+         vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
+         vec3 lightDirection = normalize(targetVec - lightPos);
 
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
@@ -100,16 +100,15 @@ if (lights.length() >= 1) {
 		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
 
 		 // spotlight attenuation and cone effect
-		 float theta = dot(lightDirection, normalize(-lightRot));
+		 float theta = dot(lightDirection, normalize(-targetVec));
 
 		 float epsilon = outerConeRads - innerConeRads;
 		 float intensity = clamp((theta - lights[i].outerConeAngle) / epsilon, 0.0, 1.0);
 		 float distanceToLight = length(lightPos - inFragPos);
 		 float attenuation = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * distanceToLight + lights[i].quadraticAttenuation * (distanceToLight * distanceToLight));
 
-		 vec3 lightColor = vec3(lights[i].lColor.x, lights[i].lColor.y, lights[i].lColor.z);
+		 vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
-		 // blinn-Phong lighting model:
 		 float diff = max(dot(normal, lightDirection), 0.0);
 		 diffuse += lightColor * diff * lights[i].intensity * shadowFactor * intensity * attenuation; 
 

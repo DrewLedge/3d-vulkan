@@ -436,7 +436,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 4.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1255,6 +1255,7 @@ private:
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
 		convertMatrix(projMatrix, l.proj);
+		printMatrix(viewMatrix);
 	}
 
 	void updateUBO() {
