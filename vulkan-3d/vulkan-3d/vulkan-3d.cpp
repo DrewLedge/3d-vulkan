@@ -209,7 +209,8 @@ private:
 		forms::vec3 col;
 		forms::vec3 target;
 		float baseIntensity;
-		float clipSpaceMatrix[16];
+		float proj[16];
+		float view[16];
 		float innerConeAngle; // in degrees
 		float outerConeAngle; // in degrees
 		float constantAttenuation;
@@ -217,10 +218,28 @@ private:
 		float quadraticAttenuation;
 		shadowMapDataObject shadowMapData;
 	};
+	struct lightMatrixUBO {
+		float view[16];
+		float proj[16];
+	};
+
+	struct lightCords {
+		forms::vec3 pos;
+		forms::vec3 col;
+		forms::vec3 target;
+		float baseIntensity;
+		float innerConeAngle; // in degrees
+		float outerConeAngle; // in degrees
+		float constantAttenuation;
+		float linearAttenuation;
+		float quadraticAttenuation;
+	};
 
 	struct lightDataSSBO {
-		light lights[20]; // max 20 lights
+		lightMatrixUBO lights[20]; // max 20 lights
+		lightCords lightCords[20]; // max 20 lights
 	};
+
 
 	struct matrixUBO {
 		float model[16];
@@ -417,7 +436,8 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 4.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 10.0f, 0.0f, 5.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1232,19 +1252,18 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-		forms::mat4 clip = projMatrix * viewMatrix;
-		printMatrix(clip);
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
-		convertMatrix(clip, l.clipSpaceMatrix);
+		convertMatrix(viewMatrix, l.view);
+		convertMatrix(projMatrix, l.proj);
 	}
 
 	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			calcShadowMats(lights[i]);
-			memcpy(lightData.lights[i].clipSpaceMatrix, lights[i].clipSpaceMatrix, sizeof(lights[i].clipSpaceMatrix));
-			printFlatMatrix(lights[i].clipSpaceMatrix);
+			memcpy(lightData.lights[i].proj, lights[i].proj, sizeof(lights[i].proj));
+			memcpy(lightData.lights[i].view, lights[i].view, sizeof(lights[i].view));
 		}
 		void* lData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lightData), 0, &lData);

@@ -12,22 +12,26 @@ struct formsVec3 { // custom structure to hold my vec3s
     float y;
     float z;
 };
-struct light {
+struct lightMatrix {
+    mat4 viewMatrix;
+    mat4 projectionMatrix;
+};
+struct lightData {
     formsVec3 lPos;
     formsVec3 lColor;
     formsVec3 rot;
-    float lightIntensity;
-    mat4 viewMatrix;
-    mat4 projectionMatrix;
-    float innerConeAngle; // in radians
-	float outerConeAngle; // in radians
+    float intensity;
+	float innerConeAngle; // in degrees
+	float outerConeAngle; // in degrees
 	float constantAttenuation;
 	float linearAttenuation;
 	float quadraticAttenuation;
 };
 
+
 layout (set=3, binding = 3) buffer LightBuffer {
-	light lights[];
+	lightMatrix lightMatricies[20];
+    lightData lights[20];
 };
 
 layout(location = 0) in vec4 fragColor;
@@ -88,7 +92,8 @@ if (lights.length() >= 1) {
 
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
-		 vec4 fragPosLightSpace = lights[i].projectionMatrix * lights[i].viewMatrix * fragPosModelSpace;
+         mat4 lightClip = lightMatricies[i].projectionMatrix * lightMatricies[i].viewMatrix;
+		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
          fragPosLightSpace /= fragPosLightSpace.w; 
 
 		 // shadow factor computation:
@@ -106,11 +111,11 @@ if (lights.length() >= 1) {
 
 		 // blinn-Phong lighting model:
 		 float diff = max(dot(normal, lightDirection), 0.0);
-		 diffuse += lightColor * diff * lights[i].lightIntensity * shadowFactor * intensity * attenuation; 
+		 diffuse += lightColor * diff * lights[i].intensity * shadowFactor * intensity * attenuation; 
 
 		 vec3 halfwayDir = normalize(lightDirection + inViewDir); 
 		 float spec = pow(max(dot(normal, halfwayDir), 0.0), shinyness); 
-		 specular += lightColor * sampledSpec.rgb * spec * lights[i].lightIntensity * shadowFactor * intensity * attenuation;
+		 specular += lightColor * sampledSpec.rgb * spec * lights[i].intensity * shadowFactor * intensity * attenuation;
 	 }
 
 
