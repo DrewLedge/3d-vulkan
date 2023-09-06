@@ -89,8 +89,8 @@ if (lights.length() >= 1) {
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
          vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
          vec3 lightDirection = normalize(targetVec - lightPos);
-         float theta = dot(lightDirection, normalize(lightDirection));
-
+         vec3 fragToLightDirection = normalize(inFragPos - lightPos);
+         float theta = dot(lightDirection, fragToLightDirection);
 
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
@@ -105,7 +105,7 @@ if (lights.length() >= 1) {
 		 float epsilon = outerConeRads - innerConeRads;
 		 float intensity = clamp((theta - outerConeRads) / epsilon, 0.0, 1.0);
 		 float distanceToLight = length(lightPos - inFragPos);
-		 float attenuation = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * distanceToLight + lights[i].quadraticAttenuation * (distanceToLight * distanceToLight));
+		 float attenuation = 1.0;
 
 		 vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
