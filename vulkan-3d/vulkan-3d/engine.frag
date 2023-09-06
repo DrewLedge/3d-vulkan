@@ -75,7 +75,7 @@ if (lights.length() >= 1) {
     vec4 sampledSpec = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
     vec4 sampledNorm = texture(texSamplers[inTexIndex + 2], inTexCoord); // normal map
 
-    vec3 normal = normalize(inNormal + sampledNorm.xyz * 2.0 - 1.0); 
+    vec3 normal = normalize(sampledNorm.xyz * 2.0 - 1.0);
     vec3 ambient = 0.1 * sampled.rgb; // low influence
 
     vec3 diffuse = vec3(0.0); 
@@ -89,6 +89,8 @@ if (lights.length() >= 1) {
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
          vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
          vec3 lightDirection = normalize(targetVec - lightPos);
+         float theta = dot(lightDirection, normalize(lightDirection));
+
 
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
@@ -100,10 +102,8 @@ if (lights.length() >= 1) {
 		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
 
 		 // spotlight attenuation and cone effect
-		 float theta = dot(lightDirection, normalize(-targetVec));
-
 		 float epsilon = outerConeRads - innerConeRads;
-		 float intensity = clamp((theta - lights[i].outerConeAngle) / epsilon, 0.0, 1.0);
+		 float intensity = clamp((theta - outerConeRads) / epsilon, 0.0, 1.0);
 		 float distanceToLight = length(lightPos - inFragPos);
 		 float attenuation = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * distanceToLight + lights[i].quadraticAttenuation * (distanceToLight * distanceToLight));
 
