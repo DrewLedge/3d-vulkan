@@ -29,8 +29,7 @@ void main() {
     mat4 lightView = lights[pc.lightIndex].view;
     mat4 lightProj = lights[pc.lightIndex].projection;
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
-    mat4 lightClip = lightProj*lightView;
-    vec4 transformedPos = lightClip * modelMatrix * vec4(inPosition, 1.0);
+    vec4 transformedPos = lightProj * lightView * modelMatrix * vec4(inPosition, 1.0);
     transformedPos.z = (transformedPos.z + transformedPos.w) / 2.0; // depth range adjustment for vulkan
     transformedPos.y *= -1; // flip y
 

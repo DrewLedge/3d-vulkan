@@ -49,23 +49,22 @@ vec3 lightDirection;
 
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get the PCF shadow factor (used for softer shadows)
     int halfSize = kernelSize / 2;
-
-    // get the PCF shadow factor (used for softer shadows)
-    float shadow = 0.0; // start at 0
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w; // divide by w component
+    float shadow = 0.0;
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0); // get the size of a texel from the reciprocal of the shadow map's dimensions
 
-    // loop through the kernel
     for(int x = -halfSize; x <= halfSize; ++x) {
         for(int y = -halfSize; y <= halfSize; ++y) {
-           float pcfDepth = textureProj(shadowMapSamplers[lightIndex], vec4(projCoords.xy, fragPosLightSpace.z / fragPosLightSpace.w, 1.0)).r; // get the depth value of the current fragment
-            shadow += fragPosLightSpace.z > pcfDepth ? 1.0 : 0.0; // calculate if the fragment is in a shadow
+            vec2 offset = vec2(x, y) * texelSize;
+            float pcfDepth = texture(shadowMapSamplers[lightIndex], vec3(projCoords.xy + offset, projCoords.z - 0.005)).r; // get the depth value of the current fragment
+            shadow += pcfDepth;  // depth comparison done automatically when using sampler2DShadow
         }
     }
 
     shadow /= float(kernelSize * kernelSize); // divide by number of samples
     return shadow;
 }
+
 
 void main() {
 float shinyness=32.0f;
@@ -120,6 +119,7 @@ if (lights.length() >= 1) {
 
     vec3 result = ambient + diffuse + specular; 
     outColor = vec4(result, 1.0) * inAlpha;
+
 }
 }
 
