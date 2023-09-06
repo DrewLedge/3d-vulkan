@@ -30,7 +30,12 @@ void main() {
     mat4 lightProj = lights[pc.lightIndex].projection;
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
     vec4 transformedPos = lightProj * lightView * modelMatrix * vec4(inPosition, 1.0);
+
+    transformedPos.x /= transformedPos.w;
+    transformedPos.y /= transformedPos.w;
+    transformedPos.z /= transformedPos.w;
     transformedPos.z = (transformedPos.z + transformedPos.w) / 2.0; // depth range adjustment for vulkan
+
     transformedPos.y *= -1; // flip y
 
     gl_Position = transformedPos;

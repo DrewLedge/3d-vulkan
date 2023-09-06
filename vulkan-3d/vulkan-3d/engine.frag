@@ -105,7 +105,11 @@ if (lights.length() >= 1) {
 		 float epsilon = outerConeRads - innerConeRads;
 		 float intensity = clamp((theta - outerConeRads) / epsilon, 0.0, 1.0);
 		 float distanceToLight = length(lightPos - inFragPos);
-		 float attenuation = 1.0;
+
+		 float constant = lights[i].constantAttenuation;
+         float linear = lights[i].linearAttenuation;
+         float quadratic = lights[i].quadraticAttenuation;
+         float attenuation = 1.0 / (constant + linear * distanceToLight + quadratic * (distanceToLight * distanceToLight));
 
 		 vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
