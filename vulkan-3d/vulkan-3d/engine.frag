@@ -103,6 +103,7 @@ if (lights.length() >= 1) {
          vec3 lightDirection = normalize(targetVec - lightPos);
          vec3 fragToLightDirection = normalize(inFragPos - lightPos);
          float theta = dot(lightDirection, fragToLightDirection);
+         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
 		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
@@ -112,31 +113,33 @@ if (lights.length() >= 1) {
 		 // shadow factor computation:
 		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 3);
 
-		 // spotlight attenuation and cone effect
-		 float epsilon = outerConeRads - innerConeRads;
-		 float intensity = clamp((theta - outerConeRads) / epsilon, 0.0, 1.0);
-		 float distanceToLight = length(lightPos - inFragPos);
+		 // spotlight cutoff
+         if(theta > cos(outerConeRads)){
+             float intensity;
+         if(theta > cos(innerConeRads)){
+             intensity = 1.0;
+         } else {
+             intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
+         }
 
-		 float constant = lights[i].constantAttenuation;
-         float linear = lights[i].linearAttenuation;
-         float quadratic = lights[i].quadraticAttenuation;
-         float attenuation = 1.0 / (constant + linear * distanceToLight + quadratic * (distanceToLight * distanceToLight));
-         attenuation=1.0;
+         // diffuse lighting
+         vec3 lightDir = normalize(lightPos - inFragPos);
+         float diff = max(dot(normal, lightDir), 0.0);
+         diffuse += lightColor * diff * intensity;
 
-		 vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
+         // specular lighting
+         vec3 viewDir = normalize(inCamPos - inFragPos);
+         vec3 reflectDir = reflect(-lightDir, normal); 
+         float spec = pow(max(dot(viewDir, reflectDir), 0.0), sampledSpec.a); // sampledSpec.a is used as the shininess factor
+         specular += lightColor * spec * intensity * shadowFactor; // multiplying with shadow factor for shadow contribution
+        }
+    }
 
-		 float diff = max(dot(normal, lightDirection), 0.0);
-		 diffuse += lightColor * diff * lights[i].intensity * shadowFactor * intensity * attenuation; 
+    vec3 result = ambient + diffuse * sampled.rgb + specular * sampledSpec.rgb;
 
-		 vec3 halfwayDir = normalize(lightDirection + inViewDir); 
-		 float spec = pow(max(dot(normal, halfwayDir), 0.0), shinyness); 
-		 specular += lightColor * sampledSpec.rgb * spec * lights[i].intensity * shadowFactor * intensity * attenuation;
-	 }
-
-
-    vec3 result = ambient + diffuse + specular; 
-    outColor = vec4(result, 1.0) * inAlpha;
+    outColor = vec4(result, sampled.a);
 }
+
 }
 
 
