@@ -49,6 +49,7 @@ vec3 lightDirection;
 
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get the PCF shadow factor (used for softer shadows)
     int halfSize = kernelSize / 2;
+    fragPosLightSpace /= fragPosLightSpace.w;
 
     // get the PCF shadow factor (used for softer shadows)
     float shadow = 0.0; // start at 0
@@ -96,7 +97,6 @@ if (lights.length() >= 1) {
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
          mat4 lightClip = lightMatricies[i].projectionMatrix * lightMatricies[i].viewMatrix;
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
-         fragPosLightSpace /= fragPosLightSpace.w; 
 
 		 // shadow factor computation:
 		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
