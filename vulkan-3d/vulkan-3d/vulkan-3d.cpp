@@ -435,8 +435,7 @@ private:
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/gear2/Gear2.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 20.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1255,7 +1254,6 @@ private:
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
 		convertMatrix(projMatrix, l.proj);
-		printMatrix(viewMatrix);
 	}
 
 	void updateUBO() {
@@ -2450,16 +2448,19 @@ private:
 
 		vkBindBufferMemory(device, buffer, bufferMemory, 0);
 	}
-
-	void realtimeLoad(std::string p) {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+	void recreateObjectRelated() {
 		cleanupDS();
 		setupShadowMaps();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
 		recreateBuffers();
+	}
+
+	void realtimeLoad(std::string p) {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		model m = objects[1];
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		recreateObjectRelated();
 		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}
 	void recreateBuffers() {
@@ -2952,7 +2953,7 @@ private:
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
 		//debugLights();
-		scatterObjects(120, 30); //scatter the objects around the scene
+		scatterObjects(30, 30); //scatter the objects around the scene
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps

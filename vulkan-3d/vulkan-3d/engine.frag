@@ -45,16 +45,16 @@ layout(location = 9) in vec3 inViewDir;
 layout(location = 10) in vec3 inCamPos;
 layout(location = 0) out vec4 outColor;
 
-vec3 lightDirection;
 
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
     int halfSize = kernelSize / 2;
     fragPosLightSpace.xyz /= fragPosLightSpace.w;
+    fragPosLightSpace.z = (fragPosLightSpace.z + fragPosLightSpace.w)/ 2.0;
     float shadow = 0.0;
 
     // transform to [0,1] range
-    vec3 projCoords = fragPosLightSpace.xyz * 0.5 + 0.5;
+    vec3 projCoords = fragPosLightSpace.xyz;
 
     // calculate texel size based on shadow map dimensions
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
@@ -94,6 +94,7 @@ if (lights.length() >= 1) {
 
     vec3 diffuse = vec3(0.0); 
     vec3 specular = vec3(0.0);
+    vec3 lightDirection;
 
     for (int i = 0; i < lights.length(); i++){ 
          float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);

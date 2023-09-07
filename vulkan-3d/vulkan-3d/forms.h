@@ -373,14 +373,16 @@ public:
 			return result;
 		}
 
-
-		static mat4 depthRangeMatrix() { // used for shadow mapping and getting the correct projection matrix
+		static mat4 transpose(const mat4& input) {
 			mat4 result;
-			vec3 scaleVector(1.0f, 1.0f, 0.5f);
-			vec3 translateVector(0.0f, 0.0f, 1.0f);
-			result = mat4::scale(scaleVector) * mat4::translate(translateVector);
+			for (int i = 0; i < 4; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					result.m[i][j] = input.m[j][i];
+				}
+			}
 			return result;
 		}
+
 	};
 };
 
