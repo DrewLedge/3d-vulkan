@@ -428,14 +428,14 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle =4.0f;
-		l.outerConeAngle = 7.0f;
+		l.innerConeAngle =30.0f;
+		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 20.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 10000.0f, 10.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -2203,11 +2203,11 @@ private:
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_TRUE; // enable depth bias
-		rasterizer.depthBiasConstantFactor = 0.005f;
-		rasterizer.depthBiasSlopeFactor = 0.005f;
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
 		rasterizer.depthBiasClamp = 0.0f;
 
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
@@ -2450,7 +2450,6 @@ private:
 	}
 	void recreateObjectRelated() {
 		cleanupDS();
-		setupShadowMaps();
 		setupDescriptorSets();
 		createGraphicsPipelineOpaque();
 		recreateBuffers();

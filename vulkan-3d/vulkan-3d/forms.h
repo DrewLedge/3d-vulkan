@@ -94,6 +94,7 @@ public:
 			vec3 up(0.0f, -1.0f, 0.0f);
 			return forward.crossProd(up);
 		}
+
 		static vec3 getUp(const vec3& camData) { // computes camera's up direction (left handed coordinate system) (only use for camera)
 			vec3 forward = getForward(camData);
 			vec3 right = getRight(camData);
@@ -290,9 +291,6 @@ public:
 			return result;
 		}
 
-
-
-	
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			mat4 result = mat4::scale(s)
 				* mat4::rotate(rot)
@@ -346,6 +344,7 @@ public:
 				* mat4::translate(position);
 			return result;
 		}
+
 		static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
 			vec3 f = (target - eye).normalize(); // forward vector
 			vec3 r = f.crossProd(inputUpVector).normalize(); // right vector
@@ -373,11 +372,11 @@ public:
 			return result;
 		}
 
-		static mat4 transpose(const mat4& input) {
+		mat4 transpose() const {
 			mat4 result;
 			for (int i = 0; i < 4; ++i) {
 				for (int j = 0; j < 4; ++j) {
-					result.m[i][j] = input.m[j][i];
+					result.m[j][i] = m[i][j];
 				}
 			}
 			return result;
