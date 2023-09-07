@@ -5,7 +5,7 @@
 
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
-layout(set = 4, binding = 4) uniform sampler2DShadow shadowMapSamplers[];
+layout(set = 4, binding = 4) uniform sampler2D  shadowMapSamplers[];
 
 struct formsVec3 { // custom structure to hold my vec3s
     float x;
@@ -49,24 +49,35 @@ vec3 lightDirection;
 
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get the PCF shadow factor (used for softer shadows)
     int halfSize = kernelSize / 2;
-    fragPosLightSpace /= fragPosLightSpace.w;
+    fragPosLightSpace.xyz /= fragPosLightSpace.w;
+    float shadow = 0.0;
 
-    // get the PCF shadow factor (used for softer shadows)
-    float shadow = 0.0; // start at 0
-    vec3 projCoords = fragPosLightSpace.xyz; // w component is divided before hand
-    vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0); // get the size of a texel from the reciprocal of the shadow map's dimensions
+    // transform to [0,1] range
+    vec3 projCoords = fragPosLightSpace.xyz * 0.5 + 0.5;
 
-    // loop through the kernel
+    // calculate texel size based on shadow map dimensions
+    vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
+
+    // loop through the PCF kernel
     for(int x = -halfSize; x <= halfSize; ++x) {
         for(int y = -halfSize; y <= halfSize; ++y) {
-           float pcfDepth = textureProj(shadowMapSamplers[lightIndex], vec4(projCoords.xy, fragPosLightSpace.z / fragPosLightSpace.w, 1.0)).r; // get the depth value of the current fragment
-            shadow += fragPosLightSpace.z > pcfDepth ? 1.0 : 0.0; // calculate if the fragment is in a shadow
+            // calculate the texel coordinates for sampling
+            vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
+
+            // sample the depth from shadow map
+            float pcfDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
+
+            // perform depth comparison manually
+            shadow += (fragPosLightSpace.z > pcfDepth) ? 1.0 : 0.0;
         }
     }
 
-    shadow /= float(kernelSize * kernelSize); // divide by number of samples
+    // normalize the shadow factor
+    shadow /= float(kernelSize * kernelSize);
+
     return shadow;
 }
+
 
 void main() {
 float shinyness=32.0f;
@@ -99,7 +110,7 @@ if (lights.length() >= 1) {
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
 
 		 // shadow factor computation:
-		 float shadowFactor = shadowPCF(i, fragPosLightSpace, 5);
+		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 3);
 
 		 // spotlight attenuation and cone effect
 		 float epsilon = outerConeRads - innerConeRads;
@@ -110,6 +121,7 @@ if (lights.length() >= 1) {
          float linear = lights[i].linearAttenuation;
          float quadratic = lights[i].quadraticAttenuation;
          float attenuation = 1.0 / (constant + linear * distanceToLight + quadratic * (distanceToLight * distanceToLight));
+         attenuation=1.0;
 
 		 vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
@@ -126,4 +138,5 @@ if (lights.length() >= 1) {
     outColor = vec4(result, 1.0) * inAlpha;
 }
 }
+
 
