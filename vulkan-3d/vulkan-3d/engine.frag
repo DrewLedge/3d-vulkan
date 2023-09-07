@@ -47,7 +47,8 @@ layout(location = 0) out vec4 outColor;
 
 vec3 lightDirection;
 
-float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get the PCF shadow factor (used for softer shadows)
+// get the PCF shadow factor (used for softer shadows)
+float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
     int halfSize = kernelSize / 2;
     fragPosLightSpace.xyz /= fragPosLightSpace.w;
     float shadow = 0.0;
@@ -62,16 +63,17 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) { // get
     for(int x = -halfSize; x <= halfSize; ++x) {
         for(int y = -halfSize; y <= halfSize; ++y) {
             // calculate the texel coordinates for sampling
-            vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
+            vec2 sampleCoords = clamp(projCoords.xy + vec2(x, y) * texelSize, 0.0, 1.0);
 
             // sample the depth from shadow map
             float pcfDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
 
-            // perform depth comparison manually
-            shadow += (fragPosLightSpace.z > pcfDepth) ? 1.0 : 0.0;
+            // perform depth comparison
+            float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.005);
+            shadow += (fragPosLightSpace.z - bias > pcfDepth) ? 1.0 : 0.0;
+
         }
     }
-
     // normalize the shadow factor
     shadow /= float(kernelSize * kernelSize);
 
@@ -111,12 +113,12 @@ if (lights.length() >= 1) {
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
 
 		 // shadow factor computation:
-		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 3);
+		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 4, normal, lightDirection);
 
 		 // spotlight cutoff
-         if(theta > cos(outerConeRads)){
+         if (theta > cos(outerConeRads)){
              float intensity;
-         if(theta > cos(innerConeRads)){
+         if (theta > cos(innerConeRads)){
              intensity = 1.0;
          } else {
              intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
@@ -134,9 +136,7 @@ if (lights.length() >= 1) {
          specular += lightColor * spec * intensity * shadowFactor; // multiplying with shadow factor for shadow contribution
         }
     }
-
     vec3 result = ambient + diffuse * sampled.rgb + specular * sampledSpec.rgb;
-
     outColor = vec4(result, sampled.a);
 }
 
