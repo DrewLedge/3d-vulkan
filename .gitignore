@@ -397,3 +397,4 @@ FodyWeavers.xsd
 *.sln.iml
 vulkan-3d/vulkan-3d/SPIRV.md
 
+*.glb

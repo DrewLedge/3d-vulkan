@@ -1,7 +1,7 @@
 #define STB_IMAGE_IMPLEMENTATION
-#define TINYOBJLOADER_IMPLEMENTATION 
-#include "ext/stb_image.h" // library for loading images
-#include "ext/tiny_obj_loader.h" // load .obj and .mtl files
+#define TINYGLTF_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "ext/tiny_gltf.h" // load .obj and .mtl files
 #include "forms.h" // my header file with the math
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -117,8 +117,19 @@ private:
 		VkBuffer stagingBuffer;
 		VkDeviceMemory stagingBufferMem;
 		uint32_t texIndex; //used to know what textures belong to what material
+		tinygltf::Image gltfImage;
 
-		Texture() : sampler(VK_NULL_HANDLE), image(VK_NULL_HANDLE), memory(VK_NULL_HANDLE), imageView(VK_NULL_HANDLE), mipLevels(1), stagingBuffer(VK_NULL_HANDLE), stagingBufferMem(VK_NULL_HANDLE), texIndex(0) {}
+		Texture()
+			: sampler(VK_NULL_HANDLE),
+			image(VK_NULL_HANDLE),
+			memory(VK_NULL_HANDLE),
+			imageView(VK_NULL_HANDLE),
+			mipLevels(1),
+			stagingBuffer(VK_NULL_HANDLE),
+			stagingBufferMem(VK_NULL_HANDLE),
+			texIndex(0),
+			gltfImage()
+		{}
 
 		bool operator==(const Texture& other) const {
 			return sampler == other.sampler
@@ -131,6 +142,7 @@ private:
 				&& stagingBufferMem == other.stagingBufferMem;
 		}
 	};
+
 
 	struct texHash {
 		size_t operator()(const Texture& tex) const {
@@ -434,7 +446,7 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/gear/Gear1.obj", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 10000.0f, 10.0f, 0.0f });
+		createObject("models/chess_set_4k.glb", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 10000.0f, 10.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -833,14 +845,13 @@ private:
 		for (auto& object : objects) {
 			if (!object.isLoaded) {
 				auto loadModelTask = taskFlow.emplace([&]() {
-					std::cout << "loading model: " << object.pathObj << std::endl;
-					const std::string& objFilePath = object.pathObj;
-					const std::string& mtlBasepath = objFilePath.substr(0, objFilePath.find_last_of('/') + 1);
-					tinyobj::attrib_t attrib;
-					std::vector<tinyobj::shape_t> shapes;
-					std::vector<tinyobj::material_t> materials;
-					std::string warn, err;
-					tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, objFilePath.c_str(), mtlBasepath.c_str());
+					std::cout << "Loading model: " << object.pathObj << std::endl;
+					tinygltf::Model model;
+					tinygltf::TinyGLTF loader;
+					std::string err;
+					std::string warn;
+
+					bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, object.pathObj);
 
 					if (!warn.empty()) {
 						std::cout << "Warning: " << warn << std::endl;
@@ -848,91 +859,118 @@ private:
 					if (!err.empty()) {
 						throw std::runtime_error(err);
 					}
+					if (!ret) {
+						throw std::runtime_error("Failed to load GLTF model");
+					}
 
 					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 					std::vector<Vertex> tempVertices;
 					std::vector<uint32_t> tempIndices;
 
-					// reserve memory for vectors:
-					tempVertices.reserve(attrib.vertices.size() / 3);
-					tempIndices.reserve(attrib.vertices.size() / 3);
-
-					for (const auto& material : materials) {
-						Materials texture;
-						texture.diffuseTex.path = mtlBasepath + material.diffuse_texname;
-						texture.specularTex.path = mtlBasepath + material.specular_texname;
-						texture.normalMap.path = mtlBasepath + material.bump_texname;
-
-						//get the texture index for each texture:
-						texture.diffuseTex.texIndex = texInd;
-						texture.specularTex.texIndex = texInd;
-						texture.normalMap.texIndex = texInd;
-						texInd += 1;
-
-						//get he model index (which materials goto which model)
-						texture.modelIndex = modInd;
-						object.materials.push_back(texture);
-					}
-
-					for (const auto& shape : shapes) {
+					// loop over each mesh (object)
+					for (const auto& mesh : model.meshes) {
 						uint32_t matIndex = modInd;
-						for (const auto& index : shape.mesh.indices) {
-							Vertex vertex;
-							vertex.pos = {
-								attrib.vertices[3 * index.vertex_index + 0],
-								attrib.vertices[3 * index.vertex_index + 1],
-								attrib.vertices[3 * index.vertex_index + 2]
-							};
-							vertex.tex = {
-								attrib.texcoords[2 * index.texcoord_index + 0],
-								1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
-							};
-							vertex.col = {
-								attrib.colors[3 * index.vertex_index + 0],
-								attrib.colors[3 * index.vertex_index + 1],
-								attrib.colors[3 * index.vertex_index + 2]
-							};
-							vertex.normal = {
-								attrib.normals[3 * index.normal_index + 0],
-								attrib.normals[3 * index.normal_index + 1],
-								attrib.normals[3 * index.normal_index + 2]
-							};
-							vertex.matIndex = matIndex;
+						for (const auto& primitive : mesh.primitives) {
+							// positions
+							const auto& positionAccessor = model.accessors[primitive.attributes.find("POSITION")->second];
+							const auto& positionBufferView = model.bufferViews[positionAccessor.bufferView];
+							const auto& positionBuffer = model.buffers[positionBufferView.buffer];
+							const float* positionData = reinterpret_cast<const float*>(&positionBuffer.data[positionBufferView.byteOffset + positionAccessor.byteOffset]);
 
-							// Check if vertex is unique and add it to the map if it is:
-							if (uniqueVertices.count(vertex) == 0) {
-								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-								tempVertices.push_back(std::move(vertex));
+							// texture coords
+							const auto& texCoordAccessor = model.accessors[primitive.attributes.find("TEXCOORD_0")->second];
+							const auto& texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
+							const auto& texCoordBuffer = model.buffers[texCoordBufferView.buffer];
+							const float* texCoordData = reinterpret_cast<const float*>(&texCoordBuffer.data[texCoordBufferView.byteOffset + texCoordAccessor.byteOffset]);
+
+							// normals
+							const auto& normalAccessor = model.accessors[primitive.attributes.find("NORMAL")->second];
+							const auto& normalBufferView = model.bufferViews[normalAccessor.bufferView];
+							const auto& normalBuffer = model.buffers[normalBufferView.buffer];
+							const float* normalData = reinterpret_cast<const float*>(&normalBuffer.data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
+
+							// indices
+							const auto& indexAccessor = model.accessors[primitive.indices];
+							const auto& indexBufferView = model.bufferViews[indexAccessor.bufferView];
+							const auto& indexBuffer = model.buffers[indexBufferView.buffer];
+							const uint16_t* indexData = reinterpret_cast<const uint16_t*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+
+							auto colorIt = primitive.attributes.find("COLOR_0");
+							const auto& colorAccessor = model.accessors[colorIt->second];
+							const auto& colorBufferView = model.bufferViews[colorAccessor.bufferView];
+							const auto& colorBuffer = model.buffers[colorBufferView.buffer];
+							const float* colorData = reinterpret_cast<const float*>(&colorBuffer.data[colorBufferView.byteOffset + colorAccessor.byteOffset]);
+							for (size_t i = 0; i < indexAccessor.count; ++i) {
+								uint16_t index = indexData[i];
+								Vertex vertex;
+								vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
+								vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
+								vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+								vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2] }; // rgba
+								vertex.matIndex = matIndex;  // set the material index
+
+								if (uniqueVertices.count(vertex) == 0) {
+									uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+									tempVertices.push_back(std::move(vertex));
+								}
+								tempIndices.push_back(uniqueVertices[vertex]);
 							}
-							tempIndices.push_back(uniqueVertices[vertex]);
+							if (primitive.material >= 0) {
+								auto& material = model.materials[primitive.material];
+								Materials texture;
+
+								// diffuse texture
+								if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+									auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
+									auto& tex = model.textures[texInfo.index];
+									auto& image = model.images[tex.source];
+									texture.diffuseTex.texIndex = texInd;
+									texture.diffuseTex.path = "gltf";
+
+									createTextureImage(texture.diffuseTex, true);
+									createTextureImgView(texture.diffuseTex, true);
+									createTS(texture.diffuseTex, true);
+								}
+
+								// specular texture
+								if (material.extensions.find("specularTexture") != material.extensions.end()) {
+									auto& tex = model.textures[material.extensions["specularTexture"].Get("index").Get<int>()];
+									auto& image = model.images[tex.source];
+									texture.specularTex.texIndex = texInd;
+									texture.specularTex.path = "gltf";
+
+									createTextureImage(texture.specularTex, false);
+									createTextureImgView(texture.specularTex, false);
+									createTS(texture.specularTex, false);
+
+								}
+								// normal map
+								if (material.extensions.find("normalTexture") != material.extensions.end()) {
+									auto& tex = model.textures[material.extensions["normalTexture"].Get("index").Get<int>()];
+									auto& image = model.images[tex.source];
+									texture.normalMap.texIndex = texInd;
+									texture.normalMap.path = "gltf";
+
+									createTextureImage(texture.normalMap, false, "norm");
+									createTextureImgView(texture.normalMap, false, "norm");
+									createTS(texture.normalMap, false, "norm");
+
+								}
+
+								texInd += 1;
+								texture.modelIndex = modInd;
+								object.materials.push_back(texture);
+							}
+
 						}
 					}
-
-					modInd += 1;
-
+					modInd++;
 					modelMtx.lock();
 					object.vertices.insert(object.vertices.end(), tempVertices.begin(), tempVertices.end());
 					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
 					object.isLoaded = true;
 					modelMtx.unlock();
 
-					for (size_t i = 0; i < object.materials.size(); i++) {
-						//create the texture image for each texture (for each material)
-						//also create miplmaps for each texture
-						createTextureImage(object.materials[i].specularTex, false);
-						createTextureImage(object.materials[i].normalMap, false, "norm");
-						createTextureImage(object.materials[i].diffuseTex, true);
-
-						//create texture image views and samplers for each texture (for each material):wa
-						createTextureImgView(object.materials[i].specularTex, false);
-						createTS(object.materials[i].specularTex, false);
-
-						createTextureImgView(object.materials[i].normalMap, false, "norm");
-						createTS(object.materials[i].normalMap, false, "norm");
-
-						createTextureImgView(object.materials[i].diffuseTex, true);
-						createTS(object.materials[i].diffuseTex, true);
-					}
 					debugStruct(object);
 					}).name("load_model");
 
@@ -1653,6 +1691,33 @@ private:
 		}
 	}
 
+	void getGLTFImageData(const tinygltf::Image& gltfImage, unsigned char** imageData) {
+		int width = gltfImage.width; // Set the texture's width, height, and channels
+		int height = gltfImage.height;
+		int channels = gltfImage.component;
+
+		*imageData = new unsigned char[width * height * 4]; // create a new array to hold the image data
+
+		// iterate through the image data and copy it into the new array
+		for (int y = 0; y < height; ++y) {
+			for (int x = 0; x < width; ++x) {
+				for (int c = 0; c < channels; ++c) {
+					// copy the data from the original image into the new array
+					(*imageData)[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
+				}
+				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
+				if (channels < 4) {
+					(*imageData)[(y * width + x) * 4 + 3] = 255;
+				}
+			}
+		}
+
+		// check for image processing failure
+		if (!*imageData) {
+			throw std::runtime_error("Failed to process image!");
+		}
+	}
+
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
 		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
@@ -1660,6 +1725,7 @@ private:
 			throw std::runtime_error("failed to load image!");
 		}
 	}
+
 	void createStagingBuffer(Texture& tex) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1692,7 +1758,12 @@ private:
 
 	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "tex") { //create the texture image for the diffuse texture materials
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
-			getImageData(tex.path);
+			if (tex.path != "gltf") { // standard image
+				getImageData(tex.path);
+			}
+			else {
+				getGLTFImageData(tex.gltfImage, &imageData);
+			}
 			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
 			// create image:

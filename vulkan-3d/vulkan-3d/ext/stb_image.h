@@ -2221,7 +2221,7 @@ static int stbi__jpeg_decode_block(stbi__jpeg *j, short data[64], stbi__huffman 
    if (!stbi__addints_valid(j->img_comp[b].dc_pred, diff)) return stbi__err("bad delta","Corrupt JPEG");
    dc = j->img_comp[b].dc_pred + diff;
    j->img_comp[b].dc_pred = dc;
-   if (!stbi__mul2shorts_valid(dc, dequant[0])) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
+   if ((dc > SHRT_MAX) || (dequant[0] > SHRT_MAX) || !stbi__mul2shorts_valid((short) dc, (short) dequant[0])) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
    data[0] = (short) (dc * dequant[0]);
 
    // decode AC components, see JPEG spec
@@ -2278,7 +2278,7 @@ static int stbi__jpeg_decode_block_prog_dc(stbi__jpeg *j, short data[64], stbi__
       if (!stbi__addints_valid(j->img_comp[b].dc_pred, diff)) return stbi__err("bad delta", "Corrupt JPEG");
       dc = j->img_comp[b].dc_pred + diff;
       j->img_comp[b].dc_pred = dc;
-      if (!stbi__mul2shorts_valid(dc, 1 << j->succ_low)) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
+      if ((dc > SHRT_MAX) || !stbi__mul2shorts_valid((short) dc, 1 << j->succ_low)) return stbi__err("can't merge dc and ac", "Corrupt JPEG");
       data[0] = (short) (dc * (1 << j->succ_low));
    } else {
       // refinement scan for DC coefficient
@@ -3384,12 +3384,12 @@ static int stbi__decode_jpeg_header(stbi__jpeg *z, int scan)
    return 1;
 }
 
-static int stbi__skip_jpeg_junk_at_end(stbi__jpeg *j)
+static stbi_uc stbi__skip_jpeg_junk_at_end(stbi__jpeg *j)
 {
    // some JPEGs have junk at end, skip over it but if we find what looks
    // like a valid marker, resume there
    while (!stbi__at_eof(j->s)) {
-      int x = stbi__get8(j->s);
+      stbi_uc x = stbi__get8(j->s);
       while (x == 255) { // might be a marker
          if (stbi__at_eof(j->s)) return STBI__MARKER_none;
          x = stbi__get8(j->s);
@@ -4176,6 +4176,7 @@ typedef struct
 {
    stbi_uc *zbuffer, *zbuffer_end;
    int num_bits;
+   int hit_zeof_once;
    stbi__uint32 code_buffer;
 
    char *zout;
@@ -4242,9 +4243,20 @@ stbi_inline static int stbi__zhuffman_decode(stbi__zbuf *a, stbi__zhuffman *z)
    int b,s;
    if (a->num_bits < 16) {
       if (stbi__zeof(a)) {
-         return -1;   /* report error for unexpected end of data. */
+         if (!a->hit_zeof_once) {
+            // This is the first time we hit eof, insert 16 extra padding btis
+            // to allow us to keep going; if we actually consume any of them
+            // though, that is invalid data. This is caught later.
+            a->hit_zeof_once = 1;
+            a->num_bits += 16; // add 16 implicit zero bits
+         } else {
+            // We already inserted our extra 16 padding bits and are again
+            // out, this stream is actually prematurely terminated.
+            return -1;
+         }
+      } else {
+         stbi__fill_bits(a);
       }
-      stbi__fill_bits(a);
    }
    b = z->fast[a->code_buffer & STBI__ZFAST_MASK];
    if (b) {
@@ -4309,6 +4321,13 @@ static int stbi__parse_huffman_block(stbi__zbuf *a)
          int len,dist;
          if (z == 256) {
             a->zout = zout;
+            if (a->hit_zeof_once && a->num_bits < 16) {
+               // The first time we hit zeof, we inserted 16 extra zero bits into our bit
+               // buffer so the decoder can just do its speculative decoding. But if we
+               // actually consumed any of those bits (which is the case when num_bits < 16),
+               // the stream actually read past the end so it is malformed.
+               return stbi__err("unexpected end","Corrupt PNG");
+            }
             return 1;
          }
          if (z >= 286) return stbi__err("bad huffman code","Corrupt PNG"); // per DEFLATE, length codes 286 and 287 must not appear in compressed data
@@ -4320,7 +4339,7 @@ static int stbi__parse_huffman_block(stbi__zbuf *a)
          dist = stbi__zdist_base[z];
          if (stbi__zdist_extra[z]) dist += stbi__zreceive(a, stbi__zdist_extra[z]);
          if (zout - a->zout_start < dist) return stbi__err("bad dist","Corrupt PNG");
-         if (zout + len > a->zout_end) {
+         if (len > a->zout_end - zout) {
             if (!stbi__zexpand(a, zout, len)) return 0;
             zout = a->zout;
          }
@@ -4464,6 +4483,7 @@ static int stbi__parse_zlib(stbi__zbuf *a, int parse_header)
       if (!stbi__parse_zlib_header(a)) return 0;
    a->num_bits = 0;
    a->code_buffer = 0;
+   a->hit_zeof_once = 0;
    do {
       final = stbi__zreceive(a,1);
       type = stbi__zreceive(a,2);
@@ -6527,7 +6547,7 @@ static void *stbi__pic_load(stbi__context *s,int *px,int *py,int *comp,int req_c
 
    if (!stbi__pic_load_core(s,x,y,comp, result)) {
       STBI_FREE(result);
-      result=0;
+      return 0;
    }
    *px = x;
    *py = y;

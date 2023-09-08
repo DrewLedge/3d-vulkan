@@ -275,7 +275,7 @@ public:
 			}
 			return vec3(x, y, z);
 		}
-		static mat4 perspective(float fov, float aspect, float near, float far) {
+		static mat4 perspective(float fov, float aspect, float nearPlane, float farPlane) {
 			mat4 result(0);
 			float fovRad = fov * (PI / 180.0f);
 			float tanHalf = tan(fovRad * 0.5f);
@@ -283,8 +283,8 @@ public:
 			// column major
 			result.m[0][0] = 1.0f / (aspect * tanHalf);
 			result.m[1][1] = 1.0f / tanHalf;
-			result.m[2][2] = far / (far - near);
-			result.m[2][3] = -(2 * far * near) / (far - near);
+			result.m[2][2] = farPlane / (farPlane - nearPlane);
+			result.m[2][3] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
 			result.m[3][2] = 1.0f;
 			result.m[3][3] = 0.0f;
 
