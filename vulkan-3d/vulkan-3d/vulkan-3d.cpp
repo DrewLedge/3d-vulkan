@@ -428,8 +428,8 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle =30.0f;
-		l.outerConeAngle = 45.0f;
+		l.innerConeAngle = 15.0f;
+		l.outerConeAngle = 22.5f;
 		lights.push_back(l);
 	}
 

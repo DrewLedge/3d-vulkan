@@ -126,13 +126,13 @@ if (lights.length() >= 1) {
          }
 
          // diffuse lighting
-         vec3 lightDir = normalize(lightPos - inFragPos);
-         float diff = max(dot(normal, lightDir), 0.0);
+         vec3 fragLightDir = normalize(lightPos - inFragPos); // direction from fragment to light
+         float diff = max(dot(normal, fragLightDir), 0.0);
          diffuse += lightColor * diff * intensity;
 
          // specular lighting
          vec3 viewDir = normalize(inCamPos - inFragPos);
-         vec3 reflectDir = reflect(-lightDir, normal); 
+         vec3 reflectDir = reflect(-fragLightDir, normal); 
          float spec = pow(max(dot(viewDir, reflectDir), 0.0), sampledSpec.a); // sampledSpec.a is used as the shininess factor
          specular += lightColor * spec * intensity * shadowFactor; // multiplying with shadow factor for shadow contribution
         }
