@@ -899,7 +899,6 @@ private:
 					for (const auto& mesh : model.meshes) {
 						uint32_t matIndex = modInd;
 						for (const auto& primitive : mesh.primitives) {
-
 							// pos
 							auto positionIt = getAttributeIt("POSITION", primitive.attributes);
 							const auto& positionAccessor = model.accessors[positionIt->second];
@@ -1711,32 +1710,34 @@ private:
 		}
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage, unsigned char** imageData) {
+	void getGLTFImageData(const tinygltf::Image& gltfImage) {
 		int width = gltfImage.width; // Set the texture's width, height, and channels
 		int height = gltfImage.height;
 		int channels = gltfImage.component;
 
-		*imageData = new unsigned char[width * height * 4]; // create a new array to hold the image data
+
+		// delete previously allocated memory if any
+		if (imageData != nullptr) {
+			delete[] imageData;
+		}
+
+		imageData = new unsigned char[width * height * 4]; // create a new array to hold the image data
 
 		// iterate through the image data and copy it into the new array
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
 				for (int c = 0; c < channels; ++c) {
 					// copy the data from the original image into the new array
-					(*imageData)[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
+					imageData[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
 				}
 				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
 				if (channels < 4) {
-					(*imageData)[(y * width + x) * 4 + 3] = 255;
+					imageData[(y * width + x) * 4 + 3] = 255;
 				}
 			}
 		}
-
-		// check for image processing failure
-		if (!*imageData) {
-			throw std::runtime_error("Failed to process image!");
-		}
 	}
+
 
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
@@ -1782,7 +1783,7 @@ private:
 				getImageData(tex.path);
 			}
 			else {
-				getGLTFImageData(tex.gltfImage, &imageData);
+				getGLTFImageData(tex.gltfImage);
 			}
 			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
