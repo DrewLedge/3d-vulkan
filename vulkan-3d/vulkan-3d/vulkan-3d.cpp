@@ -834,6 +834,33 @@ private:
 		}
 		throw std::runtime_error("failed to find suitable depth format! :(");
 	}
+
+	auto getAttributeIt(const std::string& name, const auto& attributes) {
+		auto it = attributes.find(name);
+		if (it == attributes.end()) {
+			throw std::runtime_error("Failed to find attribute: " + name);
+		}
+		return it;
+	}
+
+	const float* getAccessorData(const auto& model, const auto& attributes, const std::string& attributeName) {
+		auto it = getAttributeIt(attributeName, attributes); // get the attribute iterator
+		const auto& accessor = model.accessors[it->second]; // get the accessor
+		const auto& bufferView = model.bufferViews[accessor.bufferView]; // get the buffer view from the accessor
+		const auto& buffer = model.buffers[bufferView.buffer]; // from the buffer view, get the buffer
+
+		// return the data from the buffer
+		// the data is the buffer data + the byte offset of the buffer view + the byte offset of the accessor!!
+		return reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+	}
+
+	const uint16_t* getIndexData(const auto& model, const auto& accessor) {
+		const auto& bufferView = model.bufferViews[accessor.bufferView];
+		const auto& buffer = model.buffers[bufferView.buffer];
+		return reinterpret_cast<const uint16_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+	}
+
+
 	void loadModels() {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
@@ -866,47 +893,40 @@ private:
 					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 					std::vector<Vertex> tempVertices;
 					std::vector<uint32_t> tempIndices;
+					std::cout << "Finished loading binaries" << std::endl;
 
 					// loop over each mesh (object)
 					for (const auto& mesh : model.meshes) {
 						uint32_t matIndex = modInd;
 						for (const auto& primitive : mesh.primitives) {
-							// positions
-							const auto& positionAccessor = model.accessors[primitive.attributes.find("POSITION")->second];
-							const auto& positionBufferView = model.bufferViews[positionAccessor.bufferView];
-							const auto& positionBuffer = model.buffers[positionBufferView.buffer];
-							const float* positionData = reinterpret_cast<const float*>(&positionBuffer.data[positionBufferView.byteOffset + positionAccessor.byteOffset]);
 
-							// texture coords
-							const auto& texCoordAccessor = model.accessors[primitive.attributes.find("TEXCOORD_0")->second];
-							const auto& texCoordBufferView = model.bufferViews[texCoordAccessor.bufferView];
-							const auto& texCoordBuffer = model.buffers[texCoordBufferView.buffer];
-							const float* texCoordData = reinterpret_cast<const float*>(&texCoordBuffer.data[texCoordBufferView.byteOffset + texCoordAccessor.byteOffset]);
+							// pos
+							auto positionIt = getAttributeIt("POSITION", primitive.attributes);
+							const auto& positionAccessor = model.accessors[positionIt->second];
+							const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
+
+							// tex coords
+							auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
+							const auto& texCoordAccessor = model.accessors[texCoordIt->second];
+							const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
 
 							// normals
-							const auto& normalAccessor = model.accessors[primitive.attributes.find("NORMAL")->second];
-							const auto& normalBufferView = model.bufferViews[normalAccessor.bufferView];
-							const auto& normalBuffer = model.buffers[normalBufferView.buffer];
-							const float* normalData = reinterpret_cast<const float*>(&normalBuffer.data[normalBufferView.byteOffset + normalAccessor.byteOffset]);
+							auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
+							const auto& normalAccessor = model.accessors[normalIt->second];
+							const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
 
 							// indices
 							const auto& indexAccessor = model.accessors[primitive.indices];
-							const auto& indexBufferView = model.bufferViews[indexAccessor.bufferView];
-							const auto& indexBuffer = model.buffers[indexBufferView.buffer];
-							const uint16_t* indexData = reinterpret_cast<const uint16_t*>(&indexBuffer.data[indexBufferView.byteOffset + indexAccessor.byteOffset]);
+							const uint16_t* indexData = getIndexData(model, indexAccessor);
 
-							auto colorIt = primitive.attributes.find("COLOR_0");
-							const auto& colorAccessor = model.accessors[colorIt->second];
-							const auto& colorBufferView = model.bufferViews[colorAccessor.bufferView];
-							const auto& colorBuffer = model.buffers[colorBufferView.buffer];
-							const float* colorData = reinterpret_cast<const float*>(&colorBuffer.data[colorBufferView.byteOffset + colorAccessor.byteOffset]);
+
+							std::cout << "t" << std::endl;
 							for (size_t i = 0; i < indexAccessor.count; ++i) {
 								uint16_t index = indexData[i];
 								Vertex vertex;
 								vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 								vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 								vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-								vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2] }; // rgba
 								vertex.matIndex = matIndex;  // set the material index
 
 								if (uniqueVertices.count(vertex) == 0) {
