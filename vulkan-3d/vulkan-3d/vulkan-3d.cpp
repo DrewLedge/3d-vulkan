@@ -161,8 +161,8 @@ private:
 	};
 
 	struct Materials {
-		Texture diffuseTex;
-		Texture specularTex;
+		Texture metallicRoughness;
+		Texture baseColor;
 		Texture normalMap;
 		uint32_t modelIndex; //used to know what model the material belongs to
 	};
@@ -919,7 +919,6 @@ private:
 							const uint16_t* indexData = getIndexData(model, indexAccessor);
 
 
-							std::cout << "t" << std::endl;
 							for (size_t i = 0; i < indexAccessor.count; ++i) {
 								uint16_t index = indexData[i];
 								Vertex vertex;
@@ -934,46 +933,37 @@ private:
 								}
 								tempIndices.push_back(uniqueVertices[vertex]);
 							}
+
 							if (primitive.material >= 0) {
 								auto& material = model.materials[primitive.material];
 								Materials texture;
 
-								// diffuse texture
+								// metallic-roughness Texture
+								if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+									auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
+									auto& tex = model.textures[texInfo.index];
+									auto& image = model.images[tex.source];
+									texture.metallicRoughness.texIndex = texInd;
+									texture.metallicRoughness.path = "gltf";
+								}
+
+								// base color texture
 								if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 									auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 									auto& tex = model.textures[texInfo.index];
 									auto& image = model.images[tex.source];
-									texture.diffuseTex.texIndex = texInd;
-									texture.diffuseTex.path = "gltf";
-
-									createTextureImage(texture.diffuseTex, true);
-									createTextureImgView(texture.diffuseTex, true);
-									createTS(texture.diffuseTex, true);
+									texture.baseColor.texIndex = texInd;
+									texture.baseColor.path = "gltf";
 								}
 
-								// specular texture
-								if (material.extensions.find("specularTexture") != material.extensions.end()) {
-									auto& tex = model.textures[material.extensions["specularTexture"].Get("index").Get<int>()];
-									auto& image = model.images[tex.source];
-									texture.specularTex.texIndex = texInd;
-									texture.specularTex.path = "gltf";
 
-									createTextureImage(texture.specularTex, false);
-									createTextureImgView(texture.specularTex, false);
-									createTS(texture.specularTex, false);
-
-								}
 								// normal map
-								if (material.extensions.find("normalTexture") != material.extensions.end()) {
-									auto& tex = model.textures[material.extensions["normalTexture"].Get("index").Get<int>()];
+								if (material.normalTexture.index >= 0) {
+									auto& texInfo = material.normalTexture;
+									auto& tex = model.textures[texInfo.index];
 									auto& image = model.images[tex.source];
 									texture.normalMap.texIndex = texInd;
 									texture.normalMap.path = "gltf";
-
-									createTextureImage(texture.normalMap, false, "norm");
-									createTextureImgView(texture.normalMap, false, "norm");
-									createTS(texture.normalMap, false, "norm");
-
 								}
 
 								texInd += 1;
@@ -989,7 +979,24 @@ private:
 					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
 					object.isLoaded = true;
 					modelMtx.unlock();
+					for (size_t i = 0; i < object.materials.size(); i++) {
+						//create the texture image for each texture (for each material)
+						//also create mipmaps for each texture
+						createTextureImage(object.materials[i].baseColor, true);
+						createTextureImage(object.materials[i].normalMap, false, "norm");
+						createTextureImage(object.materials[i].metallicRoughness, true, "metallic");
+					
+						//create texture image views and samplers for each texture (for each material):wa
+						createTextureImgView(object.materials[i].baseColor, true);
+						createTS(object.materials[i].baseColor, true);
 
+						createTextureImgView(object.materials[i].normalMap, false, "norm");
+						createTS(object.materials[i].normalMap, false, "norm");
+
+						createTextureImgView(object.materials[i].metallicRoughness, true, "metallic");
+						createTS(object.materials[i].metallicRoughness, true, "metallic");
+
+					}
 					debugStruct(object);
 					}).name("load_model");
 
@@ -1412,9 +1419,9 @@ private:
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.materials) {
 				// diffuse texture
-				allTextures.push_back(materials.diffuseTex);
+				allTextures.push_back(materials.metallicRoughness);
 				// specular texture
-				allTextures.push_back(materials.specularTex);
+				allTextures.push_back(materials.baseColor);
 				// normal map texture
 				allTextures.push_back(materials.normalMap);
 			}
@@ -1637,10 +1644,10 @@ private:
 
 		// get maximum indices from original model
 		for (auto& material : m.materials) {
-			if (material.diffuseTex.texIndex > texInd)
-				material.diffuseTex.texIndex = texInd;
-			if (material.specularTex.texIndex > texInd)
-				material.specularTex.texIndex = texInd;
+			if (material.metallicRoughness.texIndex > texInd)
+				material.metallicRoughness.texIndex = texInd;
+			if (material.baseColor.texIndex > texInd)
+				material.baseColor.texIndex = texInd;
 			if (material.normalMap.texIndex > texInd)
 				material.normalMap.texIndex = texInd;
 			material.modelIndex = objSize;
@@ -1684,7 +1691,7 @@ private:
 	}
 
 	template<typename T>
-	void createTextureImgView(T& tex, bool doMipmap, std::string type = "tex") {
+	void createTextureImgView(T& tex, bool doMipmap, std::string type = "base") {
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
@@ -1693,12 +1700,16 @@ private:
 			viewInf.format = VK_FORMAT_D32_SFLOAT;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
-		else if (type != "tex") {
+		else if (type == "norm") {
 			viewInf.format = VK_FORMAT_R8G8B8A8_SNORM; // for normal maps (signed format)
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
-		else {
-			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for textures like diffuse and specular
+		else if (type == "base") {
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for base texture
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		else if (type == "metallic") {
+			viewInf .format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		viewInf.subresourceRange.baseMipLevel = 0;
@@ -1777,7 +1788,7 @@ private:
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "tex") { //create the texture image for the diffuse texture materials
+	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "base") { //create the texture image for the diffuse texture materials
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path);
@@ -1797,12 +1808,16 @@ private:
 			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
 
-			if (type != "tex") {
+			if (type == "norm") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SNORM; //signed format for the normal maps (-1 to 1)
 			}
-			else {
-				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for specular and diffuse maps
+			if (type == "base") {
+				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
 			}
+			if (type=="metallic") {
+				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
+			}
+
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
