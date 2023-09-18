@@ -446,7 +446,7 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/chess_set_4k.glb", { 0.1f, 0.1f, 0.1f }, { 0.0f, 70.0f, 0.0f }, { 10000.0f, 10.0f, 0.0f });
+		createObject("models/chess_set_4k.glb", { 10.0f, 10.0f, 10.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -895,6 +895,7 @@ private:
 					std::vector<uint32_t> tempIndices;
 					std::cout << "Finished loading binaries" << std::endl;
 
+					std::cout << "loading " << model.meshes.size() << " meshes" << std::endl;
 					// loop over each mesh (object)
 					for (const auto& mesh : model.meshes) {
 						uint32_t matIndex = modInd;
