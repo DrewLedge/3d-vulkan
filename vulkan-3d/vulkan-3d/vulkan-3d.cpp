@@ -942,7 +942,7 @@ private:
 								if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 									auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
 									auto& tex = model.textures[texInfo.index];
-									auto& image = model.images[tex.source];
+									texture.metallicRoughness.gltfImage = model.images[tex.source];
 									texture.metallicRoughness.texIndex = texInd;
 									texture.metallicRoughness.path = "gltf";
 								}
@@ -951,7 +951,7 @@ private:
 								if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 									auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 									auto& tex = model.textures[texInfo.index];
-									auto& image = model.images[tex.source];
+									texture.baseColor.gltfImage = model.images[tex.source];
 									texture.baseColor.texIndex = texInd;
 									texture.baseColor.path = "gltf";
 								}
@@ -961,7 +961,7 @@ private:
 								if (material.normalTexture.index >= 0) {
 									auto& texInfo = material.normalTexture;
 									auto& tex = model.textures[texInfo.index];
-									auto& image = model.images[tex.source];
+									texture.normalMap.gltfImage = model.images[tex.source];
 									texture.normalMap.texIndex = texInd;
 									texture.normalMap.path = "gltf";
 								}
@@ -979,27 +979,30 @@ private:
 					object.indices.insert(object.indices.end(), tempIndices.begin(), tempIndices.end());
 					object.isLoaded = true;
 					modelMtx.unlock();
-					for (size_t i = 0; i < object.materials.size(); i++) {
-						//create the texture image for each texture (for each material)
-						//also create mipmaps for each texture
-						createTextureImage(object.materials[i].baseColor, true);
-						createTextureImage(object.materials[i].normalMap, false, "norm");
-						createTextureImage(object.materials[i].metallicRoughness, true, "metallic");
-					
-						//create texture image views and samplers for each texture (for each material):wa
-						createTextureImgView(object.materials[i].baseColor, true);
-						createTS(object.materials[i].baseColor, true);
-
-						createTextureImgView(object.materials[i].normalMap, false, "norm");
-						createTS(object.materials[i].normalMap, false, "norm");
-
-						createTextureImgView(object.materials[i].metallicRoughness, true, "metallic");
-						createTS(object.materials[i].metallicRoughness, true, "metallic");
-
-					}
-					debugStruct(object);
 					}).name("load_model");
 
+					auto loadTextureTask = taskFlow.emplace([&]() {
+						for (size_t i = 0; i < object.materials.size(); i++) {
+							//create the texture image for each texture (for each material)
+							//also create mipmaps for each texture
+							createTextureImage(object.materials[i].baseColor, true);
+							createTextureImage(object.materials[i].normalMap, false, "norm");
+							createTextureImage(object.materials[i].metallicRoughness, true, "metallic");
+
+							//create texture image views and samplers for each texture (for each material):wa
+							createTextureImgView(object.materials[i].baseColor, true);
+							createTS(object.materials[i].baseColor, true);
+
+							createTextureImgView(object.materials[i].normalMap, false, "norm");
+							createTS(object.materials[i].normalMap, false, "norm");
+
+							createTextureImgView(object.materials[i].metallicRoughness, true, "metallic");
+							createTS(object.materials[i].metallicRoughness, true, "metallic");
+
+						}
+						std::cout << "Finished loading textures" << std::endl;
+						}).name("load_texture");
+						loadModelTask.precede(loadTextureTask);
 			}
 		}
 		executor.run(taskFlow).get();
@@ -1418,9 +1421,9 @@ private:
 
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.materials) {
-				// diffuse texture
+				// metallic roughness texture
 				allTextures.push_back(materials.metallicRoughness);
-				// specular texture
+				// base cololr texture
 				allTextures.push_back(materials.baseColor);
 				// normal map texture
 				allTextures.push_back(materials.normalMap);
@@ -1709,7 +1712,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "metallic") {
-			viewInf .format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		viewInf.subresourceRange.baseMipLevel = 0;
@@ -1788,14 +1791,9 @@ private:
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "base") { //create the texture image for the diffuse texture materials
+	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "base") {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
-			if (tex.path != "gltf") { // standard image
-				getImageData(tex.path);
-			}
-			else {
-				getGLTFImageData(tex.gltfImage);
-			}
+			getGLTFImageData(tex.gltfImage);
 			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
 			// create image:
@@ -1814,7 +1812,7 @@ private:
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
 			}
-			if (type=="metallic") {
+			if (type == "metallic") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			}
 
@@ -1876,7 +1874,7 @@ private:
 
 			int mipWidth = texWidth;
 			int mipHeight = texHeight;
-			if (doMipmap) { //only do mipmapping on the diffuse texture
+			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
 					VkImageMemoryBarrier barrierToSrc{};
 					barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -3059,7 +3057,6 @@ private:
 		commandPool = createCommandPool();
 		loadModels(); //load the model data from the obj file
 		//debugLights();
-		scatterObjects(30, 30); //scatter the objects around the scene
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
