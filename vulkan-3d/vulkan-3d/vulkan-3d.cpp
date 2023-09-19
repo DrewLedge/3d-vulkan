@@ -1,7 +1,9 @@
 #define STB_IMAGE_IMPLEMENTATION
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "ext/tiny_gltf.h" // load .obj and .mtl files
+#include "ext/stb_image_resize.h"
 #include "forms.h" // my header file with the math
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -935,6 +937,7 @@ private:
 			std::string warn;
 
 			bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
+			std::cout << "-----------------------" << std::endl;
 			std::cout << "Finished loading binaries" << std::endl;
 
 			if (!warn.empty()) {
@@ -1069,7 +1072,7 @@ private:
 						//also create mipmaps for each texture
 						createTexturedImage(object.materials[i].baseColor, true);
 						createTexturedImage(object.materials[i].normalMap, false, "norm");
-						createTexturedImage(object.materials[i].metallicRoughness, true, "metallic");
+						createTexturedImage(object.materials[i].metallicRoughness, false, "metallic");
 
 						//create texture image views and samplers for each texture (for each material):wa
 						createTextureImgView(object.materials[i].baseColor, true);
@@ -1078,8 +1081,8 @@ private:
 						createTextureImgView(object.materials[i].normalMap, false, "norm");
 						createTS(object.materials[i].normalMap, false, "norm");
 
-						createTextureImgView(object.materials[i].metallicRoughness, true, "metallic");
-						createTS(object.materials[i].metallicRoughness, true, "metallic");
+						createTextureImgView(object.materials[i].metallicRoughness, false, "metallic");
+						createTS(object.materials[i].metallicRoughness, false, "metallic");
 
 					}
 				std::cout << "Finished loading textures" << std::endl;
@@ -1835,8 +1838,22 @@ private:
 				}
 			}
 		}
+		imageData = resizeImage(imageData, width, height, texWidth, texHeight, channels);
 	}
 
+	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
+		int newWidth, int outputHeight, int channels) {
+		unsigned char* out = (unsigned char*)malloc(newWidth * outputHeight * channels);
+		if (out == NULL) {
+			return NULL;  // memory allocation failed
+		}
+
+		stbir_resize_uint8(inputPixels, originalWidth, originalHeight, 0,
+			out, newWidth, outputHeight, 0,
+			channels);
+
+		return out;
+	}
 
 	void getImageData(std::string path) {
 		int texWidth, texHeight, texChannels;
