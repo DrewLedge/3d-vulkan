@@ -873,12 +873,12 @@ private:
 			if (!object.isLoaded) {
 				auto loadModelTask = taskFlow.emplace([&]() {
 					std::cout << "Loading model: " << object.pathObj << std::endl;
-					tinygltf::Model model;
+					tinygltf::Model gltfModel;
 					tinygltf::TinyGLTF loader;
 					std::string err;
 					std::string warn;
 
-					bool ret = loader.LoadBinaryFromFile(&model, &err, &warn, object.pathObj);
+					bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, object.pathObj);
 
 					if (!warn.empty()) {
 						std::cout << "Warning: " << warn << std::endl;
@@ -895,29 +895,29 @@ private:
 					std::vector<uint32_t> tempIndices;
 					std::cout << "Finished loading binaries" << std::endl;
 
-					std::cout << "loading " << model.meshes.size() << " meshes" << std::endl;
+					std::cout << "loading " << gltfModel.meshes.size() << " meshes" << std::endl;
 					// loop over each mesh (object)
-					for (const auto& mesh : model.meshes) {
+					for (const auto& mesh : gltfModel.meshes) {
 						uint32_t matIndex = modInd;
 						for (const auto& primitive : mesh.primitives) {
 							// pos
 							auto positionIt = getAttributeIt("POSITION", primitive.attributes);
-							const auto& positionAccessor = model.accessors[positionIt->second];
-							const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
+							const auto& positionAccessor = gltfModel.accessors[positionIt->second];
+							const float* positionData = getAccessorData(gltfModel, primitive.attributes, "POSITION");
 
 							// tex coords
 							auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
-							const auto& texCoordAccessor = model.accessors[texCoordIt->second];
-							const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
+							const auto& texCoordAccessor = gltfModel.accessors[texCoordIt->second];
+							const float* texCoordData = getAccessorData(gltfModel, primitive.attributes, "TEXCOORD_0");
 
 							// normals
 							auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
-							const auto& normalAccessor = model.accessors[normalIt->second];
-							const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
+							const auto& normalAccessor = gltfModel.accessors[normalIt->second];
+							const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
 
 							// indices
-							const auto& indexAccessor = model.accessors[primitive.indices];
-							const uint16_t* indexData = getIndexData(model, indexAccessor);
+							const auto& indexAccessor = gltfModel.accessors[primitive.indices];
+							const uint16_t* indexData = getIndexData(gltfModel, indexAccessor);
 
 
 							for (size_t i = 0; i < indexAccessor.count; ++i) {
@@ -936,14 +936,14 @@ private:
 							}
 
 							if (primitive.material >= 0) {
-								auto& material = model.materials[primitive.material];
+								auto& material = gltfModel.materials[primitive.material];
 								Materials texture;
 
 								// metallic-roughness Texture
 								if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 									auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
-									auto& tex = model.textures[texInfo.index];
-									texture.metallicRoughness.gltfImage = model.images[tex.source];
+									auto& tex = gltfModel.textures[texInfo.index];
+									texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
 									texture.metallicRoughness.texIndex = texInd;
 									texture.metallicRoughness.path = "gltf";
 								}
@@ -951,8 +951,8 @@ private:
 								// base color texture
 								if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 									auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
-									auto& tex = model.textures[texInfo.index];
-									texture.baseColor.gltfImage = model.images[tex.source];
+									auto& tex = gltfModel.textures[texInfo.index];
+									texture.baseColor.gltfImage = gltfModel.images[tex.source];
 									texture.baseColor.texIndex = texInd;
 									texture.baseColor.path = "gltf";
 								}
@@ -961,8 +961,8 @@ private:
 								// normal map
 								if (material.normalTexture.index >= 0) {
 									auto& texInfo = material.normalTexture;
-									auto& tex = model.textures[texInfo.index];
-									texture.normalMap.gltfImage = model.images[tex.source];
+									auto& tex = gltfModel.textures[texInfo.index];
+									texture.normalMap.gltfImage = gltfModel.images[tex.source];
 									texture.normalMap.texIndex = texInd;
 									texture.normalMap.path = "gltf";
 								}
@@ -1794,7 +1794,12 @@ private:
 
 	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "base") {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
-			getGLTFImageData(tex.gltfImage);
+			if (tex.path != "gltf") { // standard image
+				getImageData(tex.path);
+			}
+			else {
+				getGLTFImageData(tex.gltfImage);
+			}
 			createStagingBuffer(tex);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
 			// create image:
