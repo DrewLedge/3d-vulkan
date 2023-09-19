@@ -854,6 +854,70 @@ private:
 		const auto& buffer = model.buffers[bufferView.buffer];
 		return reinterpret_cast<const uint16_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
 	}
+	forms::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
+		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
+		forms::vec3 r = { 0.0f, 0.0f, 0.0f };
+		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
+		if (node.translation.size() >= 3) {
+			t = {
+				static_cast<float>(node.translation[0]),
+				static_cast<float>(node.translation[1]),
+				static_cast<float>(node.translation[2])
+			};
+		}
+
+		if (node.rotation.size() >= 3) {
+			r = {
+				static_cast<float>(node.rotation[0]),
+				static_cast<float>(node.rotation[1]),
+				static_cast<float>(node.rotation[2])
+			};
+		}
+
+		if (node.scale.size() >= 3) {
+			s = {
+				static_cast<float>(node.scale[0]),
+				static_cast<float>(node.scale[1]),
+				static_cast<float>(node.scale[2])
+			};
+		}
+		forms::mat4 translationMatrix = forms::mat4::translate(t);
+		forms::mat4 rotationMatrix = forms::mat4::rotate(r);
+		forms::mat4 scaleMatrix = forms::mat4::scale(s);
+
+		return scaleMatrix * rotationMatrix * translationMatrix;
+	}
+
+	int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
+		for (size_t i = 0; i < model.nodes.size(); ++i) {
+			if (model.nodes[i].mesh == meshIndex) {
+				return static_cast<int>(i);
+			}
+		}
+		return -1; // not found
+	}
+
+	forms::mat4 calcMeshWM(const tinygltf::Model& model, int meshIndex, std::unordered_map<int, int>& parentIndex) {
+		int currentNodeIndex = getNodeIndex(model, meshIndex);
+		forms::mat4 modelMatrix;
+
+		// walk up the node hierarchy to accumulate transformations
+		while (currentNodeIndex != -1) {
+			const tinygltf::Node& node = model.nodes[currentNodeIndex];
+			forms::mat4 localMatrix = calcNodeLM(node);
+			modelMatrix = localMatrix * modelMatrix;
+
+			// move up to the parent node for the next iteration
+			if (parentIndex.find(currentNodeIndex) != parentIndex.end()) {
+				currentNodeIndex = parentIndex[currentNodeIndex];
+			}
+			else {
+				currentNodeIndex = -1;  // no parent, exit loop
+			}
+		}
+
+		return modelMatrix;
+	}
 
 
 	void loadScene(forms::vec3 scale, std::string path) {
@@ -883,7 +947,17 @@ private:
 				throw std::runtime_error("Failed to load GLTF model");
 			}
 
+			// get the index of the parent node for each node
+			std::unordered_map<int, int> parentInd;
+			for (size_t nodeIndex = 0; nodeIndex < gltfModel.nodes.size(); ++nodeIndex) {
+				const auto& node = gltfModel.nodes[nodeIndex];
+				for (const auto& childIndex : node.children) {
+					parentInd[childIndex] = static_cast<int>(nodeIndex);
+				}
+			}
+
 			// loop over each mesh (object)
+			size_t meshInd = 0;
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;
 
@@ -975,12 +1049,15 @@ private:
 				newObject.isLoaded = true;
 				newObject.scale = scale;
 
+				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd), newObject.modelMatrix);
+
 				// add newObject to global objects list
 				modelMtx.lock();
 				objects.push_back(newObject);
 				modelMtx.unlock();
 
 				modInd++;
+				meshInd++;
 			}
 			std::cout << "Finished loading vertecies" << std::endl;
 			}).name("load_model");
@@ -1304,7 +1381,7 @@ private:
 
 
 	void calcObjectMats(model& o) {
-		convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
+		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
 		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 10.0f), o.projectionMatrix);
 	}
