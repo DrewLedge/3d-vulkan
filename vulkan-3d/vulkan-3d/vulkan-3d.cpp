@@ -1067,9 +1067,9 @@ private:
 					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
 						//also create mipmaps for each texture
-						createTextureImage(object.materials[i].baseColor, true);
-						createTextureImage(object.materials[i].normalMap, false, "norm");
-						createTextureImage(object.materials[i].metallicRoughness, true, "metallic");
+						createTexturedImage(object.materials[i].baseColor, true);
+						createTexturedImage(object.materials[i].normalMap, false, "norm");
+						createTexturedImage(object.materials[i].metallicRoughness, true, "metallic");
 
 						//create texture image views and samplers for each texture (for each material):wa
 						createTextureImgView(object.materials[i].baseColor, true);
@@ -1086,7 +1086,9 @@ private:
 				}).name("load_texture");
 				loadModelTask.precede(loadTextureTask);
 				executor.run(taskFlow).get();
-				std::cout << objects.size() << std::endl;
+
+				std::cout << "-----------------------" << std::endl;
+				std::cout << "Loaded " << objects.size() << " meshes" << std::endl;
 	}
 
 	void setupDepthResources() {
@@ -1502,10 +1504,12 @@ private:
 
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.materials) {
-				// metallic roughness texture
-				allTextures.push_back(materials.metallicRoughness);
 				// base cololr texture
 				allTextures.push_back(materials.baseColor);
+
+				// metallic roughness texture
+				allTextures.push_back(materials.metallicRoughness);
+
 				// normal map texture
 				allTextures.push_back(materials.normalMap);
 			}
@@ -1872,7 +1876,7 @@ private:
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTextureImage(Texture& tex, bool doMipmap, std::string type = "base") {
+	void createTexturedImage(Texture& tex, bool doMipmap, std::string type = "base") {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path);

@@ -85,12 +85,12 @@ void main() {
 float shinyness=32.0f;
 float PI = acos(-1.0);
 if (lights.length() >= 1) {
-    vec4 sampled = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
-    vec4 sampledSpec = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
-    vec4 sampledNorm = texture(texSamplers[inTexIndex + 2], inTexCoord); // normal map
+    vec4 base = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
+    vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
+    vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord); // normal map
 
-    vec3 normal = normalize(sampledNorm.xyz * 2.0 - 1.0);
-    vec3 ambient = 0.1 * sampled.rgb; // low influence
+    vec3 normal = normalize(normalMap.xyz * 2.0 - 1.0);
+    vec3 ambient = 0.1 * base.rgb; // low influence
 
     vec3 diffuse = vec3(0.0); 
     vec3 specular = vec3(0.0);
@@ -133,12 +133,12 @@ if (lights.length() >= 1) {
          // specular lighting
          vec3 viewDir = normalize(inCamPos - inFragPos);
          vec3 reflectDir = reflect(-fragLightDir, normal); 
-         float spec = pow(max(dot(viewDir, reflectDir), 0.0), sampledSpec.a); // sampledSpec.a is used as the shininess factor
+         float spec = pow(max(dot(viewDir, reflectDir), 0.0), metallicRoughness.a);
          specular += lightColor * spec * intensity * shadowFactor; // multiplying with shadow factor for shadow contribution
         }
     }
-    vec3 result = ambient + diffuse * sampled.rgb + specular * sampledSpec.rgb;
-    outColor = vec4(result, sampled.a);
+    vec3 result = ambient + diffuse * base.rgb + specular * metallicRoughness.rgb;
+    outColor =base;
 }
 
 }
