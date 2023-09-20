@@ -120,6 +120,7 @@ private:
 		VkDeviceMemory stagingBufferMem;
 		uint32_t texIndex; //used to know what textures belong to what material
 		tinygltf::Image gltfImage;
+		bool found;
 
 		Texture()
 			: sampler(VK_NULL_HANDLE),
@@ -130,7 +131,8 @@ private:
 			stagingBuffer(VK_NULL_HANDLE),
 			stagingBufferMem(VK_NULL_HANDLE),
 			texIndex(0),
-			gltfImage()
+			gltfImage(),
+			found(false)
 		{}
 
 		bool operator==(const Texture& other) const {
@@ -927,7 +929,6 @@ private:
 		tf::Taskflow taskFlow;
 
 		uint32_t texInd = 0;
-		uint32_t modInd = 0;
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
@@ -961,6 +962,7 @@ private:
 
 			// loop over each mesh (object)
 			size_t meshInd = 0;
+			uint32_t modInd = 0;
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;
 
@@ -1019,6 +1021,10 @@ private:
 							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
 							texture.metallicRoughness.texIndex = texInd;
 							texture.metallicRoughness.path = "gltf";
+							texture.metallicRoughness.found = true;
+						}
+						else {
+							std::cout << "Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
 						}
 
 						// base color texture
@@ -1028,8 +1034,11 @@ private:
 							texture.baseColor.gltfImage = gltfModel.images[tex.source];
 							texture.baseColor.texIndex = texInd;
 							texture.baseColor.path = "gltf";
+							texture.baseColor.found = true;
 						}
-
+						else {
+							std::cout << "Texture " << texInd << " doesn't have a base color texture" << std::endl;
+						}
 
 						// normal map
 						if (material.normalTexture.index >= 0) {
@@ -1038,6 +1047,10 @@ private:
 							texture.normalMap.gltfImage = gltfModel.images[tex.source];
 							texture.normalMap.texIndex = texInd;
 							texture.normalMap.path = "gltf";
+							texture.normalMap.found = true;
+						}
+						else {
+							std::cout << "Texture " << texInd << " doesn't have a normal map" << std::endl;
 						}
 
 						texInd += 1;
@@ -1070,20 +1083,23 @@ private:
 					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
 						//also create mipmaps for each texture
-						createTexturedImage(object.materials[i].baseColor, true);
-						createTexturedImage(object.materials[i].normalMap, false, "norm");
-						createTexturedImage(object.materials[i].metallicRoughness, false, "metallic");
+						if (object.materials[i].baseColor.found) {
+							createTexturedImage(object.materials[i].baseColor, true);
+							createTextureImgView(object.materials[i].baseColor, true);
+							createTS(object.materials[i].baseColor, true);
+						}
 
-						//create texture image views and samplers for each texture (for each material):wa
-						createTextureImgView(object.materials[i].baseColor, true);
-						createTS(object.materials[i].baseColor, true);
+						if (object.materials[i].normalMap.found) {
+							createTexturedImage(object.materials[i].normalMap, false, "norm");
+							createTextureImgView(object.materials[i].normalMap, false, "norm");
+							createTS(object.materials[i].normalMap, false, "norm");
+						}
 
-						createTextureImgView(object.materials[i].normalMap, false, "norm");
-						createTS(object.materials[i].normalMap, false, "norm");
-
-						createTextureImgView(object.materials[i].metallicRoughness, false, "metallic");
-						createTS(object.materials[i].metallicRoughness, false, "metallic");
-
+						if (object.materials[i].metallicRoughness.found) {
+							createTexturedImage(object.materials[i].metallicRoughness, false, "metallic");
+							createTextureImgView(object.materials[i].metallicRoughness, false, "metallic");
+							createTS(object.materials[i].metallicRoughness, false, "metallic");
+						}
 					}
 				std::cout << "Finished loading textures" << std::endl;
 				}).name("load_texture");
@@ -1091,7 +1107,7 @@ private:
 				executor.run(taskFlow).get();
 
 				std::cout << "-----------------------" << std::endl;
-				std::cout << "Loaded " << objects.size() << " meshes" << std::endl;
+				std::cout << "Successfully loaded " << objects.size() << " meshes" << std::endl;
 	}
 
 	void setupDepthResources() {
@@ -1353,6 +1369,7 @@ private:
 		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
 		memcpy(data, &sceneIndices, bufferCreateInfo.size);
 		vkUnmapMemory(device, sceneIndexBufferMem);
+		printIndices(sceneIndices);
 	}
 
 	void printMatrix(const forms::mat4& matrix) {
@@ -1507,18 +1524,16 @@ private:
 
 		for (const model& obj : objects) {
 			for (const Materials& materials : obj.materials) {
-				// base cololr texture
-				allTextures.push_back(materials.baseColor);
-
-				// metallic roughness texture
-				allTextures.push_back(materials.metallicRoughness);
-
-				// normal map texture
-				allTextures.push_back(materials.normalMap);
+				// directly construct textures in-place
+				allTextures.emplace_back(materials.baseColor);
+				allTextures.emplace_back(materials.metallicRoughness);
+				allTextures.emplace_back(materials.normalMap);
 			}
 		}
+		std::cout << "Finished populating textures" << std::endl;
 		return allTextures;
 	}
+
 	std::vector<shadowMapDataObject> getAllShadowMaps() {
 		std::vector<shadowMapDataObject>allMaps;
 		allMaps.reserve(lights.size());
