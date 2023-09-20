@@ -928,41 +928,42 @@ private:
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
 
-		uint32_t texInd = 0;
+		uint32_t texInd = 0; // which texture belongs to which material
+		uint32_t meshInd = 0;
+		uint32_t modInd = 0; // which material/textures to which mesh/model
+
+		tinygltf::Model gltfModel;
+		tinygltf::TinyGLTF loader;
+		std::string err;
+		std::string warn;
+
+		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
+		std::cout << "-----------------------" << std::endl;
+		std::cout << "Finished loading binaries" << std::endl;
+
+		if (!warn.empty()) {
+			std::cout << "Warning: " << warn << std::endl;
+		}
+		if (!err.empty()) {
+			throw std::runtime_error(err);
+		}
+		if (!ret) {
+			throw std::runtime_error("Failed to load GLTF model");
+		}
+
+		// get the index of the parent node for each node
+		std::unordered_map<int, int> parentInd;
+		for (size_t nodeIndex = 0; nodeIndex < gltfModel.nodes.size(); ++nodeIndex) {
+			const auto& node = gltfModel.nodes[nodeIndex];
+			for (const auto& childIndex : node.children) {
+				parentInd[childIndex] = static_cast<int>(nodeIndex);
+			}
+		}
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
-			tinygltf::Model gltfModel;
-			tinygltf::TinyGLTF loader;
-			std::string err;
-			std::string warn;
-
-			bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-			std::cout << "-----------------------" << std::endl;
-			std::cout << "Finished loading binaries" << std::endl;
-
-			if (!warn.empty()) {
-				std::cout << "Warning: " << warn << std::endl;
-			}
-			if (!err.empty()) {
-				throw std::runtime_error(err);
-			}
-			if (!ret) {
-				throw std::runtime_error("Failed to load GLTF model");
-			}
-
-			// get the index of the parent node for each node
-			std::unordered_map<int, int> parentInd;
-			for (size_t nodeIndex = 0; nodeIndex < gltfModel.nodes.size(); ++nodeIndex) {
-				const auto& node = gltfModel.nodes[nodeIndex];
-				for (const auto& childIndex : node.children) {
-					parentInd[childIndex] = static_cast<int>(nodeIndex);
-				}
-			}
 
 			// loop over each mesh (object)
-			size_t meshInd = 0;
-			uint32_t modInd = 0;
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;
 
@@ -974,7 +975,6 @@ private:
 
 				// process primitives in the mesh
 				for (const auto& primitive : mesh.primitives) {
-
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
 					const auto& positionAccessor = gltfModel.accessors[positionIt->second];
@@ -1009,23 +1009,9 @@ private:
 						}
 						tempIndices.push_back(uniqueVertices[vertex]);
 					}
-
 					if (primitive.material >= 0) {
 						auto& material = gltfModel.materials[primitive.material];
 						Materials texture;
-
-						// metallic-roughness Texture
-						if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
-							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
-							texture.metallicRoughness.texIndex = texInd;
-							texture.metallicRoughness.path = "gltf";
-							texture.metallicRoughness.found = true;
-						}
-						else {
-							std::cout << "Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
-						}
 
 						// base color texture
 						if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
@@ -1038,6 +1024,19 @@ private:
 						}
 						else {
 							std::cout << "Texture " << texInd << " doesn't have a base color texture" << std::endl;
+						}
+
+						// metallic-roughness Texture
+						if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
+							texture.metallicRoughness.texIndex = texInd;
+							texture.metallicRoughness.path = "gltf";
+							texture.metallicRoughness.found = true;
+						}
+						else {
+							std::cout << "Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
 						}
 
 						// normal map
@@ -1055,7 +1054,11 @@ private:
 
 						texInd += 1;
 						texture.modelIndex = modInd;
+						std::cout << primitive.material << " " << texture.modelIndex << std::endl;
 						newObject.materials.push_back(texture);
+					}
+					else {
+						std::cout << "Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
 					}
 				}
 				newObject.vertices = tempVertices;
