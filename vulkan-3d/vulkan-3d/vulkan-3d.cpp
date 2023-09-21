@@ -445,7 +445,7 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/chess_set_4k.glb", { 10.0f, 10.0f, 10.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -1576,15 +1576,25 @@ private:
 		return allMaps;
 	}
 	std::vector<Materials> getAllMaterials() {
-		std::vector<Materials> allMaterials;
+		size_t totalMaterials = 0;
+		for (const auto& obj : objects) {
+			totalMaterials += obj.materials.size();
+		}
 
-		for (auto& obj : objects) {
+		std::vector<Materials> allMaterials;
+		allMaterials.reserve(totalMaterials);
+		size_t t = 0;
+		for (const auto& obj : objects) {
 			for (auto& mat : obj.materials) {
+				t += 1;
+				loadBar(forms::gen::getPercent(t, totalMaterials), "material array");
 				allMaterials.push_back(mat);
 			}
 		}
+		std::cout << "Finished loading material array" << std::endl;
 		return allMaterials;
 	}
+
 
 	VkDescriptorSetLayout createDSLayout(uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags) {
 		VkDescriptorSetLayoutBinding binding{};

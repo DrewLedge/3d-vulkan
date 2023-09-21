@@ -145,6 +145,64 @@ public:
 		}
 		vec2(float x, float y) : x(x), y(y) {}
 	};
+	struct vec4 {
+		float x, y, z, w;
+
+		vec4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
+		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+
+		bool operator==(const vec4& other) const {
+			const float epsilon = 0.00001f;
+			return std::abs(x - other.x) < epsilon &&
+				std::abs(y - other.y) < epsilon &&
+				std::abs(z - other.z) < epsilon &&
+				std::abs(w - other.w) < epsilon;
+		}
+
+		bool operator!=(const vec4& other) const {
+			return !(*this == other);
+		}
+		vec4 operator+(const vec4& other) const {
+			return vec4(x + other.x, y + other.y, z + other.z, w + other.w);
+		}
+		vec4 operator-(const vec4& other) const {
+			return vec4(x - other.x, y - other.y, z - other.z, w - other.w);
+		}
+		vec4 operator*(float scalar) const {
+			return vec4(x * scalar, y * scalar, z * scalar, w * scalar);
+		}
+		vec4 operator/(float scalar) const {
+			return vec4(x / scalar, y / scalar, z / scalar, w / scalar);
+		}
+		vec4& operator+=(const vec4& other) {
+			x += other.x;
+			y += other.y;
+			z += other.z;
+			w += other.w;
+			return *this;
+		}
+		vec4& operator-=(const vec4& other) {
+			x -= other.x;
+			y -= other.y;
+			z -= other.z;
+			w -= other.w;
+			return *this;
+		}
+		vec4& operator*=(float scalar) {
+			x *= scalar;
+			y *= scalar;
+			z *= scalar;
+			w *= scalar;
+			return *this;
+		}
+		vec4& operator/=(float scalar) {
+			x /= scalar;
+			y /= scalar;
+			z /= scalar;
+			w /= scalar;
+			return *this;
+		}
+	};
 	struct mat4 {
 		float m[4][4];
 		mat4() {
@@ -203,6 +261,8 @@ public:
 			*this = temp;
 			return *this;
 		}
+
+
 		friend vec3 operator *(const mat4& mat, const vec3& vec) {
 			float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3];
 			float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3];
@@ -267,6 +327,15 @@ public:
 
 			result = rotZ * rotY * rotX;
 			return result;
+		}
+		static mat4 rotateQ(const vec4 q) { // quaternian rotation
+			mat4 result;
+
+			float w = q.w;
+			float x = q.x;
+			float y = q.y;
+			float z = q.z;
+
 		}
 		vec3 vecMatrix(const vec3& vec) const {
 			float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector
