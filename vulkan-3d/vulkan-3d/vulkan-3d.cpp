@@ -922,6 +922,31 @@ private:
 
 		return modelMatrix;
 	}
+	void loadBar(float percent, const std::string& what) {
+		int barWidth = 35;
+
+		if (percent < 90) {
+			std::cout << "Loading " << what << " [";
+			int pos = static_cast<int>(barWidth * (percent / 100.0));  // normalize percent
+			for (int i = 0; i < barWidth; ++i) {
+				if (i < pos) {
+					std::cout << "=";
+				}
+				else if (i == pos) {
+					std::cout << ">";
+				}
+				else {
+					std::cout << " ";
+				}
+			}
+			std::cout << "] " << static_cast<int>(percent) << " %\r";
+		}
+		else {
+			std::cout << std::string(what.length() + barWidth * 2, ' ') << "\r"; // erase the bar with spaces
+		}
+		std::cout.flush();
+	}
+
 
 
 	void loadScene(forms::vec3 scale, std::string path) {
@@ -971,10 +996,11 @@ private:
 				std::vector<Vertex> tempVertices;
 				std::vector<uint32_t> tempIndices;
 
-				uint32_t matIndex = modInd; // material index
 
 				// process primitives in the mesh
 				for (const auto& primitive : mesh.primitives) {
+
+					loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
 					const auto& positionAccessor = gltfModel.accessors[positionIt->second];
@@ -1001,7 +1027,7 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-						vertex.matIndex = matIndex;  // set the material index
+						vertex.matIndex = modInd;  // set the material index
 
 						if (uniqueVertices.count(vertex) == 0) {
 							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -1009,7 +1035,7 @@ private:
 						}
 						tempIndices.push_back(uniqueVertices[vertex]);
 					}
-					if (primitive.material >= 0) {
+					if (primitive.material >= 0) { // if the primitive has a material
 						auto& material = gltfModel.materials[primitive.material];
 						Materials texture;
 
@@ -1054,7 +1080,6 @@ private:
 
 						texInd += 1;
 						texture.modelIndex = modInd;
-						std::cout << primitive.material << " " << texture.modelIndex << std::endl;
 						newObject.materials.push_back(texture);
 					}
 					else {
@@ -1082,7 +1107,10 @@ private:
 			}).name("load_model");
 
 			auto loadTextureTask = taskFlow.emplace([&]() {
-				for (auto& object : objects)
+				size_t t = 0;
+				for (auto& object : objects) {
+					loadBar(forms::gen::getPercent(t, objects.size()), "textures");
+					t++;
 					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
 						//also create mipmaps for each texture
@@ -1104,7 +1132,7 @@ private:
 							createTS(object.materials[i].metallicRoughness, false, "metallic");
 						}
 					}
-				std::cout << "Finished loading textures" << std::endl;
+				}
 				}).name("load_texture");
 				loadModelTask.precede(loadTextureTask);
 				executor.run(taskFlow).get();
@@ -1372,7 +1400,7 @@ private:
 		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
 		memcpy(data, &sceneIndices, bufferCreateInfo.size);
 		vkUnmapMemory(device, sceneIndexBufferMem);
-		printIndices(sceneIndices);
+		printIndices(sceneIndices); // debug
 	}
 
 	void printMatrix(const forms::mat4& matrix) {
@@ -1524,8 +1552,10 @@ private:
 	std::vector<Texture> getAllTextures() {
 		std::vector<Texture> allTextures;
 		allTextures.reserve(totalTextureCount);
-
+		size_t t = 0;
 		for (const model& obj : objects) {
+			loadBar(forms::gen::getPercent(t, objects.size()), "texture array");
+			t++;
 			for (const Materials& materials : obj.materials) {
 				// directly construct textures in-place
 				allTextures.emplace_back(materials.baseColor);
@@ -1533,7 +1563,7 @@ private:
 				allTextures.emplace_back(materials.normalMap);
 			}
 		}
-		std::cout << "Finished populating textures" << std::endl;
+		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
 	}
 
