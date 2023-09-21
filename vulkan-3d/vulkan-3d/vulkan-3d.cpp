@@ -445,7 +445,9 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/knight.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/sniper_rifle_pbr.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/chess_set_4k.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -858,7 +860,7 @@ private:
 		const auto& buffer = model.buffers[bufferView.buffer];
 		return reinterpret_cast<const uint16_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
 	}
-	forms::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
+	forms::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
 		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
 		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
@@ -870,7 +872,7 @@ private:
 			};
 		}
 
-		if (node.rotation.size() >= 3) {
+		if (node.rotation.size() >= 4) {
 			r = {
 				static_cast<float>(node.rotation[0]),
 				static_cast<float>(node.rotation[1]),
@@ -886,11 +888,12 @@ private:
 				static_cast<float>(node.scale[2])
 			};
 		}
+		s = s * m.scale; // multiply the scale by the model scale
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 
-		return scaleMatrix * rotationMatrix * translationMatrix;
+		return translationMatrix * rotationMatrix * scaleMatrix;
 	}
 
 	int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
@@ -902,14 +905,14 @@ private:
 		return -1; // not found
 	}
 
-	forms::mat4 calcMeshWM(const tinygltf::Model& model, int meshIndex, std::unordered_map<int, int>& parentIndex) {
-		int currentNodeIndex = getNodeIndex(model, meshIndex);
+	forms::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, model& m) {
+		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
 		forms::mat4 modelMatrix;
 
 		// walk up the node hierarchy to accumulate transformations
 		while (currentNodeIndex != -1) {
-			const tinygltf::Node& node = model.nodes[currentNodeIndex];
-			forms::mat4 localMatrix = calcNodeLM(node);
+			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
+			forms::mat4 localMatrix = calcNodeLM(node, m);
 			modelMatrix = localMatrix * modelMatrix;
 
 			// move up to the parent node for the next iteration
@@ -923,6 +926,34 @@ private:
 
 		return modelMatrix;
 	}
+
+	void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
+		for (int i = 0; i < depth; ++i) { // indent based on depth
+			std::cout << "  ";
+		}
+		// print the current node's name or index if the name is empty
+		std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << std::endl;
+
+		for (const auto& childIndex : model.nodes[nodeIndex].children) {
+			printNodeHierarchy(model, childIndex, depth + 1);
+		}
+	}
+
+	void printFullHierarchy(const tinygltf::Model& model) {
+		std::unordered_set<int> childNodes;
+		for (const auto& node : model.nodes) {
+			for (const auto& childIndex : node.children) {
+				childNodes.insert(childIndex);
+			}
+		}
+
+		for (size_t i = 0; i < model.nodes.size(); ++i) {
+			if (childNodes.find(i) == childNodes.end()) { // if a node doesn't appear in the childNodes set, it's a root
+				printNodeHierarchy(model, static_cast<int>(i));
+			}
+		}
+	}
+
 	void loadBar(float percent, const std::string& what) {
 		int barWidth = 35;
 
@@ -999,6 +1030,8 @@ private:
 		for (const auto& extension : gltfModel.extensionsUsed) {
 			std::cout << "WARNING: The model relies on: " << extension << std::endl;
 		}
+
+		printFullHierarchy(gltfModel);
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
@@ -1108,7 +1141,7 @@ private:
 				newObject.isLoaded = true;
 				newObject.scale = scale;
 
-				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd), newObject.modelMatrix);
+				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
 
 				// add newObject to global objects list
 				modelMtx.lock();
