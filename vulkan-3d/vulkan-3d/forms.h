@@ -328,7 +328,8 @@ public:
 			result = rotZ * rotY * rotX;
 			return result;
 		}
-		static mat4 rotateQ(const vec4 q) { // quaternian rotation
+		static mat4 rotateQ(const vec4 q) { // quaternian rotation (right handed - column major)
+			// formula from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
 			mat4 result;
 
 			float w = q.w;
@@ -336,6 +337,24 @@ public:
 			float y = q.y;
 			float z = q.z;
 
+			result.m[0][0] = 1.0f - 2.0f * y * y - 2.0f * z * z;
+			result.m[0][1] = 2.0f * x * y - 2.0f * z * w;
+			result.m[0][2] = 2.0f * x * z + 2.0f * y * w;
+			result.m[0][3] = 0.0f;
+
+			result.m[1][0] = 2.0f * x * y + 2.0f * z * w;
+			result.m[1][1] = 1.0f - 2.0f * x * x - 2.0f * z * z;
+			result.m[1][2] = 2.0f * y * z - 2.0f * x * w;
+			result.m[1][3] = 0.0f;
+
+			result.m[2][0] = 2.0f * x * z - 2.0f * y * w;
+			result.m[2][1] = 2.0f * y * z + 2.0f * x * w;
+			result.m[2][2] = 1.0f - 2.0f * x * x - 2.0f * y * y;
+			result.m[2][3] = 0.0f;
+
+			result.m[3][3] = 1.0f;
+
+			return result;
 		}
 		vec3 vecMatrix(const vec3& vec) const {
 			float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector

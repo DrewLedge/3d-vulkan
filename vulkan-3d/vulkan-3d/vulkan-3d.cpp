@@ -860,7 +860,7 @@ private:
 	}
 	forms::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
-		forms::vec3 r = { 0.0f, 0.0f, 0.0f };
+		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
 		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
 		if (node.translation.size() >= 3) {
 			t = {
@@ -874,7 +874,8 @@ private:
 			r = {
 				static_cast<float>(node.rotation[0]),
 				static_cast<float>(node.rotation[1]),
-				static_cast<float>(node.rotation[2])
+				static_cast<float>(node.rotation[2]),
+				static_cast<float>(node.rotation[3])
 			};
 		}
 
@@ -886,7 +887,7 @@ private:
 			};
 		}
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
-		forms::mat4 rotationMatrix = forms::mat4::rotate(r);
+		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 
 		return scaleMatrix * rotationMatrix * translationMatrix;
@@ -999,8 +1000,8 @@ private:
 
 				// process primitives in the mesh
 				for (const auto& primitive : mesh.primitives) {
-
 					loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
+
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
 					const auto& positionAccessor = gltfModel.accessors[positionIt->second];
