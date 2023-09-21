@@ -986,6 +986,20 @@ private:
 			}
 		}
 
+		// check if the model has any skins or animations (not supported for now)
+		if (!gltfModel.skins.empty()) {
+			std::cout << "WARNING: The model contains skinning information" << std::endl;
+		}
+
+		if (!gltfModel.animations.empty()) {
+			std::cout << "WARNING: The model contains animation data." << std::endl;
+		}
+
+		// check if the gltf model relies on any extensions
+		for (const auto& extension : gltfModel.extensionsUsed) {
+			std::cout << "WARNING: The model relies on: " << extension << std::endl;
+		}
+
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
 
