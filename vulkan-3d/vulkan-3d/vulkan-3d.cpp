@@ -447,7 +447,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		//createObject("models/chess_set_4k.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/chess_set_4k.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -839,7 +839,7 @@ private:
 	auto getAttributeIt(const std::string& name, const auto& attributes) {
 		auto it = attributes.find(name);
 		if (it == attributes.end()) {
-			throw std::runtime_error("Failed to find attribute: " + name);
+			std::cerr << "WARNING: Failed to find attribute: " << name << std::endl;;
 		}
 		return it;
 	}
@@ -855,11 +855,23 @@ private:
 		return reinterpret_cast<const float*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
 	}
 
-	const uint16_t* getIndexData(const auto& model, const auto& accessor) {
+	const void* getIndexData(const auto& model, const auto& accessor) { // const void for flexablity
 		const auto& bufferView = model.bufferViews[accessor.bufferView];
 		const auto& buffer = model.buffers[bufferView.buffer];
-		return reinterpret_cast<const uint16_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+
+		switch (accessor.componentType) {
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+			return reinterpret_cast<const uint8_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+			return reinterpret_cast<const uint16_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+			return reinterpret_cast<const uint32_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
+		default:
+			std::cerr << "WARNING: Unsupported index type: " << accessor.componentType << std::endl;
+			return nullptr;
+		}
 	}
+
 	forms::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
 		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
@@ -1019,18 +1031,17 @@ private:
 
 		// check if the model has any skins or animations (not supported for now)
 		if (!gltfModel.skins.empty()) {
-			std::cout << "WARNING: The model contains skinning information" << std::endl;
+			std::cerr << "WARNING: The model contains skinning information" << std::endl;
 		}
 
 		if (!gltfModel.animations.empty()) {
-			std::cout << "WARNING: The model contains animation data." << std::endl;
+			std::cerr << "WARNING: The model contains animation data." << std::endl;
 		}
 
 		// check if the gltf model relies on any extensions
 		for (const auto& extension : gltfModel.extensionsUsed) {
-			std::cout << "WARNING: The model relies on: " << extension << std::endl;
+			std::cerr << "WARNING: The model relies on: " << extension << std::endl;
 		}
-
 		printFullHierarchy(gltfModel);
 
 		// parallel loading using taskflow:
@@ -1049,6 +1060,10 @@ private:
 
 					// process primitives in the mesh
 					for (const auto& primitive : mesh.primitives) {
+						if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
+							std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
+						}
+
 						loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
 
 						// pos
@@ -1068,11 +1083,25 @@ private:
 
 						// indices
 						const auto& indexAccessor = gltfModel.accessors[primitive.indices];
-						const uint16_t* indexData = getIndexData(gltfModel, indexAccessor);
-
+						const void* rawIndices = getIndexData(gltfModel, indexAccessor);
 
 						for (size_t i = 0; i < indexAccessor.count; ++i) {
-							uint16_t index = indexData[i];
+							uint32_t index;  // use the largest type to ensure no overflow.
+
+							switch (indexAccessor.componentType) {
+							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+								index = static_cast<const uint8_t*>(rawIndices)[i];
+								break;
+							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+								index = static_cast<const uint16_t*>(rawIndices)[i];
+								break;
+							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+								index = static_cast<const uint32_t*>(rawIndices)[i];
+								break;
+							default:
+								continue; // skip this iteration
+							}
+
 							Vertex vertex;
 							vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 							vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
@@ -1099,7 +1128,7 @@ private:
 								texture.baseColor.found = true;
 							}
 							else {
-								std::cout << "Texture " << texInd << " doesn't have a base color texture" << std::endl;
+								std::cerr << "WARNING: Texture " << texInd << " doesn't have a base color texture" << std::endl;
 							}
 
 							// metallic-roughness Texture
@@ -1112,7 +1141,7 @@ private:
 								texture.metallicRoughness.found = true;
 							}
 							else {
-								std::cout << "Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
+								std::cerr << "WARNING: Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
 							}
 
 							// normal map
@@ -1125,7 +1154,7 @@ private:
 								texture.normalMap.found = true;
 							}
 							else {
-								std::cout << "Texture " << texInd << " doesn't have a normal map" << std::endl;
+								std::cerr << "WARNING: Texture " << texInd << " doesn't have a normal map" << std::endl;
 							}
 
 							texInd += 1;
@@ -1133,7 +1162,7 @@ private:
 							newObject.materials.push_back(texture);
 						}
 						else {
-							std::cout << "Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
+							std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
 						}
 					}
 					newObject.vertices = tempVertices;
