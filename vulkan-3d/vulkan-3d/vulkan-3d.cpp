@@ -1430,7 +1430,14 @@ private:
 		vkUnmapMemory(device, lightBufferMem);
 	}
 
-	void printIndices(const sceneIndexSSBO& indexBuffer) {
+	void printIndices(const sceneIndexSSBO& indexBuffer, bool extra = true) {
+		if (extra) {
+			for (model& obj : objects) {
+				for (Vertex& vert : obj.vertices) {
+					std::cout << "Vertex " << vert.pos.x << ", " << vert.pos.y << ", " << vert.pos.z << " goes with Material " << vert.matIndex << std::endl;
+				}
+			}
+		}
 		std::cout << "-------------------------------" << std::endl;
 		for (size_t i = 0; i < MAX_TEXTURES; i++) {
 			if (indexBuffer.texIndices[i] < MAX_TEXTURES) {
@@ -1486,7 +1493,7 @@ private:
 		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
 		memcpy(data, &sceneIndices, bufferCreateInfo.size);
 		vkUnmapMemory(device, sceneIndexBufferMem);
-		printIndices(sceneIndices); // debug
+		printIndices(sceneIndices, false); // debug
 	}
 
 	void printMatrix(const forms::mat4& matrix) {

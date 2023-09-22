@@ -34,8 +34,8 @@ layout(set = 0, binding = 0) buffer matBufferObject {
 } matSSBO;
 
 layout(set = 2, binding = 2) buffer BufferObject {
-    uint texIndices[MAX_TEXTURES]; // which textures are used by the model (1,1,1 would be model 1)
-    uint modelIndices[MAX_MODELS]; // which materials are part of which objects. (3,3,3 would be object 3)
+    uint texIndices[MAX_TEXTURES];     
+    uint modelIndices[MAX_MODELS]; // which materials are part of which objects. (add functionality for this)
 } idxSSBO;
 
 void main() {
@@ -54,9 +54,6 @@ void main() {
     fragColor = vec4(inColor, 1.0);
     outAlpha = inAlpha;
     outTexCoord = inTexCoord;
-    if (texIndex>0) {
-        texIndex+=2;
-    }
     if (texIndex <= MAX_TEXTURES) {
         outTexIndex = texIndex; // pass the texture index to the fragment shader
     }
