@@ -296,9 +296,14 @@ private:
 		uint32_t indexOffset;
 		uint32_t indexCount;
 	};
+	struct meshIndicies { // used so that texind, and modind are global
+		uint32_t texInd = 0; // which texture belongs to which material
+		uint32_t modInd = 0; // which material/textures to which mesh/model
+	};
 
 	std::vector<bufData> bufferData;
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
+	meshIndicies sceneInd;
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
 	lightDataSSBO lightData = {};
@@ -445,8 +450,9 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		//createObject("models/sniper_rifle_pbr.glb", { 0.2f, 0.2f, 0.2f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
 		//createObject("models/chess_set_4k.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
@@ -876,7 +882,6 @@ private:
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
 		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
 		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
-		std::cout << node.matrix.size() << std::endl;
 		if (node.translation.size() >= 3) {
 			t = {
 				static_cast<float>(node.translation[0]),
@@ -1002,10 +1007,8 @@ private:
 	void loadScene(forms::vec3 scale, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
-
-		uint32_t texInd = 0; // which texture belongs to which material
 		uint32_t meshInd = 0;
-		uint32_t modInd = 0; // which material/textures to which mesh/model
+
 
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF loader;
@@ -1067,7 +1070,7 @@ private:
 						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
 					}
 
-					loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
+					loadBar(forms::gen::getPercent(sceneInd.modInd, gltfModel.meshes.size()), "vertecies");
 
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
@@ -1109,7 +1112,7 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-						vertex.matIndex = modInd;  // set the material index
+						vertex.matIndex = sceneInd.modInd;  // set the material index
 
 						if (uniqueVertices.count(vertex) == 0) {
 							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -1126,12 +1129,12 @@ private:
 							auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.baseColor.gltfImage = gltfModel.images[tex.source];
-							texture.baseColor.texIndex = texInd;
+							texture.baseColor.texIndex = sceneInd.texInd;
 							texture.baseColor.path = "gltf";
 							texture.baseColor.found = true;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << texInd << " doesn't have a base color texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a base color texture" << std::endl;
 						}
 
 						// metallic-roughness Texture
@@ -1139,12 +1142,12 @@ private:
 							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
-							texture.metallicRoughness.texIndex = texInd;
+							texture.metallicRoughness.texIndex = sceneInd.texInd;
 							texture.metallicRoughness.path = "gltf";
 							texture.metallicRoughness.found = true;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a metallic-roughness texture" << std::endl;
 						}
 
 						// normal map
@@ -1152,16 +1155,16 @@ private:
 							auto& texInfo = material.normalTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.normalMap.gltfImage = gltfModel.images[tex.source];
-							texture.normalMap.texIndex = texInd;
+							texture.normalMap.texIndex = sceneInd.texInd;
 							texture.normalMap.path = "gltf";
 							texture.normalMap.found = true;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << texInd << " doesn't have a normal map" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a normal map" << std::endl;
 						}
 
-						texInd += 1;
-						texture.modelIndex = modInd;
+						sceneInd.texInd += 1;
+						texture.modelIndex = sceneInd.modInd;
 						newObject.materials.push_back(texture);
 					}
 					else {
@@ -1177,13 +1180,12 @@ private:
 
 				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
 
-
 				// add newObject to global objects list
 				modelMtx.lock();
 				objects.push_back(newObject);
 				modelMtx.unlock();
 
-				modInd++;
+				sceneInd.modInd++;
 				meshInd++;
 			}
 			std::cout << "Finished loading vertecies" << std::endl;
@@ -1222,6 +1224,7 @@ private:
 
 				std::cout << "-----------------------" << std::endl;
 				std::cout << "Successfully loaded " << objects.size() << " meshes" << std::endl;
+				taskFlow.clear();
 	}
 
 	void setupDepthResources() {
