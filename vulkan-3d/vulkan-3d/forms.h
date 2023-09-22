@@ -6,7 +6,7 @@ class forms {
 public:
 	int rng(int m, int mm);
 	struct gen {
-		static float getPercent(const float value, const float max) {
+		static float getPercent(const size_t value, const size_t max) {
 			return (value / max) * 100.0f;
 		}
 	};

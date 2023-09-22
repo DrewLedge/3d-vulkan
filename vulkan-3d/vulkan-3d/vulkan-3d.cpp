@@ -900,7 +900,7 @@ private:
 				static_cast<float>(node.scale[2])
 			};
 		}
-		s = s * m.scale; // multiply the scale by the model scale
+		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
@@ -1046,143 +1046,141 @@ private:
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
+			std::cout << "g" << std::endl;
 
 			// loop over each mesh (object)
-			for (const auto& node : gltfModel.nodes) {
-				if (node.mesh >= 0 && node.mesh < gltfModel.meshes.size()) {
-					const auto& mesh = gltfModel.meshes[node.mesh];
-					model newObject;
+			for (const auto& mesh : gltfModel.meshes) {
+				model newObject;
 
-					std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
-					std::vector<Vertex> tempVertices;
-					std::vector<uint32_t> tempIndices;
+				std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
+				std::vector<Vertex> tempVertices;
+				std::vector<uint32_t> tempIndices;
 
 
-					// process primitives in the mesh
-					for (const auto& primitive : mesh.primitives) {
-						if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
-							std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
+				// process primitives in the mesh
+				for (const auto& primitive : mesh.primitives) {
+					if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
+						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
+					}
+
+					loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
+
+					// pos
+					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
+					const auto& positionAccessor = gltfModel.accessors[positionIt->second];
+					const float* positionData = getAccessorData(gltfModel, primitive.attributes, "POSITION");
+
+					// tex coords
+					auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
+					const auto& texCoordAccessor = gltfModel.accessors[texCoordIt->second];
+					const float* texCoordData = getAccessorData(gltfModel, primitive.attributes, "TEXCOORD_0");
+
+					// normals
+					auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
+					const auto& normalAccessor = gltfModel.accessors[normalIt->second];
+					const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
+
+					// indices
+					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
+					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
+
+					for (size_t i = 0; i < indexAccessor.count; ++i) {
+						uint32_t index;  // use the largest type to ensure no overflow.
+
+						switch (indexAccessor.componentType) {
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+							index = static_cast<const uint8_t*>(rawIndices)[i];
+							break;
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+							index = static_cast<const uint16_t*>(rawIndices)[i];
+							break;
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+							index = static_cast<const uint32_t*>(rawIndices)[i];
+							break;
+						default:
+							continue; // skip this iteration
 						}
 
-						loadBar(forms::gen::getPercent(modInd, gltfModel.meshes.size()), "vertecies");
+						Vertex vertex;
+						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
+						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
+						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+						vertex.matIndex = modInd;  // set the material index
 
-						// pos
-						auto positionIt = getAttributeIt("POSITION", primitive.attributes);
-						const auto& positionAccessor = gltfModel.accessors[positionIt->second];
-						const float* positionData = getAccessorData(gltfModel, primitive.attributes, "POSITION");
-
-						// tex coords
-						auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
-						const auto& texCoordAccessor = gltfModel.accessors[texCoordIt->second];
-						const float* texCoordData = getAccessorData(gltfModel, primitive.attributes, "TEXCOORD_0");
-
-						// normals
-						auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
-						const auto& normalAccessor = gltfModel.accessors[normalIt->second];
-						const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
-
-						// indices
-						const auto& indexAccessor = gltfModel.accessors[primitive.indices];
-						const void* rawIndices = getIndexData(gltfModel, indexAccessor);
-
-						for (size_t i = 0; i < indexAccessor.count; ++i) {
-							uint32_t index;  // use the largest type to ensure no overflow.
-
-							switch (indexAccessor.componentType) {
-							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-								index = static_cast<const uint8_t*>(rawIndices)[i];
-								break;
-							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-								index = static_cast<const uint16_t*>(rawIndices)[i];
-								break;
-							case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-								index = static_cast<const uint32_t*>(rawIndices)[i];
-								break;
-							default:
-								continue; // skip this iteration
-							}
-
-							Vertex vertex;
-							vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
-							vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
-							vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-							vertex.matIndex = modInd;  // set the material index
-
-							if (uniqueVertices.count(vertex) == 0) {
-								uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-								tempVertices.push_back(std::move(vertex));
-							}
-							tempIndices.push_back(uniqueVertices[vertex]);
+						if (uniqueVertices.count(vertex) == 0) {
+							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+							tempVertices.push_back(std::move(vertex));
 						}
-						if (primitive.material >= 0) { // if the primitive has a material
-							auto& material = gltfModel.materials[primitive.material];
-							Materials texture;
+						tempIndices.push_back(uniqueVertices[vertex]);
+					}
+					if (primitive.material >= 0) { // if the primitive has a material
+						auto& material = gltfModel.materials[primitive.material];
+						Materials texture;
 
-							// base color texture
-							if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-								auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
-								auto& tex = gltfModel.textures[texInfo.index];
-								texture.baseColor.gltfImage = gltfModel.images[tex.source];
-								texture.baseColor.texIndex = texInd;
-								texture.baseColor.path = "gltf";
-								texture.baseColor.found = true;
-							}
-							else {
-								std::cerr << "WARNING: Texture " << texInd << " doesn't have a base color texture" << std::endl;
-							}
-
-							// metallic-roughness Texture
-							if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
-								auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
-								auto& tex = gltfModel.textures[texInfo.index];
-								texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
-								texture.metallicRoughness.texIndex = texInd;
-								texture.metallicRoughness.path = "gltf";
-								texture.metallicRoughness.found = true;
-							}
-							else {
-								std::cerr << "WARNING: Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
-							}
-
-							// normal map
-							if (material.normalTexture.index >= 0) {
-								auto& texInfo = material.normalTexture;
-								auto& tex = gltfModel.textures[texInfo.index];
-								texture.normalMap.gltfImage = gltfModel.images[tex.source];
-								texture.normalMap.texIndex = texInd;
-								texture.normalMap.path = "gltf";
-								texture.normalMap.found = true;
-							}
-							else {
-								std::cerr << "WARNING: Texture " << texInd << " doesn't have a normal map" << std::endl;
-							}
-
-							texInd += 1;
-							texture.modelIndex = modInd;
-							newObject.materials.push_back(texture);
+						// base color texture
+						if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+							auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.baseColor.gltfImage = gltfModel.images[tex.source];
+							texture.baseColor.texIndex = texInd;
+							texture.baseColor.path = "gltf";
+							texture.baseColor.found = true;
 						}
 						else {
-							std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
+							std::cerr << "WARNING: Texture " << texInd << " doesn't have a base color texture" << std::endl;
 						}
+
+						// metallic-roughness Texture
+						if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
+							texture.metallicRoughness.texIndex = texInd;
+							texture.metallicRoughness.path = "gltf";
+							texture.metallicRoughness.found = true;
+						}
+						else {
+							std::cerr << "WARNING: Texture " << texInd << " doesn't have a metallic-roughness texture" << std::endl;
+						}
+
+						// normal map
+						if (material.normalTexture.index >= 0) {
+							auto& texInfo = material.normalTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.normalMap.gltfImage = gltfModel.images[tex.source];
+							texture.normalMap.texIndex = texInd;
+							texture.normalMap.path = "gltf";
+							texture.normalMap.found = true;
+						}
+						else {
+							std::cerr << "WARNING: Texture " << texInd << " doesn't have a normal map" << std::endl;
+						}
+
+						texInd += 1;
+						texture.modelIndex = modInd;
+						newObject.materials.push_back(texture);
 					}
-					newObject.vertices = tempVertices;
-					newObject.indices = tempIndices;
-
-					// set the newObject as loaded
-					newObject.isLoaded = true;
-					newObject.scale = scale;
-
-					convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
-
-
-					// add newObject to global objects list
-					modelMtx.lock();
-					objects.push_back(newObject);
-					modelMtx.unlock();
-
-					modInd++;
-					meshInd++;
+					else {
+						std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
+					}
 				}
+				newObject.vertices = tempVertices;
+				newObject.indices = tempIndices;
+
+				// set the newObject as loaded
+				newObject.isLoaded = true;
+				newObject.scale = scale;
+
+				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
+
+
+				// add newObject to global objects list
+				modelMtx.lock();
+				objects.push_back(newObject);
+				modelMtx.unlock();
+
+				modInd++;
+				meshInd++;
 			}
 			std::cout << "Finished loading vertecies" << std::endl;
 			}).name("load_model");
