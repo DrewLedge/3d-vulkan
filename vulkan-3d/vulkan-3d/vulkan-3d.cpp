@@ -445,7 +445,7 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		//createObject("models/sniper_rifle_pbr.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/sniper_rifle_pbr.glb", { 0.2f, 0.2f, 0.2f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.5f, 0.5f, 0.5f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/chess_set_4k.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
@@ -876,6 +876,7 @@ private:
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
 		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
 		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
+		std::cout << node.matrix.size() << std::endl;
 		if (node.translation.size() >= 3) {
 			t = {
 				static_cast<float>(node.translation[0]),
@@ -904,8 +905,12 @@ private:
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
-
-		return translationMatrix * rotationMatrix * scaleMatrix;
+		if (node.matrix.size() == 16) {
+			return (translationMatrix * rotationMatrix * scaleMatrix) * forms::mat4::gltfToMat4(node.matrix);
+		}
+		else {
+			return (translationMatrix * rotationMatrix * scaleMatrix);
+		}
 	}
 
 	int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
@@ -939,12 +944,13 @@ private:
 		return modelMatrix;
 	}
 
+
 	void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
 		for (int i = 0; i < depth; ++i) { // indent based on depth
 			std::cout << "  ";
 		}
 		// print the current node's name or index if the name is empty
-		std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << std::endl;
+		std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << " matricies: " << model.nodes[nodeIndex].matrix.size() << std::endl;
 
 		for (const auto& childIndex : model.nodes[nodeIndex].children) {
 			printNodeHierarchy(model, childIndex, depth + 1);
@@ -1046,8 +1052,6 @@ private:
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
-			std::cout << "g" << std::endl;
-
 			// loop over each mesh (object)
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;

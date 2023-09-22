@@ -6,7 +6,7 @@ class forms {
 public:
 	int rng(int m, int mm);
 	struct gen {
-		static float getPercent(const size_t value, const size_t max) {
+		static float getPercent(const float value, const float max) {
 			return (value / max) * 100.0f;
 		}
 	};
@@ -474,7 +474,18 @@ public:
 			}
 			return result;
 		}
+		static mat4 gltfToMat4(const std::vector<double>& vec) {
+			mat4 result;
+			int index = 0;
 
+			for (int col = 0; col < 4; ++col) {
+				for (int row = 0; row < 4; ++row) {
+					result.m[row][col] = static_cast<float>(vec[index]);
+					++index;
+				}
+			}
+			return result;
+		}
 	};
 };
 
