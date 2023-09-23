@@ -81,6 +81,18 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
+float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness) {
+    vec3 halfVector = normalize(lightDir + viewDir); // half vector between light and view direction
+    float NdotH = max(dot(normal, halfVector), 0.0); // dot product between normal and half vector
+    float NdotV = max(dot(normal, viewDir), 0.0); // dot product between normal and view direction
+    float VdotH = max(dot(viewDir, halfVector), 0.0); // dot product between view direction and half vector
+
+    // geometric attenuation
+    float geometric = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * NdotV) / NdotH));
+    float denominator = PI * pow(roughness, 2) * pow(NdotH, 4); // denominator of the equation
+    return geometric / denominator; // return specular intensity
+}
+
 
 void main() {
 float shinyness=32.0f;
@@ -107,8 +119,8 @@ if (lights.length() >= 1) {
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
          vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
          vec3 lightDirection = normalize(targetVec - lightPos);
-         vec3 fragToLightDirection = normalize(inFragPos - lightPos);
-         float theta = dot(lightDirection, fragToLightDirection);
+         vec3 fragToLightDir = normalize(lightPos - inFragPos);
+         float theta = dot(lightDirection, fragToLightDir);
          vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
 		 // shadow factor computation:
@@ -132,16 +144,16 @@ if (lights.length() >= 1) {
          float distance = length(inFragPos - lightPos);
          float attenuation = 1.0 / (constAttenuation + linAttenuation * distance + quadAttenuation * (distance * distance));
 
-         // diffuse lighting
-         vec3 fragLightDir = normalize(lightPos - inFragPos); // direction from fragment to light
-         float diff = max(dot(normal, fragLightDir), 0.0);
+         // diffuse lighting using lambertian reflectance
+         float diff = max(dot(normal, fragToLightDir), 0.0);
          diffuse += lightColor * diff * intensity * attenuation;
 
-         // specular lighting
+         // cook-torrance specular lighting
          vec3 viewDir = normalize(inCamPos - inFragPos);
-         vec3 reflectDir = reflect(-fragLightDir, normal); 
-         float spec = pow(max(dot(viewDir, reflectDir), 0.0), metallicRoughness.a);
-         specular += lightColor * spec * intensity * shadowFactor * attenuation;
+         float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
+         float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
+         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness);
+         specular += lightColor * cookTorranceSpecular * intensity * shadowFactor * attenuation;
          }
 
     vec3 result = ambient + diffuse + specular;
