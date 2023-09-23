@@ -450,10 +450,10 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
+		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
-		//createObject("models/chess_set_4k.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
@@ -1447,6 +1447,7 @@ private:
 		for (size_t i = 0; i < MAX_MODELS; i++) {
 			if (indexBuffer.modelIndices[i] < MAX_MODELS) {
 				std::cout << "Material " << i << " goes with Model/Object " << indexBuffer.modelIndices[i] << std::endl;
+				std::cout << "Material" << i << " goes with Texture " << i * 3 << std::endl;
 			}
 		}
 		std::cout << "-------------------------------" << std::endl;

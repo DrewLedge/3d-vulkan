@@ -39,8 +39,8 @@ layout(set = 2, binding = 2) buffer BufferObject {
 } idxSSBO;
 
 void main() {
-    uint modelIndex = idxSSBO.modelIndices[inVertIndex];
-    uint texIndex = idxSSBO.texIndices[inVertIndex];
+    uint modelIndex = inVertIndex;
+    uint texIndex = inVertIndex*3; // 3 textures per material
 
     mat4 proj = matSSBO.matrixSSBO[modelIndex].proj;
     mat4 view = matSSBO.matrixSSBO[modelIndex].view;
