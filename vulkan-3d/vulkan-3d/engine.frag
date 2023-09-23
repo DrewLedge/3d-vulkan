@@ -44,6 +44,7 @@ layout(location = 8) in vec3 inNormal;
 layout(location = 9) in vec3 inViewDir;
 layout(location = 10) in vec3 inCamPos;
 layout(location = 0) out vec4 outColor;
+float PI = acos(-1.0);
 
 
 // get the PCF shadow factor (used for softer shadows)
@@ -83,22 +84,24 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 
 void main() {
 float shinyness=32.0f;
-float PI = acos(-1.0);
 if (lights.length() >= 1) {
-    vec4 base = texture(texSamplers[inTexIndex], inTexCoord); // diffuse map
-    vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord); // specular map
-    vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord); // normal map
+    vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
+    vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
+    vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord);
 
     vec3 normal = normalize(normalMap.xyz * 2.0 - 1.0);
-    vec3 ambient = 0.1 * base.rgb; // low influence
+    vec3 ambient = 0.1 * albedo.rgb; // low influence
 
-    vec3 diffuse = vec3(0.0); 
+    vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
     vec3 lightDirection;
 
-    for (int i = 0; i < lights.length(); i++){ 
+    for (int i = 0; i < lights.length(); i++) { // spotlight
          float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);
          float outerConeRads = lights[i].outerConeAngle * (PI/180.0f);
+         float constAttenuation = lights[i].constantAttenuation;
+	     float linAttenuation = lights[i].linearAttenuation;
+	     float quadAttenuation = lights[i].quadraticAttenuation;
 
 		 // convert light struct to vec3s so I can use them in calculations
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
@@ -116,7 +119,7 @@ if (lights.length() >= 1) {
 		 // shadow factor computation:
 		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 4, normal, lightDirection);
 
-		 // spotlight cutoff
+         // spotlight cutoff
          if (theta > cos(outerConeRads)){
              float intensity;
          if (theta > cos(innerConeRads)){
@@ -125,22 +128,27 @@ if (lights.length() >= 1) {
              intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
          }
 
+         
+         float distance = length(inFragPos - lightPos);
+         float attenuation = 1.0 / (constAttenuation + linAttenuation * distance + quadAttenuation * (distance * distance));
+
          // diffuse lighting
          vec3 fragLightDir = normalize(lightPos - inFragPos); // direction from fragment to light
          float diff = max(dot(normal, fragLightDir), 0.0);
-         diffuse += lightColor * diff * intensity;
+         diffuse += lightColor * diff * intensity * attenuation;
 
          // specular lighting
          vec3 viewDir = normalize(inCamPos - inFragPos);
          vec3 reflectDir = reflect(-fragLightDir, normal); 
          float spec = pow(max(dot(viewDir, reflectDir), 0.0), metallicRoughness.a);
-         specular += lightColor * spec * intensity * shadowFactor; // multiplying with shadow factor for shadow contribution
-        }
+         specular += lightColor * spec * intensity * shadowFactor * attenuation;
+         }
+
+    vec3 result = ambient + diffuse + specular;
+    outColor = vec4(result, 1.0);
     }
-    vec3 result = ambient + diffuse * base.rgb + specular * metallicRoughness.rgb;
-    outColor =base;
+}
 }
 
-}
 
 
