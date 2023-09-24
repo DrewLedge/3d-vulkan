@@ -444,17 +444,17 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 15.0f;
-		l.outerConeAngle = 22.5f;
+		l.innerConeAngle = 30.0f;
+		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { -0.0f, 0.0f, 0.0f });
-		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 70.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 1.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1051,7 +1051,7 @@ private:
 		for (const auto& extension : gltfModel.extensionsUsed) {
 			std::cerr << "WARNING: The model relies on: " << extension << std::endl;
 		}
-		printFullHierarchy(gltfModel);
+		//printFullHierarchy(gltfModel);
 
 		// parallel loading using taskflow:
 		auto loadModelTask = taskFlow.emplace([&]() {
@@ -1494,7 +1494,7 @@ private:
 		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
 		memcpy(data, &sceneIndices, bufferCreateInfo.size);
 		vkUnmapMemory(device, sceneIndexBufferMem);
-		printIndices(sceneIndices, false); // debug
+		//printIndices(sceneIndices, false); // debug
 	}
 
 	void printMatrix(const forms::mat4& matrix) {
@@ -3328,9 +3328,17 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
+		debugModelMatricies();
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
-
+	void debugModelMatricies() {
+		for (model& m : objects) {
+			std::cout << "model matrix: " << std::endl;
+			printFlatMatrix(m.modelMatrix);
+			std::cout << "--------------------------" << std::endl;
+			std::cout << "--------------------------" << std::endl;
+		}
+	}
 	void debugLights() {
 		for (auto& l : lights) {
 			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.target);
