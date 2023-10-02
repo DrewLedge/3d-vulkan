@@ -65,6 +65,11 @@ public:
 				std::abs(z - other.z) < epsilon;
 		}
 
+		friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
+			os << "(" << v.x << ", " << v.y << ", " << v.z << ")";
+			return os;
+		}
+
 		vec3 translate(float tx, float ty, float tz) const {
 			return vec3(x + tx, y + ty, z + tz);
 		}

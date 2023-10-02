@@ -936,7 +936,6 @@ private:
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
 			forms::mat4 localMatrix = calcNodeLM(node, m);
 			modelMatrix = localMatrix * modelMatrix;
-		 std::cout << "Matrix: "<< currentNodeIndex << std::endl;
 		 
 			// move up to the parent node for the next iteration
 			if (parentIndex.find(currentNodeIndex) != parentIndex.end()) {
@@ -1498,12 +1497,12 @@ private:
 		//printIndices(sceneIndices, false); // debug
 	}
 
-	void printMatrix(const forms::mat4& matrix) {
+	void printMatrix(const forms::mat4& matrix) { // prints the matrix in transposed order
 		for (int j = 0; j < 4; j++) {
 			for (int i = 0; i < 4; i++) {
 				std::cout << std::fixed << std::setw(10) << std::setprecision(2) << matrix.m[i][j] << " ";
 			}
-			std::cout << std::endl; // end of row
+			std::cout << std::endl; // end of row / column
 		}
 		std::cout << "---------------------------------" << std::endl;
 	}
@@ -1546,10 +1545,10 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-		/*std::cout << "View Matrix:" << std::endl;
+		std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
 		printMatrix(viewMatrix);
-		std::cout << "Projection Matrix:" << std::endl;
-		printMatrix(projMatrix);*/
+		std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
+		printMatrix(projMatrix);
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
