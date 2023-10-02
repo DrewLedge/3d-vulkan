@@ -1545,10 +1545,10 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-		std::cout << "View Matrix:" << std::endl;
+		/*std::cout << "View Matrix:" << std::endl;
 		printMatrix(viewMatrix);
 		std::cout << "Projection Matrix:" << std::endl;
-		printMatrix(projMatrix);
+		printMatrix(projMatrix);*/
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
