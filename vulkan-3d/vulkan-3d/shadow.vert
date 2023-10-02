@@ -2,8 +2,10 @@
 #define MAX_MODELS 1200
 layout (location = 0) in vec3 inPosition;
 
-struct matrixUBO {
+struct matrixUBO { // matricies of the 3d models
     mat4 model;
+    mat4 modelView; // not used
+    mat4 modelProj; // not used
 };
 
 layout(set = 0, binding = 0) buffer matBufferObject {
@@ -25,7 +27,6 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-    // get the model matrix of the model from the SSBO
     mat4 lightView = lights[pc.lightIndex].view;
     mat4 lightProj = lights[pc.lightIndex].projection;
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model

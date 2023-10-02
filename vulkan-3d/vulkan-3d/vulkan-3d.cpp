@@ -454,7 +454,7 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 2.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -936,7 +936,8 @@ private:
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
 			forms::mat4 localMatrix = calcNodeLM(node, m);
 			modelMatrix = localMatrix * modelMatrix;
-
+		 std::cout << "Matrix: "<< currentNodeIndex << std::endl;
+		 
 			// move up to the parent node for the next iteration
 			if (parentIndex.find(currentNodeIndex) != parentIndex.end()) {
 				currentNodeIndex = parentIndex[currentNodeIndex];
@@ -1519,7 +1520,7 @@ private:
 		for (int col = 0; col < 4; ++col) {
 			for (int row = 0; row < 4; ++row) {
 				float element = getMatrixElement(matrix, col, row);
-				std::cout << element << "\t";
+				std::cout << std::fixed << std::setw(10) << std::setprecision(4) << element << " ";
 			}
 			std::cout << std::endl;
 		}
@@ -3332,7 +3333,7 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
-		//debugModelMatricies();
+		debugModelMatricies();
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 	void debugModelMatricies() {
