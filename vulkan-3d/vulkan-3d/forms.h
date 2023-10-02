@@ -380,7 +380,7 @@ public:
 
 			// column major
 			result.m[0][0] = 1.0f / (aspect * tanHalf);
-			result.m[1][1] = 1.0f / tanHalf;
+			result.m[1][1] = - 1.0f / tanHalf;
 			result.m[2][2] = farPlane / (farPlane - nearPlane);
 			result.m[2][3] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
 			result.m[3][2] = 1.0f;

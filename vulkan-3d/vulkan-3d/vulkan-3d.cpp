@@ -454,7 +454,7 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -20.0f, 0.0f, 30.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1536,7 +1536,7 @@ private:
 	void calcShadowMats(light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
-		float nearPlane = 0.01f, farPlane = 10.0f;
+		float nearPlane = 0.01f, farPlane = 100.0f;
 
 		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
 		if (l.pos == l.target) {

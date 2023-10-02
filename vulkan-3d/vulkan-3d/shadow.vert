@@ -27,7 +27,7 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-    // fetch matricies
+    // fetch matrices
     mat4 lightView = lights[pc.lightIndex].view;
     mat4 lightProj = lights[pc.lightIndex].projection;
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
@@ -35,14 +35,12 @@ void main() {
     // transform position
     mat4 lightSpace = lightProj * lightView;
     vec4 transformedPos = lightSpace * modelMatrix * vec4(inPosition, 1.0);
-
-    transformedPos.xyz /= transformedPos.w; // clip space to NDC
     transformedPos.z = (transformedPos.z + transformedPos.w) / 2.0;
-    transformedPos.y *= -1; // flip y
 
     gl_Position = transformedPos;
 
 }
+
 
 
 
