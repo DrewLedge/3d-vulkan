@@ -152,8 +152,8 @@ if (lights.length() >= 1) {
          vec3 viewDir = normalize(inCamPos - inFragPos);
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
-         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness);
-         specular += lightColor * cookTorranceSpecular * intensity * shadowFactor * attenuation;
+         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness); // fix
+         specular += lightColor * intensity * shadowFactor * attenuation;
          }
 
     vec3 result = ambient + diffuse + specular;

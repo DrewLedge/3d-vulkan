@@ -454,9 +454,9 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, 1.5f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 2.0f, 3.0f, 10.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, -3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -911,11 +911,11 @@ private:
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
-		printMatrix(translationMatrix);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
-			return scaleMatrix * rotationMatrix * translationMatrix * forms::mat4::gltfToMat4(node.matrix);
+			return scaleMatrix * translationMatrix * forms::mat4::gltfToMat4(node.matrix);
+			printMatrix(forms::mat4::gltfToMat4(node.matrix));
 		}
 		else {
 			return scaleMatrix * rotationMatrix * translationMatrix;
@@ -1522,8 +1522,8 @@ private:
 	}
 
 	void printFlatMatrix(const float* matrix) {
-		for (int col = 0; col < 4; ++col) {
-			for (int row = 0; row < 4; ++row) {
+		for (int row = 0; row < 4; ++row) {  // uuter loop over rows
+			for (int col = 0; col < 4; ++col) {  // inner loop over columns
 				float element = getMatrixElement(matrix, col, row);
 				std::cout << std::fixed << std::setw(10) << std::setprecision(4) << element << " ";
 			}
@@ -3338,7 +3338,9 @@ private:
 		createFrameBuffer();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
-		debugModelMatricies();
+		//debugModelMatricies();
+		printFlatMatrix(lights[0].view);
+		printFlatMatrix(lights[0].proj);
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 	void debugModelMatricies() {
