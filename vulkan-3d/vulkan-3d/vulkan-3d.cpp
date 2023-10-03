@@ -433,7 +433,7 @@ private:
 		std::cout << " ----------------" << std::endl;
 	}
 	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation, forms::vec3 pos) {
-		loadScene(scale, path);
+		loadScene(scale,pos, rotation, path);
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 t) {
 		light l;
@@ -453,8 +453,9 @@ private:
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -20.0f, 0.0f, 30.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -907,14 +908,16 @@ private:
 			};
 		}
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
+		t += m.position;
+		printVector(t);
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
-			return (translationMatrix * rotationMatrix * scaleMatrix) * forms::mat4::gltfToMat4(node.matrix);
+			return translationMatrix * rotationMatrix * scaleMatrix * forms::mat4::gltfToMat4(node.matrix);
 		}
 		else {
-			return (translationMatrix * rotationMatrix * scaleMatrix);
+			return translationMatrix * rotationMatrix * scaleMatrix;
 		}
 	}
 
@@ -1004,7 +1007,7 @@ private:
 
 
 
-	void loadScene(forms::vec3 scale, std::string path) {
+	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec3 rot, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
 		uint32_t meshInd = 0;
@@ -1177,6 +1180,8 @@ private:
 				// set the newObject as loaded
 				newObject.isLoaded = true;
 				newObject.scale = scale;
+				newObject.position = pos;
+				newObject.rotation = rot;
 
 				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
 
