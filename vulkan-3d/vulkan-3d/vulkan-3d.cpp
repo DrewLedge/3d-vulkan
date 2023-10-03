@@ -453,7 +453,8 @@ private:
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, -1.5f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, 1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
@@ -909,15 +910,15 @@ private:
 		}
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
-		printVector(t);
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
+		printMatrix(translationMatrix);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
-			return translationMatrix * rotationMatrix * scaleMatrix * forms::mat4::gltfToMat4(node.matrix);
+			return scaleMatrix * rotationMatrix * translationMatrix * forms::mat4::gltfToMat4(node.matrix);
 		}
 		else {
-			return translationMatrix * rotationMatrix * scaleMatrix;
+			return scaleMatrix * rotationMatrix * translationMatrix;
 		}
 	}
 
@@ -1550,10 +1551,10 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-		std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
+	/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
 		printMatrix(viewMatrix);
 		std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
-		printMatrix(projMatrix);
+		printMatrix(projMatrix);*/
 
 		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
@@ -2831,7 +2832,7 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)).vecMatrix(cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)) * (cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}

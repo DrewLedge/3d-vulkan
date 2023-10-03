@@ -283,16 +283,6 @@ public:
 
 		static mat4 translate(const vec3 t) {
 			mat4 result;
-			for (int i = 0; i < 4; i++) {
-				for (int j = 0; j < 4; j++) {
-					if (i == j) { //diagonal
-						result.m[i][j] = 1.0f;
-					}
-					else {
-						result.m[i][j] = 0.0f;
-					}
-				}
-			}
 			result.m[0][3] = t.x;
 			result.m[1][3] = t.y;
 			result.m[2][3] = t.z;
@@ -361,18 +351,7 @@ public:
 
 			return result;
 		}
-		vec3 vecMatrix(const vec3& vec) const {
-			float x = m[0][0] * vec.x + m[0][1] * vec.y + m[0][2] * vec.z + m[0][3]; //x is set to the dot product of the first row of the matrix and the vector
-			float y = m[1][0] * vec.x + m[1][1] * vec.y + m[1][2] * vec.z + m[1][3];
-			float z = m[2][0] * vec.x + m[2][1] * vec.y + m[2][2] * vec.z + m[2][3];
-			float w = m[3][0] * vec.x + m[3][1] * vec.y + m[3][2] * vec.z + m[3][3];
-			if (w != 1.0f && w != 0.0f) {
-				x /= w;
-				y /= w;
-				z /= w;
-			}
-			return vec3(x, y, z);
-		}
+
 		static mat4 perspective(float fov, float aspect, float nearPlane, float farPlane) {
 			mat4 result(0);
 			float fovRad = fov * (PI / 180.0f);
@@ -390,11 +369,9 @@ public:
 		}
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
-			mat4 result = mat4::scale(s)
-				* mat4::rotate(rot)
-				* mat4::translate(trans);
-			return result;
+			return mat4::scale(s) * mat4::rotate(rot) * mat4::translate(trans);;
 		}
+
 		static mat4 inverseMatrix(mat4 m) {
 			//formula from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
 			mat4 result;
