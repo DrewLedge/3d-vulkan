@@ -367,6 +367,23 @@ public:
 
 			return result;
 		}
+		static mat4 spotPerspective(float verticalFov, float aspectRatio, float n, float f) {
+			float fovRad = verticalFov * 2.0f * PI / 360.0f; // convert to radians
+			float focalLength = 1.0f / tan(fovRad / 2.0f);
+			float x = focalLength / aspectRatio;
+			float y = -focalLength;
+			float a = n / (f - n);
+			float b = f * a;
+
+			mat4 proj;
+			proj.m[0][0] = x;
+			proj.m[1][1] = y;
+			proj.m[2][2] = a;
+			proj.m[2][3] = b;
+			proj.m[3][2] = -1.0f;
+			return proj;
+			
+		}
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			return mat4::scale(s) * mat4::rotate(rot) * mat4::translate(trans);;

@@ -302,7 +302,7 @@ private:
 	};
 
 	std::vector<bufData> bufferData;
-	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
+	camData cam = { forms::vec3(0.0f, 0.0f, 2.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
 	meshIndicies sceneInd;
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
@@ -456,7 +456,7 @@ private:
 		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
 		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 2.0f, 3.0f, 10.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 2.0f, 0.0f, -20.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -1550,7 +1550,7 @@ private:
 		}
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
-		forms::mat4 projMatrix = forms::mat4::perspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
+		forms::mat4 projMatrix = forms::mat4::spotPerspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
 	/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
 		printMatrix(viewMatrix);
 		std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
@@ -2579,10 +2579,11 @@ private:
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-		rasterizer.depthBiasEnable = VK_TRUE; // enable depth bias
-		rasterizer.depthBiasConstantFactor = 0.0f;
-		rasterizer.depthBiasSlopeFactor = 0.0f;
+		rasterizer.depthBiasEnable = VK_TRUE;
+		rasterizer.depthBiasConstantFactor = 1.25f;
+		rasterizer.depthBiasSlopeFactor = 1.25f;
 		rasterizer.depthBiasClamp = 0.0f;
+
 
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
@@ -3293,6 +3294,10 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			cam.camPos -= right * cameraSpeed;
 		}
+		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+			cam.camPos.y -=1*cameraSpeed;
+		}
+
 
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
