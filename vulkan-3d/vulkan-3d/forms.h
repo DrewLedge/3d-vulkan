@@ -461,7 +461,7 @@ public:
 			result.m[3][2] = f.dotProd(eye);
 
 			result.m[3][3] = 1.0f;
-			return result;
+			return result.transpose();
 		}
 
 		mat4 transpose() const {
