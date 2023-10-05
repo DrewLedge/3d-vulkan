@@ -77,7 +77,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
-float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness) {
+float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness) { // fix
     vec3 halfVector = normalize(lightDir + viewDir); // half vector between light and view direction
     float NdotH = max(dot(normal, halfVector), 0.0); // dot product between normal and half vector
     float NdotV = max(dot(normal, viewDir), 0.0); // dot product between normal and view direction
@@ -98,7 +98,7 @@ if (lights.length() >= 1) {
     vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord);
 
     vec3 normal = normalize(normalMap.xyz * 2.0 - 1.0);
-    vec3 ambient = 0.1 * albedo.rgb; // low influence
+    vec3 ambient = 0.01 * albedo.rgb; // low influence
 
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
@@ -135,7 +135,6 @@ if (lights.length() >= 1) {
          } else {
              intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
          }
-
          
          float distance = length(inFragPos - lightPos);
          float attenuation = 1.0 / (constAttenuation + linAttenuation * distance + quadAttenuation * (distance * distance));
@@ -149,7 +148,7 @@ if (lights.length() >= 1) {
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
          float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness); // fix
-         specular += lightColor * intensity * shadowFactor * attenuation;
+         specular += lightColor * intensity * shadowFactor*cookTorranceSpecular * attenuation;
          }
 
     vec3 result = ambient + diffuse + specular;
