@@ -372,8 +372,9 @@ public:
 			float focalLength = 1.0f / tan(fovRad / 2.0f);
 			float x = focalLength / aspectRatio;
 			float y = -focalLength;
-			float a = n / (f - n);
-			float b = f * a;
+			float a = f / (n - f);
+			float b = (f * n) / (n - f);
+
 
 			mat4 proj;
 			proj.m[0][0] = x;
@@ -443,7 +444,6 @@ public:
 			vec3 u = r.crossProd(f).normalize(); // up vector
 			mat4 result;
 
-			// column major format
 			result.m[0][0] = r.x;
 			result.m[1][0] = r.y;
 			result.m[2][0] = r.z;
