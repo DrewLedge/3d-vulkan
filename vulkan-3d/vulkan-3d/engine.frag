@@ -117,13 +117,14 @@ void main() {
          float theta = dot(spotDirection, fragToLightDir);
          vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
-		 // shadow factor computation:
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
          mat4 lightClip = lightMatricies[i].projectionMatrix * lightMatricies[i].viewMatrix;
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
 
 		 // shadow factor computation:
-		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+         float visibility = texture(shadowMapSamplers[i], fragPosLightSpace.xy).r;
+         float shadowFactor = visibility * shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+
 
          // spotlight cutoff
          if (theta > cos(outerConeRads)){
@@ -133,22 +134,25 @@ void main() {
          } else {
              intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
          }
+         intensity*= lights[i].intensity; // multiply it by the base intensity
          
-         float distance = length(inFragPos - lightPos);
-         float attenuation = 1.0 / (constAttenuation + linAttenuation * distance + quadAttenuation * (distance * distance));
+         // attenuation calculation
+         float lightDistance = length(inFragPos - lightPos);
+         float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
 
          // diffuse lighting using lambertian reflectance
          float diff = max(dot(normal, fragToLightDir), 0.0);
-         diffuse += lightColor * diff * intensity * attenuation;
+         diffuse += lightColor * diff * intensity * attenuation * shadowFactor;
 
          // cook-torrance specular lighting
          vec3 viewDir = normalize(inCamPos - inFragPos);
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
          float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness); // fix
-         specular += lightColor * shadowFactor * cookTorranceSpecular * attenuation;
+         specular += lightColor * cookTorranceSpecular * attenuation * shadowFactor;
          }
 
+    // final color calculation
     vec3 result = ambient + diffuse + specular;
     outColor = vec4(result, 1.0);
     }
