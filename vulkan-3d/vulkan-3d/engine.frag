@@ -50,11 +50,9 @@ float PI = acos(-1.0);
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
     int halfSize = kernelSize / 2;
-    fragPosLightSpace.xyz /= fragPosLightSpace.w;
-    fragPosLightSpace.z = (fragPosLightSpace.z + fragPosLightSpace.w)/ 2.0;
+    fragPosLightSpace.z = (fragPosLightSpace.z + fragPosLightSpace.w)/ 2.0; // transform to [0,1]
     float shadow = 0.0;
 
-    // transform to [0,1] range
     vec3 projCoords = fragPosLightSpace.xyz;
 
     // calculate texel size based on shadow map dimensions

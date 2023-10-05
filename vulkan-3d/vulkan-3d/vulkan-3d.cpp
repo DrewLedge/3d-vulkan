@@ -1536,7 +1536,7 @@ private:
 	void calcObjectMats(model& o) {
 		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(forms::mat4::perspective(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 10.0f), o.projectionMatrix);
+		convertMatrix(forms::mat4::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 10.0f), o.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {

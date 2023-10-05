@@ -352,7 +352,7 @@ public:
 			return result;
 		}
 
-		static mat4 perspective(float fov, float aspect, float nearPlane, float farPlane) {
+		static mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
 			mat4 result(0);
 			float fovRad = fov * (PI / 180.0f);
 			float tanHalf = tan(fovRad * 0.5f);
