@@ -91,8 +91,7 @@ float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness
 
 
 void main() {
-float shinyness=32.0f;
-if (lights.length() >= 1) {
+    float shinyness=32.0f;
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
     vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord);
@@ -102,7 +101,6 @@ if (lights.length() >= 1) {
 
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
-    vec3 lightDirection;
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
          float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);
@@ -114,9 +112,9 @@ if (lights.length() >= 1) {
 		 // convert light struct to vec3s so I can use them in calculations
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
          vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
-         vec3 lightDirection = normalize(targetVec - lightPos);
-         vec3 fragToLightDir = normalize(lightPos - inFragPos);
-         float theta = dot(lightDirection, fragToLightDir);
+         vec3 spotDirection = normalize(targetVec - lightPos);
+         vec3 fragToLightDir = normalize(inFragPos - lightPos);
+         float theta = dot(spotDirection, fragToLightDir);
          vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
 		 // shadow factor computation:
@@ -125,7 +123,7 @@ if (lights.length() >= 1) {
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
 
 		 // shadow factor computation:
-		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 4, normal, lightDirection);
+		 float shadowFactor =shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
          // spotlight cutoff
          if (theta > cos(outerConeRads)){
@@ -148,13 +146,12 @@ if (lights.length() >= 1) {
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
          float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness); // fix
-         specular += lightColor * intensity * shadowFactor*cookTorranceSpecular * attenuation;
+         specular += lightColor * shadowFactor * cookTorranceSpecular * attenuation;
          }
 
     vec3 result = ambient + diffuse + specular;
     outColor = vec4(result, 1.0);
     }
-}
 }
 
 
