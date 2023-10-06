@@ -48,10 +48,11 @@ float PI = acos(-1.0);
 
 
 // get the PCF shadow factor (used for softer shadows)
-float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
+float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) {  
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
-    vec3 projCoords = fragPosLightSpace.xyz;
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
@@ -59,15 +60,13 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     // loop through the PCF kernel
     for(int x = -halfSize; x <= halfSize; ++x) {
         for(int y = -halfSize; y <= halfSize; ++y) {
-            // calculate the texel coordinates for sampling
-            vec2 sampleCoords = clamp(projCoords.xy + vec2(x, y) * texelSize, 0.0, 1.0);
-
             // sample the depth from shadow map
-            float pcfDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
+            vec2 sampleCoords = clamp(projCoords.xy + vec2(x, y) * texelSize, 0.0, 1.0);
+            float closestDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
+            float currentDepth = projCoords.z;
 
             // perform depth comparison
-            float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.005);
-            shadow += (fragPosLightSpace.z - bias > pcfDepth) ? 1.0 : 0.0;
+            shadow += (currentDepth > closestDepth) ? 1.0 : 0.0;
 
         }
     }
@@ -113,7 +112,7 @@ void main() {
 		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z);
          vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
          vec3 spotDirection = normalize(targetVec - lightPos);
-         vec3 fragToLightDir = normalize(inFragPos - lightPos);
+         vec3 fragToLightDir = normalize(inFragPos - lightPos); // fragPos - lightPos
          float theta = dot(spotDirection, fragToLightDir);
          vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
@@ -121,10 +120,8 @@ void main() {
          mat4 lightClip = lightMatricies[i].projectionMatrix * lightMatricies[i].viewMatrix;
 		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
 
-		 // shadow factor computation:
-         float visibility = texture(shadowMapSamplers[i], fragPosLightSpace.xy).r;
-         float shadowFactor = visibility * shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
-
+		 // shadow factor computation
+         float shadowFactor = shadowPCF(i, fragPosLightSpace, 4);
 
          // spotlight cutoff
          if (theta > cos(outerConeRads)){
@@ -134,7 +131,7 @@ void main() {
          } else {
              intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
          }
-         intensity*= lights[i].intensity; // multiply it by the base intensity
+         intensity *= lights[i].intensity; // multiply it by the base intensity
          
          // attenuation calculation
          float lightDistance = length(inFragPos - lightPos);
@@ -148,12 +145,13 @@ void main() {
          vec3 viewDir = normalize(inCamPos - inFragPos);
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
+         vec3 F0 = mix(vec3(0.04), lightColor, metallic);
          float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness); // fix
          specular += lightColor * cookTorranceSpecular * attenuation * shadowFactor;
          }
 
     // final color calculation
-    vec3 result = ambient + diffuse + specular;
+    vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular));
     outColor = vec4(result, 1.0);
     }
 }
