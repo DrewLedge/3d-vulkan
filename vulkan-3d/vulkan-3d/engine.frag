@@ -46,13 +46,24 @@ layout(location = 10) in vec3 inCamPos;
 layout(location = 0) out vec4 outColor;
 float PI = acos(-1.0);
 
+float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness, vec3 f0) { // fix
+    vec3 halfVector = normalize(lightDir + viewDir); // half vector between light and view direction
+    float NdotH = max(dot(normal, halfVector), 0.0); // dot product between normal and half vector
+    float NdotV = max(dot(normal, viewDir), 0.0); // dot product between normal and view direction
+    float VdotH = max(dot(viewDir, halfVector), 0.0); // dot product between view direction and half vector
+
+    // geometric attenuation
+    float geometric = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * NdotV) / NdotH));
+    float denominator = PI * pow(roughness, 2) * pow(NdotH, 4); // denominator of the equation
+    return geometric / denominator; // return specular intensity
+}
+
 
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) {  
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
+    vec3 projCoords = fragPosLightSpace.xyz;
 
     // calculate texel size based on shadow map dimensions
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
@@ -74,18 +85,6 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize) {
     shadow /= float(kernelSize * kernelSize);
 
     return shadow;
-}
-
-float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness, vec3 f0) { // fix
-    vec3 halfVector = normalize(lightDir + viewDir); // half vector between light and view direction
-    float NdotH = max(dot(normal, halfVector), 0.0); // dot product between normal and half vector
-    float NdotV = max(dot(normal, viewDir), 0.0); // dot product between normal and view direction
-    float VdotH = max(dot(viewDir, halfVector), 0.0); // dot product between view direction and half vector
-
-    // geometric attenuation
-    float geometric = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * NdotV) / NdotH));
-    float denominator = PI * pow(roughness, 2) * pow(NdotH, 4); // denominator of the equation
-    return geometric / denominator; // return specular intensity
 }
 
 
@@ -143,12 +142,11 @@ void main() {
          diffuse += lightColor * diff * intensity * attenuation;
 
          // cook-torrance specular lighting
-         vec3 viewDir = normalize(inCamPos - inFragPos);
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
          vec3 F0 = mix(vec3(0.04), lightColor, metallic);
-         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, viewDir, roughness, F0); // fix
-         specular += lightColor * cookTorranceSpecular * attenuation;
+         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0); // fix
+         specular += lightColor * attenuation;
          }
 
     // final color calculation
