@@ -88,6 +88,17 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
+vec3 debugShadows(float s) { 
+    if (s > 1 || s < 0) {
+		return vec3(1.0, 1.0, 0.0); // yellow if out of range
+	} 
+    else if (s > 0.5) {
+        return vec3(1.0, 0.0, 0.0);  // red if in shadow
+    } else {
+        return vec3(0.0, 0.0, 1.0);  // blue if not in shadow
+    }
+}
+
 
 void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
@@ -101,6 +112,9 @@ void main() {
     vec3 specular = vec3(0.0);
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
+         mat4 lightView = lightMatricies[i].viewMatrix;
+         mat4 lightProj = lightMatricies[i].projectionMatrix;
+
          float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);
          float outerConeRads = lights[i].outerConeAngle * (PI/180.0f);
          float constAttenuation = lights[i].constantAttenuation;
@@ -117,9 +131,7 @@ void main() {
          vec3 ambient = 0.01 * lightColor; // low influence
 
 		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
-         mat4 lightClip = lightMatricies[i].projectionMatrix * lightMatricies[i].viewMatrix;
-		 vec4 fragPosLightSpace = lightClip * fragPosModelSpace;
-
+		 vec4 fragPosLightSpace = lightProj * lightView * fragPosModelSpace;
 		 // shadow factor computation
          float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
@@ -138,21 +150,21 @@ void main() {
          float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
 
          // diffuse lighting using lambertian reflectance
-         float diff = max(dot(fragToLightDir, fragToLightDir), 0.0);
+         float diff = max(dot(fragToLightDir, normal), 0.0);
          diffuse += lightColor * diff * intensity * attenuation;
 
-         // cook-torrance specular lighting
+         // cook-torrance specular lighting WIP
          float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
          float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
          vec3 F0 = mix(vec3(0.04), lightColor, metallic);
-         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0); // fix
+         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0);
          //specular += lightColor * cookTorranceSpecular * attenuation;
          specular += lightColor * attenuation;
          }
 
     // final color calculation
     vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular)) * color;
-    outColor = vec4(result, 1.0);
+    outColor = vec4(debugShadows(shadowFactor), 1.0);
     }
 }
 

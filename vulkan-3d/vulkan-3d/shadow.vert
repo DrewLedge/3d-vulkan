@@ -12,13 +12,32 @@ layout(set = 0, binding = 0) buffer matBufferObject {
     matrixUBO matrixSSBO[MAX_MODELS];
 } matSSBO;
 
-struct light {
-    mat4 view;
-    mat4 projection;
+struct formsVec3 { // custom structure to hold my vec3s
+    float x;
+    float y;
+    float z;
 };
 
-layout(set = 1, binding = 3) buffer LightBuffer {
-	light lights[];
+struct lightMatrix {
+    mat4 viewMatrix;
+    mat4 projectionMatrix;
+};
+struct lightData {
+    formsVec3 pos;
+    formsVec3 color;
+    formsVec3 targetVec;
+    float intensity;
+	float innerConeAngle; // in degrees
+	float outerConeAngle; // in degrees
+	float constantAttenuation;
+	float linearAttenuation;
+	float quadraticAttenuation;
+};
+
+
+layout (set=1, binding = 3) buffer LightBuffer {
+	lightMatrix lightMatricies[20];
+    lightData lights[20]; // not used in this shader but needed because of the descriptor set and binding consistancy
 };
 
 layout(push_constant) uniform PC {
@@ -28,8 +47,8 @@ layout(push_constant) uniform PC {
 
 void main() {
     // fetch matrices
-    mat4 lightView = lights[pc.lightIndex].view;
-    mat4 lightProj = lights[pc.lightIndex].projection;
+    mat4 lightView = lightMatricies[pc.lightIndex].viewMatrix;
+    mat4 lightProj = lightMatricies[pc.lightIndex].projectionMatrix;
     mat4 modelMatrix = matSSBO.matrixSSBO[pc.modelIndex].model; // model matrix of the model
 
     // transform position
