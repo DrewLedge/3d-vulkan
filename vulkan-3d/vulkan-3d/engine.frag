@@ -34,16 +34,14 @@ layout (set=3, binding = 3) buffer LightBuffer {
     lightData lights[20];
 };
 
-layout(location = 0) in vec4 fragColor;
-layout(location = 2) in float inAlpha;
-layout(location = 3) in vec2 inTexCoord;
-layout(location = 5) flat in uint inTexIndex;
-layout(location = 6) flat in uint inModelIndex;
-layout(location = 7) in vec3 inFragPos;
-layout(location = 8) in vec3 inNormal;
-layout(location = 9) in vec3 inViewDir;
-layout(location = 10) in vec3 inCamPos;
-layout(location = 0) out vec4 outColor;
+layout(location = 0) in vec4 fragColor; // base color data from vertex attributes
+layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) flat in uint inTexIndex;
+layout(location = 3) flat in uint inModelIndex;
+layout(location = 4) in vec3 inFragPos;
+layout(location = 5) in vec3 inViewDir;
+
+layout(location = 0) out vec4 outColor; 
 float PI = acos(-1.0);
 
 float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness, vec3 f0) { // fix

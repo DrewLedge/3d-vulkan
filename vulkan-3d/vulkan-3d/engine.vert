@@ -13,15 +13,11 @@ layout(location = 4) in uint inVertIndex;
 layout(location=5) in vec3 inNormal;
 
 layout(location = 0) out vec4 fragColor;
-layout(location = 2) out float outAlpha;
-layout(location = 3) out vec2 outTexCoord;
-layout(location = 4) flat out uint outVertIndex;
-layout(location = 5) flat out uint outTexIndex;
-layout(location = 6) flat out uint outModelIndex;
-layout(location = 7) out vec3 outFragPos;
-layout(location = 8) out vec3 outNormal;
-layout(location=9) out vec3 outViewDirection;
-layout(location=10) out vec3 outCameraPosition;
+layout(location = 1) out vec2 outTexCoord;
+layout(location = 2) flat out uint outTexIndex;
+layout(location = 3) flat out uint outModelIndex;
+layout(location = 4) out vec3 outFragPos;
+layout(location=5) out vec3 outViewDirection;
 
 
 struct matrixUBO {
@@ -51,7 +47,6 @@ void main() {
 
     gl_Position = proj * view * model * vec4(inPosition, 1.0);
     fragColor = vec4(inColor, 1.0);
-    outAlpha = inAlpha;
     outTexCoord = inTexCoord;
     if (texIndex <= MAX_TEXTURES) {
         outTexIndex = texIndex; // pass the texture index to the fragment shader
@@ -62,8 +57,6 @@ void main() {
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
-    outNormal = mat3(transpose(inverse(model))) * inNormal;  // non-uniform scaling
     outViewDirection = viewDirection;
-    outCameraPosition = cameraPosition;
 
 }
