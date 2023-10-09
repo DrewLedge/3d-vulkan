@@ -63,7 +63,8 @@ float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
-    vec3 projCoords = fragPosLightSpace.xyz;
+    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    projCoords = projCoords * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
@@ -72,21 +73,23 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     for(int x = -halfSize; x <= halfSize; ++x) {
         for(int y = -halfSize; y <= halfSize; ++y) {
             // sample the depth from shadow map
-            vec2 sampleCoords = clamp(projCoords.xy + vec2(x, y) * texelSize, 0.0, 1.0);
+            vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
             float pcfDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
             float currentDepth = projCoords.z;
 
             // perform depth comparison
             float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.005);
-            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0;
-
+            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0; // either 0 or 1 if in or out of shadow
         }
     }
-    // normalize the shadow factor
-    shadow /= float(kernelSize * kernelSize);
 
+    // normalize the shadow factor
+    if (shadow>0) {
+		shadow /= float(kernelSize * kernelSize);
+	}
     return shadow;
 }
+
 
 vec3 debugShadows(float s) { 
     if (s > 1 || s < 0) {
@@ -130,10 +133,18 @@ void main() {
          vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
          vec3 ambient = 0.01 * lightColor; // low influence
 
-		 vec4 fragPosModelSpace = vec4(inFragPos, 1.0);
-		 vec4 fragPosLightSpace = lightProj * lightView * fragPosModelSpace;
-		 // shadow factor computation
-         float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+		 vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
+
+         // temporary - debugging shadow map:
+         vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[i], 0);
+         vec3 projCoords = fragPosLightSpace.xyz/ fragPosLightSpace.w;
+         projCoords = projCoords * 0.5 + 0.5;
+         float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r; 
+         float currentDepth = projCoords.z;
+
+         float shadowFactor;
+         shadowFactor = (currentDepth > closestDepth) ? 1.0 : 0.0;
+         //float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
          // spotlight cutoff
          if (theta > cos(outerConeRads)){
