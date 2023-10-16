@@ -433,7 +433,7 @@ private:
 		std::cout << " ----------------" << std::endl;
 	}
 	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation, forms::vec3 pos) {
-		loadScene(scale,pos, rotation, path);
+		loadScene(scale, pos, rotation, path);
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 t) {
 		light l;
@@ -940,7 +940,7 @@ private:
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
 			forms::mat4 localMatrix = calcNodeLM(node, m);
 			modelMatrix = localMatrix * modelMatrix;
-		 
+
 			// move up to the parent node for the next iteration
 			if (parentIndex.find(currentNodeIndex) != parentIndex.end()) {
 				currentNodeIndex = parentIndex[currentNodeIndex];
@@ -1551,12 +1551,12 @@ private:
 
 		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
 		forms::mat4 projMatrix = forms::mat4::spotPerspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
-	/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
-		printMatrix(viewMatrix);
-		std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
-		printMatrix(projMatrix);*/
+		/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
+			printMatrix(viewMatrix);
+			std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
+			printMatrix(projMatrix);*/
 
-		//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
+			//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
 		convertMatrix(viewMatrix, l.view);
 		convertMatrix(projMatrix, l.proj);
 	}
@@ -3295,7 +3295,7 @@ private:
 			cam.camPos -= right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-			cam.camPos.y -=1*cameraSpeed;
+			cam.camPos.y -= 1 * cameraSpeed;
 		}
 
 
