@@ -134,7 +134,6 @@ void main() {
 		 vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
 
          // temporary - debugging shadow map:
-         vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[i], 0);
          vec3 projCoords = fragPosLightSpace.xyz/ fragPosLightSpace.w;
          projCoords = projCoords * 0.5 + 0.5;
          float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r; 
