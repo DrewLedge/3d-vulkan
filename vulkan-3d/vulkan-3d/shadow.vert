@@ -54,10 +54,8 @@ void main() {
     // transform position
     mat4 lightSpace = lightProj * lightView;
     vec4 transformedPos = lightSpace * modelMatrix * vec4(inPosition, 1.0);
-    transformedPos.xyz /= transformedPos.w;
-    vec3 p = transformedPos.xyz * 0.5 + 0.5;
 
-    gl_Position = vec4(p , 1.0);
+    gl_Position = transformedPos;
 
 }
 

@@ -154,6 +154,7 @@ void main() {
             } else {
                 intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
             }
+            intensity *= lights[i].intensity; // multiply it by the base intensity
 
             // attenuation calculation
             float lightDistance = length(inFragPos - lightPos);
