@@ -134,19 +134,20 @@ void main() {
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
         ambient = 0.01 * lightColor; // low influence
 
-        vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
-
-        // temporary - debugging shadow map:
-        vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-        projCoords = projCoords * 0.5 + 0.5;
-        float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r;
-        float currentDepth = projCoords.z;
-
-        shadowFactor += (currentDepth > closestDepth) ? 1.0 : 0.0;
-        // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
-
+        
         // spotlight cutoff
-        if (theta > cos(outerConeRads)) {
+        if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
+            vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
+
+            // temporary - debugging shadow map:
+            vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+            projCoords = projCoords * 0.5 + 0.5;
+            float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r;
+            float currentDepth = projCoords.z;
+
+            shadowFactor += (currentDepth > closestDepth) ? 1.0 : 0.0;
+            // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+
             float intensity;
             if (theta > cos(innerConeRads)) {
                 intensity = 1.0; 
@@ -174,7 +175,7 @@ void main() {
     }
     // final color calculation
     vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular)) * color;
-    outColor = vec4(result, 1.0);
+    outColor = vec4(debugShadows(shadowFactor), 1.0);
 }
 
 
