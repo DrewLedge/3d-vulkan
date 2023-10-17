@@ -108,72 +108,73 @@ void main() {
 
     vec3 normal = normalize(normalMap.xyz * 2.0 - 1.0);
     vec3 color = albedo.rgb;
-        
+
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
 
+    float shadowFactor = 0.0;
+    vec3 ambient = vec3(0.0);
+
     for (int i = 0; i < lights.length(); i++) { // spotlight
-         mat4 lightView = lightMatricies[i].viewMatrix;
-         mat4 lightProj = lightMatricies[i].projectionMatrix;
+        mat4 lightView = lightMatricies[i].viewMatrix;
+        mat4 lightProj = lightMatricies[i].projectionMatrix;
 
-         float innerConeRads = lights[i].innerConeAngle * (PI/180.0f);
-         float outerConeRads = lights[i].outerConeAngle * (PI/180.0f);
-         float constAttenuation = lights[i].constantAttenuation;
-	     float linAttenuation = lights[i].linearAttenuation;
-	     float quadAttenuation = lights[i].quadraticAttenuation;
+        float innerConeRads = lights[i].innerConeAngle * (PI / 180.0f);
+        float outerConeRads = lights[i].outerConeAngle * (PI / 180.0f);
+        float constAttenuation = lights[i].constantAttenuation;
+        float linAttenuation = lights[i].linearAttenuation;
+        float quadAttenuation = lights[i].quadraticAttenuation;
 
-		 // convert light struct to vec3s so I can use them in calculations
-		 vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z); // in world space
-         vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
-         vec3 spotDirection = normalize(lightPos - targetVec);
-         vec3 fragToLightDir = normalize(lightPos - inFragPos);
-         float theta = dot(spotDirection, fragToLightDir);
-         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-         vec3 ambient = 0.01 * lightColor; // low influence
+        // convert light struct to vec3s so I can use them in calculations
+        vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z); // in world space
+        vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
+        vec3 spotDirection = normalize(lightPos - targetVec);
+        vec3 fragToLightDir = normalize(lightPos - inFragPos);
+        float theta = dot(spotDirection, fragToLightDir);
+        vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
+        ambient = 0.01 * lightColor; // low influence
 
-		 vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
+        vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
 
-         // temporary - debugging shadow map:
-         vec3 projCoords = fragPosLightSpace.xyz/ fragPosLightSpace.w;
-         projCoords = projCoords * 0.5 + 0.5;
-         float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r; 
-         float currentDepth = projCoords.z;
+        // temporary - debugging shadow map:
+        vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+        projCoords = projCoords * 0.5 + 0.5;
+        float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r;
+        float currentDepth = projCoords.z;
 
-         float shadowFactor;
-         shadowFactor = (currentDepth > closestDepth) ? 1.0 : 0.0;
-         //float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+        shadowFactor += (currentDepth > closestDepth) ? 1.0 : 0.0;
+        // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
-         // spotlight cutoff
-         if (theta > cos(outerConeRads)){
-             float intensity;
-         if (theta > cos(innerConeRads)){
-             intensity = 1.0;
-         } else {
-             intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
-         }
-         intensity *= lights[i].intensity; // multiply it by the base intensity
-         
-         // attenuation calculation
-         float lightDistance = length(inFragPos - lightPos);
-         float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
+        // spotlight cutoff
+        if (theta > cos(outerConeRads)) {
+            float intensity;
+            if (theta > cos(innerConeRads)) {
+                intensity = 1.0; 
+            } else {
+                intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
+            }
+            intensity *= lights[i].intensity; // multiply it by the base intensity
 
-         // diffuse lighting using lambertian reflectance
-         float diff = max(dot(fragToLightDir, normal), 0.0);
-         diffuse += lightColor * diff * intensity * attenuation;
+            // attenuation calculation
+            float lightDistance = length(inFragPos - lightPos);
+            float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
 
-         // cook-torrance specular lighting WIP
-         float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
-         float metallic = metallicRoughness.b; // metallic is stored in the blue channel for gltf
-         vec3 F0 = mix(vec3(0.04), lightColor, metallic);
-         float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0);
-         //specular += lightColor * cookTorranceSpecular * attenuation;
-         specular += lightColor * attenuation;
-         }
+            // diffuse lighting using lambertian reflectance
+            float diff = max(dot(fragToLightDir, normal), 0.0);
+            diffuse += lightColor * diff * intensity * attenuation;
 
+            // cook-torrance specular lighting WIP
+            float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
+            float metallic = metallicRoughness.b;  // metallic is stored in the blue channel for gltf
+            vec3 F0 = mix(vec3(0.04), lightColor, metallic);
+            float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0);
+            // specular += lightColor * cookTorranceSpecular * attenuation;
+            specular += lightColor * attenuation;
+        }
+    }
     // final color calculation
     vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular)) * color;
-    outColor = vec4(debugShadows(shadowFactor), 1.0);
-    }
+    outColor = vec4(result, 1.0);
 }
 
 
