@@ -5,7 +5,7 @@
 
 layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
 
-layout(set = 4, binding = 4) uniform sampler2D  shadowMapSamplers[];
+layout(set = 4, binding = 4) uniform sampler2DShadow shadowMapSamplers[];
 
 struct formsVec3 { // custom structure to hold my vec3s
     float x;
@@ -72,7 +72,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
         for(int y = -halfSize; y <= halfSize; ++y) {
             // sample the depth from shadow map
             vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
-            float pcfDepth = texture(shadowMapSamplers[lightIndex], sampleCoords).r;
+            float pcfDepth = 0.0;
             float currentDepth = projCoords.z;
 
             // perform depth comparison
@@ -129,10 +129,9 @@ void main() {
             // temporary - debugging shadow map:
             vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
             projCoords = projCoords * 0.5 + 0.5; // get ndc to texture coords
-            float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r;
             float currentDepth = projCoords.z;
+            shadowFactor += texture(shadowMapSamplers[i], vec3(projCoords.xy, currentDepth)).r;
 
-            shadowFactor += (currentDepth > closestDepth) ? 1.0 : 0.0;
             // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
             float intensity;
