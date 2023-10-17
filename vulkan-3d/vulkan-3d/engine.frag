@@ -88,19 +88,6 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
-
-vec3 debugShadows(float s) { 
-    if (s > 1 || s < 0) {
-		return vec3(1.0, 1.0, 0.0); // yellow if out of range
-	} 
-    else if (s > 0.5) {
-        return vec3(1.0, 0.0, 0.0);  // red if in shadow
-    } else {
-        return vec3(0.0, 0.0, 1.0);  // blue if not in shadow
-    }
-}
-
-
 void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
@@ -174,7 +161,9 @@ void main() {
     }
     // final color calculation
     vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular)) * color;
-    outColor = vec4(debugShadows(shadowFactor), 1.0);
+    outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0); // black if in shadow, pink if not
+    //outColor = vec4(result, 1.0);
+
 }
 
 
