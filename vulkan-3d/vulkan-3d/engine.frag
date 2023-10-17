@@ -141,7 +141,7 @@ void main() {
 
             // temporary - debugging shadow map:
             vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-            projCoords = projCoords * 0.5 + 0.5;
+            projCoords = projCoords * 0.5 + 0.5; // get ndc to texture coords
             float closestDepth = texture(shadowMapSamplers[i], projCoords.xy).r;
             float currentDepth = projCoords.z;
 
@@ -154,7 +154,6 @@ void main() {
             } else {
                 intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
             }
-            intensity *= lights[i].intensity; // multiply it by the base intensity
 
             // attenuation calculation
             float lightDistance = length(inFragPos - lightPos);
