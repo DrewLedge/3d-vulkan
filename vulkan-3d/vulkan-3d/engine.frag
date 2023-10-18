@@ -62,7 +62,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-    projCoords = projCoords * 0.5 + 0.5;
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
@@ -72,19 +72,15 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
         for(int y = -halfSize; y <= halfSize; ++y) {
             // sample the depth from shadow map
             vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
-            float pcfDepth = 0.0;
-            float currentDepth = projCoords.z;
-
-            // perform depth comparison
-            float bias = max(0.005 * (1.0 - dot(norm, lightDir)), 0.005);
-            shadow += (currentDepth - bias > pcfDepth) ? 1.0 : 0.0; // either 0 or 1 if in or out of shadow
+            if (sampleCoords.x >= 0.0 && sampleCoords.x <= 1.0 && sampleCoords.y >= 0.0 && sampleCoords.y <= 1.0) {
+                float currentDepth = projCoords.z;
+                shadow += texture(shadowMapSamplers[lightIndex], vec3(sampleCoords.xy, currentDepth));
+            }
         }
     }
 
     // normalize the shadow factor
-    if (shadow>0) {
 		shadow /= float(kernelSize * kernelSize);
-	}
     return shadow;
 }
 
@@ -125,15 +121,7 @@ void main() {
         // spotlight cutoff
         if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
             vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
-
-            // temporary - debugging shadow map:
-            vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-            projCoords.xy = projCoords.xy * 0.5 + 0.5;
-            float currentDepth = projCoords.z;
-
-            shadowFactor += texture(shadowMapSamplers[i], vec3(projCoords.xy, currentDepth)).r;
-
-            // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+            shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
             float intensity;
             if (theta > cos(innerConeRads)) {
@@ -160,9 +148,9 @@ void main() {
         }
     }
     // final color calculation
-    vec3 result = (ambient + (1.0 - shadowFactor) * (diffuse + specular)) * color;
-    outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0); // black if in shadow, pink if not
-    //outColor = vec4(result, 1.0);
+    vec3 result = (ambient + (shadowFactor) * (diffuse + specular)) * color;
+    //outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0);
+    outColor = vec4(result, 1.0);
 
 }
 
