@@ -44,17 +44,6 @@ layout(location = 5) in vec3 inViewDir;
 layout(location = 0) out vec4 outColor; 
 float PI = acos(-1.0);
 
-float cookTorranceSpec(vec3 normal, vec3 lightDir, vec3 viewDir, float roughness, vec3 f0) { // fix
-    vec3 halfVector = normalize(lightDir + viewDir); // half vector between light and view direction
-    float NdotH = max(dot(normal, halfVector), 0.0); // dot product between normal and half vector
-    float NdotV = max(dot(normal, viewDir), 0.0); // dot product between normal and view direction
-    float VdotH = max(dot(viewDir, halfVector), 0.0); // dot product between view direction and half vector
-
-    // geometric attenuation
-    float geometric = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * NdotV) / NdotH));
-    float denominator = PI * pow(roughness, 2) * pow(NdotH, 4); // denominator of the equation
-    return geometric / denominator; // return specular intensity
-}
 
 
 // get the PCF shadow factor (used for softer shadows)
@@ -84,6 +73,32 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
+vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float roughness) {
+    float alpha = roughness * roughness;
+    
+    // compute halfway vector
+    vec3 H = normalize(V + L);
+    
+    // compute the geometric term (GGX)
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotV = max(dot(N, V), 0.0);
+    float VdotH = max(dot(V, H), 0.0);
+    float G = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * dot(N, L)) / VdotH));
+    
+    // compute the roughness term (GGX)
+    float D = alpha * alpha / (PI * pow(NdotH * NdotH * (alpha * alpha - 1.0) + 1.0, 2.0));
+    
+    // compute the Fresnel term (schlick approximation)
+    vec3 F = albedo + (1.0 - albedo) * pow(1.0 - VdotH, 5.0);
+    
+    vec3 specular = (D * G * F) / (4.0 * NdotV * dot(N, L));
+    vec3 diffuse = (1.0 - metallic) * albedo * (1.0 / PI);
+    
+    return (diffuse + specular);
+}
+
+
+
 void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
@@ -97,6 +112,8 @@ void main() {
 
     float shadowFactor = 0.0;
     vec3 ambient = vec3(0.0);
+
+    vec3 brdf;
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
         mat4 lightView = lightMatricies[i].viewMatrix;
@@ -115,7 +132,7 @@ void main() {
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
         float theta = dot(spotDirection, fragToLightDir);
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-        ambient = 0.01 * lightColor; // low influence
+        ambient = 0.1 * lightColor; // low influence
 
         
         // spotlight cutoff
@@ -142,16 +159,19 @@ void main() {
             float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
             float metallic = metallicRoughness.b;  // metallic is stored in the blue channel for gltf
             vec3 F0 = mix(vec3(0.04), lightColor, metallic);
-            float cookTorranceSpecular = cookTorranceSpec(normal, fragToLightDir, inViewDir, roughness, F0);
             // specular += lightColor * cookTorranceSpecular * attenuation;
             specular += lightColor * attenuation;
+
+            brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
         }
     }
+    
     // final color calculation
-    vec3 result = (ambient + (shadowFactor) * (diffuse + specular)) * color;
-    //outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0);
+    vec3 result = (ambient + shadowFactor * brdf);
     outColor = vec4(result, 1.0);
 
+    //outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0);
+    
 }
 
 

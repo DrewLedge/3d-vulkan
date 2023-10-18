@@ -42,8 +42,9 @@ void main() {
     mat4 view = matSSBO.matrixSSBO[modelIndex].view;
     mat4 model = matSSBO.matrixSSBO[modelIndex].model;
 
-    vec3 cameraPosition = vec3(inverse(view)[3]);
-    vec3 viewDirection = normalize(cameraPosition - vec3(model * vec4(inPosition, 1.0)));
+    vec3 worldCamPos = vec3(inverse(view)[3]);
+    vec4 worldPos = model * vec4(inPosition, 1.0);
+    vec3 viewDir = normalize(worldPos.xyz - worldCamPos);
 
     gl_Position = proj * view * model * vec4(inPosition, 1.0);
     fragColor = vec4(inColor, 1.0);
@@ -57,6 +58,6 @@ void main() {
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
-    outViewDirection = viewDirection;
+    outViewDirection = viewDir;
 
 }
