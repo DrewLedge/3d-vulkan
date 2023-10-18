@@ -130,10 +130,8 @@ void main() {
             vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
             projCoords.xy = projCoords.xy * 0.5 + 0.5;
             float currentDepth = projCoords.z;
-            float bias = 0.005 * tan(acos(clamp(theta, -1.0, 1.0)));  // clamp theta before acos
-            bias = clamp(bias, 0.0, 0.01);
 
-            shadowFactor += texture(shadowMapSamplers[i], vec3(projCoords.xy, currentDepth - bias)).r;
+            shadowFactor += texture(shadowMapSamplers[i], vec3(projCoords.xy, currentDepth)).r;
 
             // float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
