@@ -91,8 +91,8 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
     float D = alpha * alpha / (PI * pow(NdotH * NdotH * (alpha * alpha - 1.0) + 1.0, 2.0));
     
     // compute the Fresnel term (schlick approximation)
-    vec3 F = albedo + (1.0 - albedo) * pow(1.0 - VdotH, 5.0);
-    
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);  // reflectance at normal incidence
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
     vec3 specular = (D * G * F) / (4.0 * NdotV * dot(N, L));
     vec3 diffuse = (1.0 - metallic) * albedo * (1.0 / PI);
     
