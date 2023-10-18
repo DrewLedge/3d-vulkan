@@ -51,6 +51,7 @@ private:
 		forms::vec3 normal; // normal vector x, y, z
 		float alpha;
 		uint32_t matIndex; // used to know which vertex belong to which material
+		forms::vec4 tangent;
 
 		// default constructor:
 		Vertex()
@@ -58,7 +59,8 @@ private:
 			tex(forms::vec2(0.0f, 0.0f)),
 			col(forms::vec3(0.0f, 0.0f, 0.0f)),
 			normal(forms::vec3(0.0f, 0.0f, 0.0f)),
-			alpha(1.0f)
+			alpha(1.0f),
+			tangent(forms::vec4(0.0f, 0.0f, 0.0f, 0.0f))
 		{}
 
 		// constructor:
@@ -66,13 +68,15 @@ private:
 			const forms::vec2& texture,
 			const forms::vec3& color,
 			const forms::vec3& normalVector,
-			float alphaValue)
+			float alphaValue,
+			const forms::vec4& tang)
 			: pos(position),
 			tex(texture),
 			col(color),
 			normal(normalVector),
 			alpha(alphaValue),
-			matIndex(0)
+			matIndex(0),
+			tangent(tang)
 		{}
 		bool operator==(const Vertex& other) const {
 			const float epsilon = 0.00001f; // tolerance for floating point equality
@@ -80,6 +84,7 @@ private:
 				tex == other.tex &&
 				col == other.col &&
 				normal == other.normal &&
+				tangent == other.tangent &&
 				std::abs(alpha - other.alpha) < epsilon;
 		}
 	};
@@ -105,6 +110,12 @@ private:
 			seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
 			seed ^= std::hash<float>()(vertex.alpha) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			seed ^= std::hash<float>()(vertex.tangent.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.tangent.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.tangent.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.tangent.w) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
 			return seed;
 		}
 	};
@@ -1094,6 +1105,17 @@ private:
 					// indices
 					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
 					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
+					const float* tangentData = nullptr;
+
+					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
+					if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
+						const auto& tangentAccessor = gltfModel.accessors[tangentIt->second];
+						tangentData = getAccessorData(gltfModel, primitive.attributes, "TANGENT");
+					}
+					else {
+
+						std::cerr << "WARNING: Tangent data not found for mesh." << std::endl;
+					}
 
 					for (size_t i = 0; i < indexAccessor.count; ++i) {
 						uint32_t index;  // use the largest type to ensure no overflow.
@@ -1116,6 +1138,8 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+						vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]
+						};
 						vertex.matIndex = sceneInd.modInd;  // set the material index
 
 						if (uniqueVertices.count(vertex) == 0) {
@@ -1954,7 +1978,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
 		else if (type == "norm") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_SNORM; // for normal maps (signed format)
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for normal maps (signed format)
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "base") {
@@ -2076,7 +2100,7 @@ private:
 			imageInf.arrayLayers = 1;
 
 			if (type == "norm") {
-				imageInf.format = VK_FORMAT_R8G8B8A8_SNORM; //signed format for the normal maps (-1 to 1)
+				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM; //signed format for the normal maps (-1 to 1)
 			}
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
@@ -2248,7 +2272,7 @@ private:
 		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
 		assert(err == 0); //if true, continue, if false, throw error
 	}
-	void createGraphicsPipelineOpaque() { //pipeline for ONLY opaque objects
+	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
 		vertShaderModule = createShaderModule(vertShaderCode);
@@ -2272,7 +2296,7 @@ private:
 		bindDesc.stride = sizeof(Vertex); // Number of bytes from one entry to the next
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 6> attrDesc;
+		std::array<VkVertexInputAttributeDescription, 7> attrDesc;
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -2308,6 +2332,12 @@ private:
 		attrDesc[5].location = 5;
 		attrDesc[5].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
 		attrDesc[5].offset = offsetof(Vertex, normal);
+
+		// tangents
+		attrDesc[6].binding = 0;
+		attrDesc[6].location = 6;
+		attrDesc[6].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
+		attrDesc[6].offset = offsetof(Vertex, tangent);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2580,8 +2610,8 @@ private:
 		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_TRUE;
-		rasterizer.depthBiasConstantFactor = 1.25f;
-		rasterizer.depthBiasSlopeFactor = 1.25f;
+		rasterizer.depthBiasConstantFactor = 1.75f;
+		rasterizer.depthBiasSlopeFactor = 1.75f;
 		rasterizer.depthBiasClamp = 0.0f;
 
 
@@ -2826,7 +2856,7 @@ private:
 	void recreateObjectRelated() {
 		cleanupDS();
 		setupDescriptorSets();
-		createGraphicsPipelineOpaque();
+		createGraphicsPipeline();
 		recreateBuffers();
 	}
 
@@ -3083,7 +3113,7 @@ private:
 		vkDestroyImage(device, depthImage, nullptr);
 		vkFreeMemory(device, depthImageMemory, nullptr);
 		setupDepthResources();
-		createGraphicsPipelineOpaque();
+		createGraphicsPipeline();
 		createFrameBuffer();
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
@@ -3335,7 +3365,7 @@ private:
 		setupShadowMaps(); // create the inital textures for the shadow maps
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createShadowPipeline(); // pipeline for my shadow maps
-		createGraphicsPipelineOpaque();
+		createGraphicsPipeline();
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source

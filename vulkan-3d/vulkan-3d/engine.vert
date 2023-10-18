@@ -10,14 +10,16 @@ layout(location = 1) in vec3 inColor;
 layout(location = 2) in float inAlpha;
 layout(location = 3) in vec2 inTexCoord;
 layout(location = 4) in uint inVertIndex;
-layout(location=5) in vec3 inNormal;
+layout(location = 5) in vec3 inNormal;
+layout(location = 6) in vec4 inTangent;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outTexCoord;
 layout(location = 2) flat out uint outTexIndex;
 layout(location = 3) flat out uint outModelIndex;
 layout(location = 4) out vec3 outFragPos;
-layout(location=5) out vec3 outViewDirection;
+layout(location = 5) out vec3 outViewDirection;
+layout(location = 6) out mat3 TBN;
 
 
 struct matrixUBO {
@@ -55,6 +57,10 @@ void main() {
     if (modelIndex <= MAX_MODELS) {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
+    vec3 fragNormal = mat3(model) * inNormal;
+    vec3 tangent = normalize(vec3(model * vec4(inTangent.xyz, 0.0)));
+    vec3 bitangent = cross(fragNormal, tangent) * inTangent.w;  // handedness is in inTangent.w
+    TBN = mat3(tangent, bitangent, fragNormal);
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space

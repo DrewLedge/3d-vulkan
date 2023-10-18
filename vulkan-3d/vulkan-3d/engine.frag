@@ -40,6 +40,8 @@ layout(location = 2) flat in uint inTexIndex;
 layout(location = 3) flat in uint inModelIndex;
 layout(location = 4) in vec3 inFragPos;
 layout(location = 5) in vec3 inViewDir;
+layout(location = 6) in mat3 TBN;
+
 
 layout(location = 0) out vec4 outColor; 
 float PI = acos(-1.0);
@@ -102,9 +104,11 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
 void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
-    vec4 normalMap = texture(texSamplers[inTexIndex + 2], inTexCoord);
 
-    vec3 normal = normalize(normalMap.xyz * 2.0 - 1.0);
+    vec3 normalColor = texture(texSamplers[inTexIndex + 2], inTexCoord).xyz;
+    vec3 normalTangentSpace = normalize(normalColor);
+    vec3 normal = normalize(TBN * normalTangentSpace);
+
     vec3 color = albedo.rgb;
 
     vec3 diffuse = vec3(0.0);
@@ -169,6 +173,7 @@ void main() {
     // final color calculation
     vec3 result = (ambient + shadowFactor * brdf);
     outColor = vec4(result, 1.0);
+    //outColor = vec4(normal, 1.0);
 
     //outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0);
     
