@@ -152,21 +152,14 @@ void main() {
             }
 
             // attenuation calculation
-            float lightDistance = length(inFragPos - lightPos);
+            float lightDistance = length(lightPos - inFragPos);
             float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
-
-            // diffuse lighting using lambertian reflectance
-            float diff = max(dot(fragToLightDir, normal), 0.0);
-            diffuse += lightColor * diff * intensity * attenuation;
 
             // cook-torrance specular lighting WIP
             float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
             float metallic = metallicRoughness.b;  // metallic is stored in the blue channel for gltf
-            vec3 F0 = mix(vec3(0.04), lightColor, metallic);
-            // specular += lightColor * cookTorranceSpecular * attenuation;
-            specular += lightColor * attenuation;
-
             brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
+            brdf *= attenuation;
         }
     }
     
@@ -175,8 +168,6 @@ void main() {
     outColor = vec4(result, 1.0);
     //outColor = vec4(normal, 1.0);
 
-    //outColor = vec4(shadowFactor, shadowFactor * 0.5, shadowFactor * 0.5, 1.0);
-    
 }
 
 
