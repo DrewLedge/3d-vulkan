@@ -208,6 +208,14 @@ public:
 			w /= scalar;
 			return *this;
 		}
+		vec4 operator*(const vec4& b) const {
+			return vec4(
+				w * b.w - x * b.x - y * b.y - z * b.z,
+				w * b.x + x * b.w + y * b.z - z * b.y,
+				w * b.y - x * b.z + y * b.w + z * b.x,
+				w * b.z + x * b.y - y * b.x + z * b.w
+			);
+		}
 	};
 	struct mat4 {
 		float m[4][4];
