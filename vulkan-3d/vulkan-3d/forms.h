@@ -154,8 +154,37 @@ public:
 	struct vec4 {
 		float x, y, z, w;
 
-		vec4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
+		vec4() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+
+		static vec4 eulerToQ(const vec3& e) { // euler to quaternion
+			float pitch = e.x;
+			float yaw = e.y;
+			float roll = e.z;
+
+			// convert to radians from degrees
+			pitch *= (PI / 180.0);
+			yaw *= (PI / 180.0);
+			roll *= (PI / 180.0);
+
+			// calculate trig values 
+			float cy = cos(yaw * 0.5);
+			float sy = sin(yaw * 0.5);
+			float cp = cos(pitch * 0.5);
+			float sp = sin(pitch * 0.5);
+			float cr = cos(roll * 0.5);
+			float sr = sin(roll * 0.5);
+
+			// return the quaternion
+			return vec4(
+				cy * cp * sr - sy * sp * cr, // x
+				sy * cp * sr + cy * sp * cr, // y
+				sy * cp * cr - cy * sp * sr, // z
+				cy * cp * cr + sy * sp * sr  // w
+			);
+		}
+
+
 
 		bool operator==(const vec4& other) const {
 			const float epsilon = 0.00001f;
@@ -208,12 +237,15 @@ public:
 			w /= scalar;
 			return *this;
 		}
-		vec4 operator*(const vec4& b) const {
+		vec4 operator*(const vec4& other) const {
+			float x1 = x, y1 = y, z1 = z, w1 = w;
+			float x2 = other.x, y2 = other.y, z2 = other.z, w2 = other.w;
+
 			return vec4(
-				w * b.w - x * b.x - y * b.y - z * b.z,
-				w * b.x + x * b.w + y * b.z - z * b.y,
-				w * b.y - x * b.z + y * b.w + z * b.x,
-				w * b.z + x * b.y - y * b.x + z * b.w
+				w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2, // x
+				w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, // y
+				w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2, // z
+				w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2 // w
 			);
 		}
 	};
@@ -404,10 +436,10 @@ public:
 			float det, sub[3][3];
 			int x = 0, y = 0;
 			for (int i = 0; i < 4; i++) {
-				if (i == excludeRow) continue;
+				if (i == excludeRow) continue; // skip the excluded row
 				y = 0;
 				for (int j = 0; j < 4; j++) {
-					if (j == excludeCol) continue;
+					if (j == excludeCol) continue; // skip the excluded column
 					sub[x][y] = m.m[j][i];
 					y++;
 				}

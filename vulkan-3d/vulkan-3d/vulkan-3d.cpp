@@ -894,7 +894,7 @@ private:
 
 	forms::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
 		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
-		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 0.0f };
+		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 1.0f };
 		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
 		if (node.translation.size() >= 3) {
 			t = {
@@ -922,6 +922,8 @@ private:
 		}
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
+		forms::vec4 mQ = forms::vec4::eulerToQ(m.rotation);
+		r = mQ * r;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
@@ -1544,8 +1546,11 @@ private:
 		std::cout << "---------------------------------" << std::endl;
 	}
 
-	void printVector(const forms::vec3& vector) {
+	void printVec3(const forms::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
+	}
+	void printVec4(const forms::vec4& vector) {
+		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << ", " << vector.w << "}" << std::endl;
 	}
 
 	float getMatrixElement(const float* matrix, int col, int row) {
@@ -3336,6 +3341,9 @@ private:
 		}
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
 			cam.camPos.y -= 1 * cameraSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+			cam.camPos.y += 1 * cameraSpeed;
 		}
 
 
