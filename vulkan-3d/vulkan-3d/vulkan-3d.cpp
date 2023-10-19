@@ -459,20 +459,16 @@ private:
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
 
-		forms::vec3 scale = { 2.6f, 2.6f, 2.6f };
-		forms::vec3 fac = 1.0f / scale;
-		forms::vec3 newPos = pos * fac;
-		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, { 0.0f, 0.0f, 0.0f }, newPos);
+		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, { 0.0f, 0.0f, 0.0f }, pos);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 4.0f });
 		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 5.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 5.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -924,17 +920,17 @@ private:
 				static_cast<float>(node.scale[2])
 			};
 		}
-		s = m.scale; // multiply the scale by the pre set scale to tweak the original scale
+		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
-			return scaleMatrix * translationMatrix * forms::mat4::gltfToMat4(node.matrix);
-			printMatrix(forms::mat4::gltfToMat4(node.matrix));
+			forms::mat4 gltfMatrix = forms::mat4::gltfToMat4(node.matrix);
+			return translationMatrix * rotationMatrix * scaleMatrix * gltfMatrix;
 		}
 		else {
-			return scaleMatrix * rotationMatrix * translationMatrix;
+			return translationMatrix * rotationMatrix * scaleMatrix;
 		}
 	}
 
@@ -1919,37 +1915,6 @@ private:
 		}
 		createDS(); //create the descriptor set
 	}
-	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec3 rotation) {
-		model m = objects[object];
-
-		forms::vec3 fac = 0.1f / scale;
-		m.scale = scale;
-		m.position = pos * fac;
-		m.startObj = false;
-		m.rotation = rotation;
-		uint32_t objSize = static_cast<uint32_t>(objects.size());
-		uint32_t texInd = -1;
-
-		// get maximum indices from original model
-		for (auto& material : m.materials) {
-			if (material.metallicRoughness.texIndex > texInd)
-				material.metallicRoughness.texIndex = texInd;
-			if (material.baseColor.texIndex > texInd)
-				material.baseColor.texIndex = texInd;
-			if (material.normalMap.texIndex > texInd)
-				material.normalMap.texIndex = texInd;
-			material.modelIndex = objSize;
-		}
-
-		// increment indices for new model
-		texInd++;
-		for (size_t i = 0; i < m.vertices.size(); i++) {
-			m.vertices[i].matIndex = objSize;
-		}
-
-		//create the model and reset the descriptor sets
-		objects.push_back(m);
-	}
 
 	template<typename T>
 	void createTS(T& tex, bool doMipmap, std::string type = "tex") {
@@ -2869,6 +2834,37 @@ private:
 		setupDescriptorSets();
 		createGraphicsPipeline();
 		recreateBuffers();
+	}
+
+	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec3 rotation) {
+		model m = objects[object];
+
+		m.scale = scale;
+		m.position = pos * 3;
+		m.startObj = false;
+		m.rotation = rotation;
+		uint32_t objSize = static_cast<uint32_t>(objects.size());
+		uint32_t texInd = -1;
+
+		// get maximum indices from original model
+		for (auto& material : m.materials) {
+			if (material.metallicRoughness.texIndex > texInd)
+				material.metallicRoughness.texIndex = texInd;
+			if (material.baseColor.texIndex > texInd)
+				material.baseColor.texIndex = texInd;
+			if (material.normalMap.texIndex > texInd)
+				material.normalMap.texIndex = texInd;
+			material.modelIndex = objSize;
+		}
+
+		// increment indices for new model
+		texInd++;
+		for (size_t i = 0; i < m.vertices.size(); i++) {
+			m.vertices[i].matIndex = objSize;
+		}
+
+		//create the model and reset the descriptor sets
+		objects.push_back(m);
 	}
 
 	void realtimeLoad(std::string p) {
