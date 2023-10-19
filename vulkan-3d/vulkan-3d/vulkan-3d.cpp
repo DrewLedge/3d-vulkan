@@ -2840,7 +2840,7 @@ private:
 		model m = objects[object];
 
 		m.scale = scale;
-		m.position = pos * 3;
+		m.position = pos;
 		m.startObj = false;
 		m.rotation = rotation;
 		uint32_t objSize = static_cast<uint32_t>(objects.size());
@@ -2862,6 +2862,9 @@ private:
 		for (size_t i = 0; i < m.vertices.size(); i++) {
 			m.vertices[i].matIndex = objSize;
 		}
+		forms::mat4 newModel = forms::mat4::translate(pos) * forms::mat4::rotate(rotation) * forms::mat4::scale(scale);
+		forms::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
+		convertMatrix(model, m.modelMatrix);
 
 		//create the model and reset the descriptor sets
 		objects.push_back(m);
@@ -2870,7 +2873,7 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::inverseMatrix(unflattenMatrix(m.modelMatrix)) * (cam.camPos * -1), 1, { 0.01f, 0.01f, 0.01f }, { 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}
@@ -3381,8 +3384,6 @@ private:
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
 		//debugModelMatricies();
-		printFlatMatrix(lights[0].view);
-		printFlatMatrix(lights[0].proj);
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 	void debugModelMatricies() {

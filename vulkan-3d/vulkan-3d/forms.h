@@ -1,4 +1,5 @@
 #pragma once
+#include <iostream>
 #ifndef FORMULAS_H
 #define FORMULAS_H
 const float PI = acos(-1.0f);
@@ -359,7 +360,7 @@ public:
 
 			// column major
 			result.m[0][0] = 1.0f / (aspect * tanHalf);
-			result.m[1][1] = - 1.0f / tanHalf;
+			result.m[1][1] = -1.0f / tanHalf;
 			result.m[2][2] = farPlane / (farPlane - nearPlane);
 			result.m[2][3] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
 			result.m[3][2] = 1.0f;
@@ -383,52 +384,66 @@ public:
 			proj.m[2][3] = b;
 			proj.m[3][2] = -1.0f;
 			return proj;
-			
+
 		}
 
 		static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
 			return mat4::scale(s) * mat4::rotate(rot) * mat4::translate(trans);;
 		}
 
+
+		static float submatrixDet(mat4 m, int excludeRow, int excludeCol) {
+			float det, sub[3][3];
+			int x = 0, y = 0;
+			for (int i = 0; i < 4; i++) {
+				if (i == excludeRow) continue;
+				y = 0;
+				for (int j = 0; j < 4; j++) {
+					if (j == excludeCol) continue;
+					sub[x][y] = m.m[j][i];
+					y++;
+				}
+				x++;
+			}
+			// get the determinant of the submatrix
+			det = sub[0][0] * (sub[1][1] * sub[2][2] - sub[2][1] * sub[1][2]) - sub[0][1] * (sub[1][0] * sub[2][2] - sub[2][0] * sub[1][2]) + sub[0][2] * (sub[1][0] * sub[2][1] - sub[2][0] * sub[1][1]);
+			return det;
+		}
+
 		static mat4 inverseMatrix(mat4 m) {
 			//formula from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
-			mat4 result;
+			mat4 cofactor;
+			float det = 0.0f;
 
-			// det=a(ei−fh)−b(di−fg)+c(dh−eg)
-			float cofactor0 = m.m[1][1] * m.m[2][2] - m.m[1][2] * m.m[2][1];
-			float cofactor1 = m.m[1][2] * m.m[2][0] - m.m[1][0] * m.m[2][2];
-			float cofactor2 = m.m[1][0] * m.m[2][1] - m.m[1][1] * m.m[2][0];
-			float det = m.m[0][0] * cofactor0 + m.m[0][1] * cofactor1 + m.m[0][2] * cofactor2;
-
-			// check if the determinant is non-zero
-			if (det != 0.0f) { // if not zero, then the matrix is invertible
-				float invDet = 1.0f / det;
-
-				// calculate the inverse of the upper-left 3x3 submatrix
-				result.m[0][0] = invDet * cofactor0;
-				result.m[1][0] = invDet * cofactor1;
-				result.m[2][0] = invDet * cofactor2;
-				result.m[0][1] = invDet * (m.m[0][2] * m.m[2][1] - m.m[0][1] * m.m[2][2]);
-				result.m[1][1] = invDet * (m.m[0][0] * m.m[2][2] - m.m[0][2] * m.m[2][0]);
-				result.m[2][1] = invDet * (m.m[0][1] * m.m[2][0] - m.m[0][0] * m.m[2][1]);
-				result.m[0][2] = invDet * (m.m[0][1] * m.m[1][2] - m.m[0][2] * m.m[1][1]);
-				result.m[1][2] = invDet * (m.m[0][2] * m.m[1][0] - m.m[0][0] * m.m[1][2]);
-				result.m[2][2] = invDet * (m.m[0][0] * m.m[1][1] - m.m[0][1] * m.m[1][0]);
-
-				// calculate the inverse translation vector
-				result.m[3][0] = -result.m[0][0] * m.m[3][0] - result.m[1][0] * m.m[3][1] - result.m[2][0] * m.m[3][2];
-				result.m[3][1] = -result.m[0][1] * m.m[3][0] - result.m[1][1] * m.m[3][1] - result.m[2][1] * m.m[3][2];
-				result.m[3][2] = -result.m[0][2] * m.m[3][0] - result.m[1][2] * m.m[3][1] - result.m[2][2] * m.m[3][2];
+			// calculate determinant
+			for (int i = 0; i < 4; i++) {
+				det += ((i % 2 == 0 ? 1 : -1) * m.m[i][0] * submatrixDet(m, 0, i));
 			}
-			else {
-				return m; //if not invertible, return original matrix
-			}
-			result.m[0][3] = 0.0f;
-			result.m[1][3] = 0.0f;
-			result.m[2][3] = 0.0f;
-			result.m[3][3] = 1.0f;
 
-			return result;
+			if (det == 0.0f) { // if matrix is not invertible, return original matrix
+				std::cerr << "Matrix not invertible!" << std::endl;
+				return m;
+			}
+
+			float invDet = 1.0f / det;
+
+			// calculate cofactor matrix
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
+					int sign = ((i + j) % 2 == 0) ? 1 : -1;
+					cofactor.m[j][i] = sign * submatrixDet(m, i, j);
+				}
+			}
+
+			// multiply by 1/det to get inverse
+			mat4 inverse;
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
+					inverse.m[i][j] = invDet * cofactor.m[i][j];
+				}
+			}
+
+			return inverse;
 		}
 
 		static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
@@ -436,6 +451,12 @@ public:
 			result = mat4::rotate(rotation)
 				* mat4::translate(position);
 			return result;
+		}
+
+		static vec3 getCamWorldPos(const mat4& viewMat) {
+			mat4 invView = inverseMatrix(viewMat);
+			vec3 cameraWorldPosition(invView.m[3][0], invView.m[3][1], invView.m[3][2]);
+			return cameraWorldPosition;
 		}
 
 		static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
