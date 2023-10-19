@@ -458,6 +458,11 @@ private:
 		l.innerConeAngle = 30.0f;
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
+
+		forms::vec3 scale = { 2.6f, 2.6f, 2.6f };
+		forms::vec3 fac = 1.0f / scale;
+		forms::vec3 newPos = pos * fac;
+		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, { 0.0f, 0.0f, 0.0f }, newPos);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
@@ -919,7 +924,7 @@ private:
 				static_cast<float>(node.scale[2])
 			};
 		}
-		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
+		s = m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
@@ -1055,16 +1060,16 @@ private:
 
 		// check if the model has any skins or animations (not supported for now)
 		if (!gltfModel.skins.empty()) {
-			std::cerr << "WARNING: The model contains skinning information" << std::endl;
+			std::cerr << "WARNING: The " << path << " contains skinning information" << std::endl;
 		}
 
 		if (!gltfModel.animations.empty()) {
-			std::cerr << "WARNING: The model contains animation data." << std::endl;
+			std::cerr << "WARNING: The " << path << " contains animation data." << std::endl;
 		}
 
 		// check if the gltf model relies on any extensions
 		for (const auto& extension : gltfModel.extensionsUsed) {
-			std::cerr << "WARNING: The model relies on: " << extension << std::endl;
+			std::cerr << "WARNING: The " << path << " relies on: " << extension << std::endl;
 		}
 		//printFullHierarchy(gltfModel);
 
@@ -1084,6 +1089,7 @@ private:
 					if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
 						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
 					}
+					bool tangentFound = true;
 
 					loadBar(forms::gen::getPercent(sceneInd.modInd, gltfModel.meshes.size()), "vertecies");
 
@@ -1114,7 +1120,8 @@ private:
 					}
 					else {
 
-						std::cerr << "WARNING: Tangent data not found for mesh." << std::endl;
+						std::cerr << "WARNING: Tangent data not found for mesh: " << path << std::endl;
+						tangentFound = false;
 					}
 
 					for (size_t i = 0; i < indexAccessor.count; ++i) {
@@ -1138,8 +1145,12 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-						vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]
-						};
+						if (tangentFound) {
+							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+						}
+						else {
+							vertex.tangent = { 0.0f, 0.0f, 0.0f, 0.0f };
+						}
 						vertex.matIndex = sceneInd.modInd;  // set the material index
 
 						if (uniqueVertices.count(vertex) == 0) {
