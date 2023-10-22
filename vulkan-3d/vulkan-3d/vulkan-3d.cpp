@@ -458,8 +458,7 @@ private:
 		l.innerConeAngle = 30.0f;
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
-
-		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, { 0.0f, 0.0f, 0.0f }, pos);
+		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, forms::vec3::targetToE(pos, t), pos);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
@@ -468,7 +467,7 @@ private:
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, 5.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.0f, 0.0f });
+		createLight({ 0.0f, 0.0f, 3.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 2.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -926,6 +925,10 @@ private:
 		r = mQ * r;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
+		std::cout << "quat: " << std::endl;
+		printMatrix(rotationMatrix);
+		std::cout << "euler: " << std::endl;
+		printMatrix(forms::mat4::rotate(m.rotation));
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
 			forms::mat4 gltfMatrix = forms::mat4::gltfToMat4(node.matrix);
@@ -3362,6 +3365,7 @@ private:
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
+			std::cout << cam.camAngle << std::endl;
 		}
 		cam.camAngle.z = 0.0f;
 	}

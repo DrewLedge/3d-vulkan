@@ -30,6 +30,13 @@ public:
 		vec3 operator-(const vec3& other) const {
 			return vec3(x - other.x, y - other.y, z - other.z);
 		}
+		friend vec3 operator-(const vec3& v, float scalar) {
+			return vec3(v.x - scalar, v.y - scalar, v.z - scalar);
+		}
+		friend vec3 operator+(const vec3& v, float scalar) {
+			return vec3(v.x + scalar, v.y + scalar, v.z + scalar);
+		}
+
 		vec3 operator*(float scalar) const {
 			return vec3(x * scalar, y * scalar, z * scalar);
 		}
@@ -59,6 +66,31 @@ public:
 			z -= other.z;
 			return *this;
 		}
+		vec3& operator*=(float scalar) {
+			x *= scalar;
+			y *= scalar;
+			z *= scalar;
+			return *this;
+		}
+		vec3& operator/=(float scalar) {
+			x /= scalar;
+			y /= scalar;
+			z /= scalar;
+			return *this;
+		}
+		vec3& operator*=(const vec3& other) {
+			x *= other.x;
+			y *= other.y;
+			z *= other.z;
+			return *this;
+		}
+		vec3& operator/=(const vec3& other) {
+			x /= other.x;
+			y /= other.y;
+			z /= other.z;
+			return *this;
+		}
+
 		bool operator==(const forms::vec3& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
@@ -135,6 +167,30 @@ public:
 				v.z * PI / 180.0f
 			);
 		}
+
+		static vec3 targetToE(const vec3& position, const vec3& target) {
+			vec3 angles;
+			vec3 direction = target - position;
+
+			float length = std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+
+			if (length == 0.0f) {
+				return { 0.0f, 0.0f, 0.0f }; // return zeros if length is zero to avoid division by zero
+			}
+
+			direction = direction / length;
+
+			angles.y = std::atan2(direction.x, direction.z);  // yaw
+			angles.x = std::asin(-direction.y); // pitch
+
+			angles.x, angles.y *= (180.0f / PI);
+
+
+			std::cout << "direction: " << direction << " target :" << target << " eulers: " << angles << std::endl;
+			return angles;
+		}
+
+
 		static float toDeg(const float radian) {
 			return radian * (180.0f / PI);
 		}
@@ -176,12 +232,14 @@ public:
 			float sr = sin(roll * 0.5);
 
 			// return the quaternion
-			return vec4(
-				cy * cp * sr - sy * sp * cr, // x
-				sy * cp * sr + cy * sp * cr, // y
-				sy * cp * cr - cy * sp * sr, // z
-				cy * cp * cr + sy * sp * sr  // w
-			);
+			vec4 out = {
+			   cy * cp * sr - sy * sp * cr, // x
+			   sy * cp * sr + cy * sp * cr, // y
+			   sy * cp * cr - cy * sp * sr, // z
+			   cy * cp * cr + sy * sp * sr  // w
+			};
+			std::cout << "quaternion: " << out << " original: " << e << std::endl;
+			return out;
 		}
 
 
@@ -248,6 +306,12 @@ public:
 				w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2 // w
 			);
 		}
+
+		friend std::ostream& operator<<(std::ostream& os, const vec4& v) {
+			os << "( x:" << v.x << ", y:" << v.y << ", z:" << v.z << ", w:" << v.w << ")";
+			return os;
+		}
+
 	};
 	struct mat4 {
 		float m[4][4];
@@ -373,21 +437,24 @@ public:
 			float y = q.y;
 			float z = q.z;
 
-			result.m[0][0] = 1.0f - 2.0f * y * y - 2.0f * z * z;
-			result.m[0][1] = 2.0f * x * y - 2.0f * z * w;
-			result.m[0][2] = 2.0f * x * z + 2.0f * y * w;
+			result.m[0][0] = 1.0f - 2.0f * (y * y + z * z);
+			result.m[1][0] = 2.0f * (x * y + z * w);
+			result.m[2][0] = 2.0f * (x * z - y * w);
+			result.m[3][0] = 0.0f;
+
+			result.m[0][1] = 2.0f * (x * y - z * w);
+			result.m[1][1] = 1.0f - 2.0f * (x * x + z * z);
+			result.m[2][1] = 2.0f * (y * z + x * w);
+			result.m[3][1] = 0.0f;
+
+			result.m[0][2] = 2.0f * (x * z + y * w);
+			result.m[1][2] = 2.0f * (y * z - x * w);
+			result.m[2][2] = 1.0f - 2.0f * (x * x + y * y);
+			result.m[3][2] = 0.0f;
+
 			result.m[0][3] = 0.0f;
-
-			result.m[1][0] = 2.0f * x * y + 2.0f * z * w;
-			result.m[1][1] = 1.0f - 2.0f * x * x - 2.0f * z * z;
-			result.m[1][2] = 2.0f * y * z - 2.0f * x * w;
 			result.m[1][3] = 0.0f;
-
-			result.m[2][0] = 2.0f * x * z - 2.0f * y * w;
-			result.m[2][1] = 2.0f * y * z + 2.0f * x * w;
-			result.m[2][2] = 1.0f - 2.0f * x * x - 2.0f * y * y;
 			result.m[2][3] = 0.0f;
-
 			result.m[3][3] = 1.0f;
 
 			return result;
