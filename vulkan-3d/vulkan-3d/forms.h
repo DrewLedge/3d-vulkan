@@ -171,19 +171,14 @@ public:
 		static vec3 targetToE(const vec3& position, const vec3& target) {
 			vec3 angles;
 			vec3 direction = target - position;
+			direction = direction.normalize();
 
-			float length = std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
 
-			if (length == 0.0f) {
-				return { 0.0f, 0.0f, 0.0f }; // return zeros if length is zero to avoid division by zero
-			}
+			angles.x = std::atan2(direction.x, direction.z) - 1;  // yaw
+			angles.y = std::asin(-direction.y) - 1; // pitch
 
-			direction = direction / length;
-
-			angles.y = std::atan2(direction.x, direction.z);  // yaw
-			angles.x = std::asin(-direction.y); // pitch
-
-			angles.x, angles.y *= (180.0f / PI);
+			angles.x *= (180.0f / PI);
+			angles.y *= (180.0f / PI);
 
 
 			std::cout << "direction: " << direction << " target :" << target << " eulers: " << angles << std::endl;
@@ -214,8 +209,8 @@ public:
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
 		static vec4 eulerToQ(const vec3& e) { // euler to quaternion
-			float pitch = e.x;
-			float yaw = e.y;
+			float pitch = e.y;
+			float yaw = e.x;
 			float roll = e.z;
 
 			// convert to radians from degrees
@@ -233,12 +228,12 @@ public:
 
 			// return the quaternion
 			vec4 out = {
-			   cy * cp * sr - sy * sp * cr, // x
+			   sy * cp * cr - cy * sp * sr, // x
 			   sy * cp * sr + cy * sp * cr, // y
-			   sy * cp * cr - cy * sp * sr, // z
+			   cy * cp * sr - sy * sp * cr, // z
 			   cy * cp * cr + sy * sp * sr  // w
 			};
-			std::cout << "quaternion: " << out << " original: " << e << std::endl;
+			std::cout << "quaternion: " << out << " original: " << vec3(pitch, yaw, roll) << std::endl;
 			return out;
 		}
 
@@ -438,23 +433,23 @@ public:
 			float z = q.z;
 
 			result.m[0][0] = 1.0f - 2.0f * (y * y + z * z);
-			result.m[1][0] = 2.0f * (x * y + z * w);
-			result.m[2][0] = 2.0f * (x * z - y * w);
-			result.m[3][0] = 0.0f;
-
-			result.m[0][1] = 2.0f * (x * y - z * w);
-			result.m[1][1] = 1.0f - 2.0f * (x * x + z * z);
-			result.m[2][1] = 2.0f * (y * z + x * w);
-			result.m[3][1] = 0.0f;
-
-			result.m[0][2] = 2.0f * (x * z + y * w);
-			result.m[1][2] = 2.0f * (y * z - x * w);
-			result.m[2][2] = 1.0f - 2.0f * (x * x + y * y);
-			result.m[3][2] = 0.0f;
-
+			result.m[0][1] = 2.0f * (x * y + z * w);
+			result.m[0][2] = 2.0f * (x * z - y * w);
 			result.m[0][3] = 0.0f;
+
+			result.m[1][0] = 2.0f * (x * y - z * w);
+			result.m[1][1] = 1.0f - 2.0f * (x * x + z * z);
+			result.m[1][2] = 2.0f * (y * z + x * w);
 			result.m[1][3] = 0.0f;
+
+			result.m[2][0] = 2.0f * (x * z + y * w);
+			result.m[2][1] = 2.0f * (y * z - x * w);
+			result.m[2][2] = 1.0f - 2.0f * (x * x + y * y);
 			result.m[2][3] = 0.0f;
+
+			result.m[3][0] = 0.0f;
+			result.m[3][1] = 0.0f;
+			result.m[3][2] = 0.0f;
 			result.m[3][3] = 1.0f;
 
 			return result;
