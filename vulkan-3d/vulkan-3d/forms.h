@@ -168,22 +168,6 @@ public:
 			);
 		}
 
-		static vec3 targetToE(const vec3& position, const vec3& target) {
-			vec3 angles;
-			vec3 direction = target - position;
-			direction = direction.normalize();
-
-
-			angles.x = std::atan2(direction.x, direction.z) - 1;  // yaw
-			angles.y = std::asin(-direction.y) - 1; // pitch
-
-			angles.x *= (180.0f / PI);
-			angles.y *= (180.0f / PI);
-
-
-			std::cout << "direction: " << direction << " target :" << target << " eulers: " << angles << std::endl;
-			return angles;
-		}
 
 
 		static float toDeg(const float radian) {
@@ -213,10 +197,6 @@ public:
 			float yaw = e.x;
 			float roll = e.z;
 
-			// convert to radians from degrees
-			pitch *= (PI / 180.0);
-			yaw *= (PI / 180.0);
-			roll *= (PI / 180.0);
 
 			// calculate trig values 
 			float cy = cos(yaw * 0.5);
@@ -235,8 +215,20 @@ public:
 			};
 			std::cout << "quaternion: " << out << " original: " << vec3(pitch, yaw, roll) << std::endl;
 			return out;
+
 		}
 
+		static vec4 targetToQ(const vec3& position, const vec3& target) {
+			vec3 angles;
+			vec3 f = (target - position).normalize();
+
+			angles.x = std::asin(-f.y);
+			angles.y = std::atan2(f.z, f.x);
+			angles.z = 0.0f;
+
+
+			return eulerToQ(angles);
+		}
 
 
 		bool operator==(const vec4& other) const {

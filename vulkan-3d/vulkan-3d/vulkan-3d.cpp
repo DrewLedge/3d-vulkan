@@ -188,7 +188,7 @@ private:
 		std::string pathObj; // i.e "models/cube.obj"
 
 		forms::vec3 position;  // position of the model
-		forms::vec3 rotation;  // rotation of the model
+		forms::vec4 rotation;  // rotation of the model in quaternions
 		forms::vec3 scale;     // scale of the model
 		float modelMatrix[16];
 		float projectionMatrix[16];
@@ -205,7 +205,7 @@ private:
 			indices(),
 			pathObj(""),
 			position(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
-			rotation(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+			rotation(forms::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 			scale(forms::vec3(0.1f, 0.1f, 0.1f)),
 			isLoaded(false),
 			startObj(true)
@@ -443,7 +443,7 @@ private:
 		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
-	void createObject(std::string path, forms::vec3 scale, forms::vec3 rotation, forms::vec3 pos) {
+	void createObject(std::string path, forms::vec3 scale, forms::vec4 rotation, forms::vec3 pos) {
 		loadScene(scale, pos, rotation, path);
 	}
 	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 t) {
@@ -458,16 +458,16 @@ private:
 		l.innerConeAngle = 30.0f;
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
-		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, forms::vec3::targetToE(pos, t), pos);
+		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, forms::vec4::targetToQ(pos, t), pos);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ 0.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -2.0f, -2.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -921,14 +921,11 @@ private:
 		}
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
-		forms::vec4 mQ = forms::vec4::eulerToQ(m.rotation);
-		r = mQ * r;
+		r = r * m.rotation;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
 		std::cout << "quat: " << std::endl;
 		printMatrix(rotationMatrix);
-		std::cout << "euler: " << std::endl;
-		printMatrix(forms::mat4::rotate(m.rotation));
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
 			forms::mat4 gltfMatrix = forms::mat4::gltfToMat4(node.matrix);
@@ -1025,7 +1022,7 @@ private:
 
 
 
-	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec3 rot, std::string path) {
+	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec4 rot, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
 		uint32_t meshInd = 0;
@@ -2844,7 +2841,7 @@ private:
 		recreateBuffers();
 	}
 
-	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec3 rotation) {
+	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec4 rotation) {
 		model m = objects[object];
 
 		m.scale = scale;
@@ -2870,7 +2867,7 @@ private:
 		for (size_t i = 0; i < m.vertices.size(); i++) {
 			m.vertices[i].matIndex = objSize;
 		}
-		forms::mat4 newModel = forms::mat4::translate(pos) * forms::mat4::rotate(rotation) * forms::mat4::scale(scale);
+		forms::mat4 newModel = forms::mat4::translate(pos) * forms::mat4::rotateQ(rotation) * forms::mat4::scale(scale);
 		forms::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
 		convertMatrix(model, m.modelMatrix);
 
@@ -2881,7 +2878,7 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}
@@ -3406,11 +3403,6 @@ private:
 			std::cout << "--------------------------" << std::endl;
 		}
 	}
-	void debugLights() {
-		for (auto& l : lights) {
-			cloneObject(l.pos, 0, { 0.1f,0.1f,0.1f }, l.target);
-		}
-	}
 
 	void scatterObjects(int count, float radius) {
 		for (int i = 0; i < count; i++) {
@@ -3423,7 +3415,7 @@ private:
 			float y = radius * sin(phi) * sin(theta);
 			float z = radius * cos(phi);
 
-			cloneObject({ x, y, z }, 0, { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f });
+			cloneObject({ x, y, z }, 0, { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		}
 	}
 
