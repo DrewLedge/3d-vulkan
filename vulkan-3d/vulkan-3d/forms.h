@@ -154,6 +154,9 @@ public:
 		float dotProd(const vec3& v) const {
 			return x * v.x + y * v.y + z * v.z;
 		}
+		float length() const {
+			return std::sqrt(x * x + y * y + z * z);
+		}
 
 		vec3 normalize() const {
 			float length = std::sqrt(x * x + y * y + z * z);
@@ -197,41 +200,10 @@ public:
 		vec4() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
-
 		static vec4 targetToQ(const vec3& position, const vec3& target) {
-			vec3 directionVec = (target - position); // direction vector
-			directionVec = directionVec.normalize();
-
-			// initialize to a 0 0 0 1 (xyzw) quaternion
-			vec4 quaternion;
-			vec3 up(0.0f, 1.0f, 0.0f);
-
-			// calculate dot product
-			float dot = directionVec.dotProd(up);
-
-			if (fabs(dot - (-1.0f)) < 0.000001f) {
-				return vec4(0.0f, 1.0f, 0.0f, PI); // vectors are opposite
-			}
-			else if (fabs(dot - 1.0f) < 0.000001f) {
-				return vec4(0.0f, 0.0f, 0.0f, 1.0f); // vectors are the same
-			}
-
-			// calculate rotation axis
-			vec3 axis = up.crossProd(directionVec); // get the axis and normalize it
-
-			// calculate angle
-			float angle = acos(dot);
-
-			// convert angle-axis to quaternion
-			float s = sin(angle / 2);
-			quaternion.x = axis.x * s;
-			quaternion.y = axis.y * s;
-			quaternion.z = axis.z * s;
-			quaternion.w = cos(angle / 2);
-			std::cout << "Angle: " << angle << " Axis: " << axis << std::endl;
-			std::cout << "quaternion: " << quaternion << " from direction vector: " << directionVec << std::endl;
-
-			return quaternion;
+			vec3 up = { 0.0f, 1.0f, 0.0f };
+			mat4 l = mat4::lookAt(target, position, up);
+			return mat4::quatCast(l);
 		}
 
 
@@ -298,6 +270,39 @@ public:
 			);
 		}
 
+		float& operator[](size_t index) {
+			// bounds check for the index
+			if (index > 3) {
+				throw std::out_of_range("Index out of range for vec4");
+			}
+
+			// select the component based on the index
+			switch (index) {
+			case 0: return x;
+			case 1: return y;
+			case 2: return z;
+			case 3: return w;
+			default: throw std::invalid_argument("Invalid index for vec4");
+			}
+		}
+
+		const float& operator[](size_t index) const {
+			// bounds check for the index
+			if (index > 3) {
+				throw std::out_of_range("Index out of range for vec4");
+			}
+
+			// select the component based on the index
+			switch (index) {
+			case 0: return x;
+			case 1: return y;
+			case 2: return z;
+			case 3: return w;
+			default: throw std::invalid_argument("Invalid index for vec4");
+			}
+		}
+
+
 		friend std::ostream& operator<<(std::ostream& os, const vec4& v) {
 			os << "( x:" << v.x << ", y:" << v.y << ", z:" << v.z << ", w:" << v.w << ")";
 			return os;
@@ -361,6 +366,46 @@ public:
 			}
 			*this = temp;
 			return *this;
+		}
+
+		static vec4 quatCast(const mat4& mat) {
+			float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
+			vec4 quaternion;
+
+			if (trace > 0.0f) { // if trace is positive
+				float s = sqrt(trace + 1.0f); // compute scale factor
+				quaternion.w = s * 0.5f; // quaternion scale part
+				s = 0.5f / s;
+
+				// get the quaternion vector parts
+				quaternion.x = (mat.m[2][1] - mat.m[1][2]) * s;
+				quaternion.y = (mat.m[0][2] - mat.m[2][0]) * s;
+				quaternion.z = (mat.m[1][0] - mat.m[0][1]) * s;
+			}
+			else { // if trace is negative
+				int i = 0;
+
+				// find the greatest diagonal element to ensure better stability when computing square root
+				if (mat.m[1][1] > mat.m[0][0]) i = 1;
+				if (mat.m[2][2] > mat.m[i][i]) i = 2;
+				int j = (i + 1) % 3;
+				int k = (i + 2) % 3;
+
+				float s = sqrt(mat.m[i][i] - mat.m[j][j] - mat.m[k][k] + 1.0f);
+				quaternion[i] = s * 0.5f; // quaternion scale part
+				s = 0.5f / s;
+
+				// get the quaternion vector parts
+				quaternion.w = (mat.m[k][j] - mat.m[j][k]) * s;
+				quaternion[j] = (mat.m[j][i] + mat.m[i][j]) * s;
+				quaternion[k] = (mat.m[k][i] + mat.m[i][k]) * s;
+			}
+			// normalize the quaternion
+			float length = sqrt(quaternion.w * quaternion.w + quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z);
+			quaternion /= length;
+
+			// return the calculated quaternion
+			return quaternion;
 		}
 
 
