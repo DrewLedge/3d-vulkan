@@ -157,8 +157,15 @@ public:
 
 		vec3 normalize() const {
 			float length = std::sqrt(x * x + y * y + z * z);
+
+			// check for zero length to avoid division by zero
+			if (length < std::numeric_limits<float>::epsilon()) {
+				return vec3(0.0f, 0.0f, 0.0f);
+			}
+
 			return vec3(x / length, y / length, z / length);
 		}
+
 
 		static vec3 toRads(const vec3& v) {
 			return vec3(
@@ -167,8 +174,6 @@ public:
 				v.z * PI / 180.0f
 			);
 		}
-
-
 
 		static float toDeg(const float radian) {
 			return radian * (180.0f / PI);
@@ -192,42 +197,41 @@ public:
 		vec4() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
 
-		static vec4 eulerToQ(const vec3& e) { // euler to quaternion
-			float pitch = e.y;
-			float yaw = e.x;
-			float roll = e.z;
-
-
-			// calculate trig values 
-			float cy = cos(yaw * 0.5);
-			float sy = sin(yaw * 0.5);
-			float cp = cos(pitch * 0.5);
-			float sp = sin(pitch * 0.5);
-			float cr = cos(roll * 0.5);
-			float sr = sin(roll * 0.5);
-
-			// return the quaternion
-			vec4 out = {
-			   sy * cp * cr - cy * sp * sr, // x
-			   sy * cp * sr + cy * sp * cr, // y
-			   cy * cp * sr - sy * sp * cr, // z
-			   cy * cp * cr + sy * sp * sr  // w
-			};
-			std::cout << "quaternion: " << out << " original: " << vec3(pitch, yaw, roll) << std::endl;
-			return out;
-
-		}
 
 		static vec4 targetToQ(const vec3& position, const vec3& target) {
-			vec3 angles;
-			vec3 f = (target - position).normalize();
+			vec3 directionVec = (target - position); // direction vector
+			directionVec = directionVec.normalize();
 
-			angles.x = std::asin(-f.y);
-			angles.y = std::atan2(f.z, f.x);
-			angles.z = 0.0f;
+			// initialize to a 0 0 0 1 (xyzw) quaternion
+			vec4 quaternion;
+			vec3 up(0.0f, 1.0f, 0.0f);
 
+			// calculate dot product
+			float dot = directionVec.dotProd(up);
 
-			return eulerToQ(angles);
+			if (fabs(dot - (-1.0f)) < 0.000001f) {
+				return vec4(0.0f, 1.0f, 0.0f, PI); // vectors are opposite
+			}
+			else if (fabs(dot - 1.0f) < 0.000001f) {
+				return vec4(0.0f, 0.0f, 0.0f, 1.0f); // vectors are the same
+			}
+
+			// calculate rotation axis
+			vec3 axis = up.crossProd(directionVec); // get the axis and normalize it
+
+			// calculate angle
+			float angle = acos(dot);
+
+			// convert angle-axis to quaternion
+			float s = sin(angle / 2);
+			quaternion.x = axis.x * s;
+			quaternion.y = axis.y * s;
+			quaternion.z = axis.z * s;
+			quaternion.w = cos(angle / 2);
+			std::cout << "Angle: " << angle << " Axis: " << axis << std::endl;
+			std::cout << "quaternion: " << quaternion << " from direction vector: " << directionVec << std::endl;
+
+			return quaternion;
 		}
 
 
