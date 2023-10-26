@@ -387,6 +387,7 @@ private:
 	std::vector<VkFramebuffer> swapChainFramebuffers;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
+	VkSemaphore shadowSemaphore;
 
 	VkBuffer vertBuffer;
 	VkDeviceMemory vertBufferMem;
@@ -458,7 +459,6 @@ private:
 		l.innerConeAngle = 30.0f;
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
-		createObject("models/flashlight.glb", { 3.6f, 3.6f, 3.6f }, forms::vec4::targetToQ(pos, t), pos);
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
@@ -467,7 +467,8 @@ private:
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -2.0f, -2.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -2.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 	}
 
 	void createInstance() {
@@ -3105,9 +3106,14 @@ private:
 		if (resultRenderFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render finished semaphore!");
 		}
+		VkResult resultShadowFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &shadowSemaphore);
+		if (resultShadowFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow finished semaphore!");
+		}
 	}
 
 	void recreateSwap() {
+		std::cout << "Recreating swap chain..." << std::endl;
 		int width = 0, height = 0;
 		while (width == 0 || height == 0) {
 			glfwGetFramebufferSize(window, &width, &height);
@@ -3172,36 +3178,33 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
 
-		// two semaphores for synchronization
-		VkSemaphore shadowSemaphore;
-		VkSemaphoreCreateInfo semaphoreInfo = {};
-		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-		if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, &shadowSemaphore) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create semaphore!");
-		}
-
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
 		VkSemaphore signalSemaphores[] = { shadowSemaphore }; // signal shadowSemaphore when shadow command buffer finishes execution
+
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
 		VkSubmitInfo submitInfo{};
 
-		// submit shadow command buffer
+		// submit info struct for the shadow and main command buffers
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = waitSemaphores;
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
 		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
 		submitInfo.signalSemaphoreCount = 1;
+
+		// first time around wait for imageAvailableSemaphore and signal shadowSemaphore
+		submitInfo.pWaitSemaphores = waitSemaphores;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit shadow command buffer!");
 		}
 
-		waitSemaphores[0] = shadowSemaphore;  // wait until shadow command buffer is done
-		signalSemaphores[0] = renderFinishedSemaphore; // signal renderFinishedSemaphore when main command buffer finishes execution
-		submitInfo.pCommandBuffers = &commandBuffers[imageIndex]; //only thing that changes from shadow command buffer
+		// second time around wait for shadowSemaphore and signal renderFinishedSemaphore
+		waitSemaphores[0] = shadowSemaphore;
+		signalSemaphores[0] = renderFinishedSemaphore;
+		submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+		submitInfo.commandBufferCount = 1;
 
 		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit draw command buffer!");
@@ -3228,7 +3231,6 @@ private:
 		}
 
 		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
-		vkDestroySemaphore(device, shadowSemaphore, nullptr);
 	}
 
 
@@ -3423,6 +3425,7 @@ private:
 		// destroy resources in reverse order of creation
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
+		vkDestroySemaphore(device, shadowSemaphore, nullptr);
 		for (size_t i = 0; i < 3; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
