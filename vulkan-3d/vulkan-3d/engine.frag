@@ -138,8 +138,14 @@ void main() {
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
         ambient = 0.1 * lightColor; // low influence
 
-        
+        if (lights[i].intensity == 0.0) { // if the light is off, continue to next iteration
+			continue;
+		}
+
         // spotlight cutoff
+        if (theta <= cos(outerConeRads)) { // if the fragment is not in the cone, continue to next iteration
+            continue;
+        }
         if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
             vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
             shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
