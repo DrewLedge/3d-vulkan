@@ -114,12 +114,15 @@ void main() {
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
 
-    float shadowFactor = 0.0;
     vec3 ambient = vec3(0.0);
+    vec3 accumulated = vec3(0.0);
 
-    vec3 brdf;
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
+        if (lights[i].intensity == 0.0) { // if the light is off, continue to next iteration
+			continue;
+		}
+
         mat4 lightView = lightMatricies[i].viewMatrix;
         mat4 lightProj = lightMatricies[i].projectionMatrix;
 
@@ -136,11 +139,7 @@ void main() {
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
         float theta = dot(spotDirection, fragToLightDir);
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-        ambient = 0.1 * lightColor; // low influence
-
-        if (lights[i].intensity == 0.0) { // if the light is off, continue to next iteration
-			continue;
-		}
+        ambient = 0.0005 * lightColor; // low influence
 
         // spotlight cutoff
         if (theta <= cos(outerConeRads)) { // if the fragment is not in the cone, continue to next iteration
@@ -148,7 +147,7 @@ void main() {
         }
         if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
             vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
-            shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+            float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
             float intensity;
             if (theta > cos(innerConeRads)) {
@@ -164,14 +163,13 @@ void main() {
             // cook-torrance specular lighting WIP
             float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
             float metallic = metallicRoughness.b;  // metallic is stored in the blue channel for gltf
-            brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
-            brdf *= attenuation;
+            vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
+            accumulated += (lightColor * brdf * attenuation * shadowFactor) + ambient;
         }
     }
     
     // final color calculation
-    vec3 result = (ambient + shadowFactor * brdf);
-    outColor = vec4(result, 1.0);
+    outColor = vec4(accumulated, 1.0);
     //outColor = vec4(normal, 1.0);
 
 }
