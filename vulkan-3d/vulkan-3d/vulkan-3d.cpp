@@ -1148,7 +1148,7 @@ private:
 							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
 						}
 						else {
-							vertex.tangent = { 0.0f, 0.0f, 0.0f, 0.0f };
+							vertex.tangent = { 1.0f, 0.0f, 0.0f, 1.0f };
 						}
 						vertex.matIndex = sceneInd.modInd;  // set the material index
 

@@ -20,6 +20,8 @@ layout(location = 3) flat out uint outModelIndex;
 layout(location = 4) out vec3 outFragPos;
 layout(location = 5) out vec3 outViewDirection;
 layout(location = 6) out mat3 TBN;
+layout(location = 20) out vec3 test;
+
 
 
 struct matrixUBO {
@@ -58,13 +60,12 @@ void main() {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
 
-    vec3 normal = normalize(vec3(model * vec4(inNormal, 0.0)));
-    vec3 tangent = normalize(vec3(model * vec4(inTangent.xyz, 0.0)));
-    tangent = normalize(tangent - dot(tangent, normal) * normal);
-
-    vec3 bitangent = normalize(cross(normal, tangent));
-    bitangent *= inTangent.w; // w is the handedness of the tangent basis
+    vec3 normal = normalize(mat3(model) * inNormal);
+    vec3 tangent = normalize(mat3(model) * inTangent.xyz);
+    vec3 bitangent = cross(normal, tangent) * inTangent.w;  // handedness is in inTangent.w
     TBN = mat3(tangent, bitangent, normal);
+    test = bitangent * 0.5 + 0.5;
+
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space

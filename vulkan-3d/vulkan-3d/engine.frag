@@ -41,6 +41,7 @@ layout(location = 3) flat in uint inModelIndex;
 layout(location = 4) in vec3 inFragPos;
 layout(location = 5) in vec3 inViewDir;
 layout(location = 6) in mat3 TBN;
+layout(location = 20) in vec3 test;
 
 
 layout(location = 0) out vec4 outColor; 
@@ -168,8 +169,8 @@ void main() {
     }
     
     // final color calculation
-    //outColor = vec4(accumulated, 1.0);
-    outColor = vec4(normal, 1.0);
+    outColor = vec4(accumulated, 1.0);
+    //outColor = vec4(normal* 0.5 + 0.5, 1.0);
 
 }
 
