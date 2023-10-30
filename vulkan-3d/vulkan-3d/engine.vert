@@ -57,10 +57,14 @@ void main() {
     if (modelIndex <= MAX_MODELS) {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
-    vec3 fragNormal = mat3(model) * inNormal;
+
+    vec3 normal = normalize(vec3(model * vec4(inNormal, 0.0)));
     vec3 tangent = normalize(vec3(model * vec4(inTangent.xyz, 0.0)));
-    vec3 bitangent = cross(fragNormal, tangent) * inTangent.w;  // handedness is in inTangent.w
-    TBN = mat3(tangent, bitangent, fragNormal);
+    tangent = normalize(tangent - dot(tangent, normal) * normal);
+
+    vec3 bitangent = normalize(cross(normal, tangent));
+    bitangent *= inTangent.w; // w is the handedness of the tangent basis
+    TBN = mat3(tangent, bitangent, normal);
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space

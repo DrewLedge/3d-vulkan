@@ -105,9 +105,8 @@ void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
 
-    vec3 normalColor = texture(texSamplers[inTexIndex + 2], inTexCoord).xyz;
-    vec3 normalTangentSpace = normalize(normalColor);
-    vec3 normal = normalize(TBN * normalTangentSpace);
+    vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb);
+    normal = normalize(TBN * normal);
 
     vec3 color = albedo.rgb;
 
@@ -169,8 +168,8 @@ void main() {
     }
     
     // final color calculation
-    outColor = vec4(accumulated, 1.0);
-    //outColor = vec4(normal, 1.0);
+    //outColor = vec4(accumulated, 1.0);
+    outColor = vec4(normal, 1.0);
 
 }
 
