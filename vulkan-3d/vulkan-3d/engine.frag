@@ -106,8 +106,8 @@ void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
 
-    vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb);
-    normal = normalize(TBN * normal);
+    vec3 normal = texture(texSamplers[inTexIndex + 2], inTexCoord).rgb;
+    normal = TBN * (2.0 * normal - 1.0);
 
     vec3 color = albedo.rgb;
 
@@ -132,7 +132,7 @@ void main() {
         float linAttenuation = lights[i].linearAttenuation;
         float quadAttenuation = lights[i].quadraticAttenuation;
 
-        // convert light struct to vec3s so I can use them in calculations
+        // convert light struct to vec3s to use them in calculations
         vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z); // in world space
         vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
         vec3 spotDirection = normalize(lightPos - targetVec);
@@ -169,8 +169,8 @@ void main() {
     }
     
     // final color calculation
-    outColor = vec4(accumulated, 1.0);
-    //outColor = vec4(normal* 0.5 + 0.5, 1.0);
+    //outColor = vec4(accumulated, 1.0);
+    outColor = vec4( normal * 0.5 + 0.5, 1.0 );
 
 }
 

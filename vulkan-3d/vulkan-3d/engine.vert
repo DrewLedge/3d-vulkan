@@ -60,11 +60,12 @@ void main() {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
 
-    vec3 normal = normalize(mat3(model) * inNormal);
-    vec3 tangent = normalize(mat3(model) * inTangent.xyz);
-    vec3 bitangent = cross(normal, tangent) * inTangent.w;  // handedness is in inTangent.w
+    mat3 normMat = transpose(inverse(mat3(model)));
+    vec3 normal = normalize(normMat * inNormal);
+    vec3 tangent = normalize(normMat * inTangent.xyz);
+    vec3 bitangent = normalize(cross(normal, tangent) * inTangent.w);  // handedness is in inTangent.w
     TBN = mat3(tangent, bitangent, normal);
-    test = bitangent * 0.5 + 0.5;
+    test = normal;
 
 
     //for lighting

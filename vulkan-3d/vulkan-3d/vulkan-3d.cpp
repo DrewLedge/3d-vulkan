@@ -1960,7 +1960,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
 		else if (type == "norm") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for normal maps (signed format)
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "base") {
@@ -2082,7 +2082,7 @@ private:
 			imageInf.arrayLayers = 1;
 
 			if (type == "norm") {
-				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM; //signed format for the normal maps (-1 to 1)
+				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			}
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
