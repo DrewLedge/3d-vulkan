@@ -1122,6 +1122,53 @@ private:
 						std::cerr << "WARNING: Tangent data not found for mesh: " << path << std::endl;
 						tangentFound = false;
 					}
+					std::vector<forms::vec4> tangents(indexAccessor.count, forms::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+					for (size_t i = 0; i < indexAccessor.count; i += 3) {
+						uint32_t i1 = static_cast<const uint32_t*>(rawIndices)[i];
+						uint32_t i2 = static_cast<const uint32_t*>(rawIndices)[i + 1];
+						uint32_t i3 = static_cast<const uint32_t*>(rawIndices)[i + 2];
+
+						forms::vec3 pos1 = { positionData[3 * i1], positionData[3 * i1 + 1], positionData[3 * i1 + 2] };
+						forms::vec3 pos2 = { positionData[3 * i2], positionData[3 * i2 + 1], positionData[3 * i2 + 2] };
+						forms::vec3 pos3 = { positionData[3 * i3], positionData[3 * i3 + 1], positionData[3 * i3 + 2] };
+
+						forms::vec2 tex1 = { texCoordData[2 * i1], 1.0f - texCoordData[2 * i1 + 1] };
+						forms::vec2 tex2 = { texCoordData[2 * i2], 1.0f - texCoordData[2 * i2 + 1] };
+						forms::vec2 tex3 = { texCoordData[2 * i3], 1.0f - texCoordData[2 * i3 + 1] };
+
+						forms::vec3 edge1 = pos2 - pos1;
+						forms::vec3 edge2 = pos3 - pos1;
+						forms::vec2 deltaUV1 = tex2 - tex1;
+						forms::vec2 deltaUV2 = tex3 - tex1;
+
+						float denominator = (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
+						if (std::abs(denominator) < 1e-6) { // if the denominator is too small, skip this iteration to prevent a divide by zero
+							continue;
+						}
+						float f = 1.0f / denominator;
+						forms::vec3 tangent = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * f;
+
+						tangents[i1].x += tangent.x;
+						tangents[i1].y += tangent.y;
+						tangents[i1].z += tangent.z;
+
+						tangents[i2].x += tangent.x;
+						tangents[i2].y += tangent.y;
+						tangents[i2].z += tangent.z;
+
+						tangents[i3].x += tangent.x;
+						tangents[i3].y += tangent.y;
+						tangents[i3].z += tangent.z;
+
+
+					}
+					for (forms::vec4& tangent : tangents) {
+						// normalize tangent.xyz
+						forms::vec3 normalizedTangent = tangent.xyz().normalize();
+						tangent.x = normalizedTangent.x;
+						tangent.y = normalizedTangent.y;
+						tangent.z = normalizedTangent.z;
+					}
 
 					for (size_t i = 0; i < indexAccessor.count; ++i) {
 						uint32_t index;  // use the largest type to ensure no overflow.
@@ -1144,11 +1191,17 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+						forms::vec3 t = tangents[index].xyz();
+						tangents[index].w = (vertex.normal.crossProd(t)).dotProd(tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
+						vertex.tangent = tangents[index];
+
 						if (tangentFound) {
-							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+							vertex.tangent = tangents[index];
+							//vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
 						}
 						else {
-							vertex.tangent = { 1.0f, 0.0f, 0.0f, 1.0f };
+							vertex.tangent = tangents[index];
+
 						}
 						vertex.matIndex = sceneInd.modInd;  // set the material index
 

@@ -193,12 +193,33 @@ public:
 				std::abs(y - other.y) < epsilon;
 		}
 		vec2(float x, float y) : x(x), y(y) {}
+		vec2 operator+(const vec2& other) const {
+			return vec2(x + other.x, y + other.y);
+		}
+
+		vec2 operator-(const vec2& other) const {
+			return vec2(x - other.x, y - other.y);
+		}
+
+		vec2 operator*(float scalar) const {
+			return vec2(x * scalar, y * scalar);
+		}
+
+		vec2 operator*(const vec2& other) const {
+			return vec2(x * other.x, y * other.y);
+		}
+		vec2 crossProd(const vec2& other) const {
+			return vec2(x * other.y, y * other.x);
+		}
 	};
 	struct vec4 {
 		float x, y, z, w;
 
 		vec4() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+
+		vec2 xy() const { return vec2(x, y); }
+		vec3 xyz() const { return vec3(x, y, z); }
 
 		static vec4 targetToQ(const vec3& position, const vec3& target) {
 			vec3 up = { 0.0f, 1.0f, 0.0f };
