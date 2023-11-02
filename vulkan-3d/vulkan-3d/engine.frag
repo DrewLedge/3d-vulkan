@@ -105,7 +105,11 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
 
 void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
+
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
+    float roughness = metallicRoughness.g;
+    float metallic = metallicRoughness.b;
+
 
     vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0);
     normal.z *= -1.0;
@@ -141,7 +145,7 @@ void main() {
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
         float theta = dot(spotDirection, fragToLightDir);
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-        ambient = 0.0009 * lightColor; // low influence
+        ambient = 0.0007 * lightColor; // low influence
 
         // spotlight cutoff
         if (theta <= cos(outerConeRads)) { // if the fragment is not in the cone, continue to next iteration
@@ -162,9 +166,7 @@ void main() {
             float lightDistance = length(lightPos - inFragPos);
             float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
 
-            // cook-torrance specular lighting WIP
-            float roughness = metallicRoughness.g; // roughness is stored in the green channel for gltf
-            float metallic = metallicRoughness.b;  // metallic is stored in the blue channel for gltf
+            // cook-torrance specular lighting
             vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
             accumulated += (lightColor * brdf * attenuation * shadowFactor) + ambient;
         }
@@ -173,6 +175,7 @@ void main() {
     // final color calculation
     outColor = vec4(accumulated, 1.0);
     //outColor = vec4(normal * 0.5 + 0.5, 1.0);
+    //outColor = vec4(roughness,  metallic, 0.0, 1.0);
 
 }
 
