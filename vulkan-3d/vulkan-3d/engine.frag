@@ -108,7 +108,7 @@ void main() {
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
 
     vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0);
-    normal.z *= (handedness * -1);
+    normal.z *= -1.0;
     normal = normalize(TBN * normal);
 
     vec3 color = albedo.rgb;
@@ -141,7 +141,7 @@ void main() {
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
         float theta = dot(spotDirection, fragToLightDir);
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-        ambient = 0.0005 * lightColor; // low influence
+        ambient = 0.0009 * lightColor; // low influence
 
         // spotlight cutoff
         if (theta <= cos(outerConeRads)) { // if the fragment is not in the cone, continue to next iteration

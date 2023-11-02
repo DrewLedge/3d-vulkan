@@ -61,10 +61,12 @@ void main() {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
     handedness = inTangent.w;
+    
     mat3 normMat = transpose(inverse(mat3(model)));
     vec3 N = normalize(normMat * inNormal);
     vec3 T = normalize(normMat * inTangent.xyz);
-    vec3 B = normalize(cross(N, T));  // handedness is in inTangent.w
+    T = normalize(T - dot(T, N) * N); // re orthogonalize tangent
+    vec3 B = normalize(cross(N, T) * handedness);  
     TBN = mat3(T, B, N);
     test = N;
 

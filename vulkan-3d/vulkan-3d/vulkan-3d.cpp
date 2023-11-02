@@ -2961,7 +2961,7 @@ private:
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		std::array<VkClearValue, 2> clearValues = {
-		VkClearValue{0.68f, 0.85f, 0.90f, 1.0f},  // clear color: light blue
+		VkClearValue{0.18f, 0.3f, 0.30f, 1.0f},  // clear color: light blue
 		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
 		};
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
