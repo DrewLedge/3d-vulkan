@@ -41,6 +41,7 @@ layout(location = 3) flat in uint inModelIndex;
 layout(location = 4) in vec3 inFragPos;
 layout(location = 5) in vec3 inViewDir;
 layout(location = 6) in mat3 TBN;
+layout(location = 9) in float handedness;
 layout(location = 20) in vec3 test;
 
 
@@ -106,8 +107,9 @@ void main() {
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
 
-    vec3 normal = texture(texSamplers[inTexIndex + 2], inTexCoord).rgb;
-    normal = TBN * (2.0 * normal - 1.0);
+    vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0);
+    normal.z *= (handedness * -1);
+    normal = normalize(TBN * normal);
 
     vec3 color = albedo.rgb;
 
@@ -169,8 +171,8 @@ void main() {
     }
     
     // final color calculation
-    //outColor = vec4(accumulated, 1.0);
-    outColor = vec4( normal * 0.5 + 0.5, 1.0 );
+    outColor = vec4(accumulated, 1.0);
+    //outColor = vec4(normal * 0.5 + 0.5, 1.0);
 
 }
 

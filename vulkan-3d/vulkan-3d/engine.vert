@@ -20,6 +20,7 @@ layout(location = 3) flat out uint outModelIndex;
 layout(location = 4) out vec3 outFragPos;
 layout(location = 5) out vec3 outViewDirection;
 layout(location = 6) out mat3 TBN;
+layout(location = 9) out float handedness;
 layout(location = 20) out vec3 test;
 
 
@@ -59,13 +60,13 @@ void main() {
     if (modelIndex <= MAX_MODELS) {
         outModelIndex = modelIndex; // pass the model/material index to the fragment shader
     }
-
+    handedness = inTangent.w;
     mat3 normMat = transpose(inverse(mat3(model)));
-    vec3 normal = normalize(normMat * inNormal);
-    vec3 tangent = normalize(normMat * inTangent.xyz);
-    vec3 bitangent = normalize(cross(normal, tangent) * inTangent.w);  // handedness is in inTangent.w
-    TBN = mat3(tangent, bitangent, normal);
-    test = normal;
+    vec3 N = normalize(normMat * inNormal);
+    vec3 T = normalize(normMat * inTangent.xyz);
+    vec3 B = normalize(cross(N, T));  // handedness is in inTangent.w
+    TBN = mat3(T, B, N);
+    test = N;
 
 
     //for lighting

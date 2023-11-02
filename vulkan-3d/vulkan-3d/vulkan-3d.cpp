@@ -1191,13 +1191,14 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+
+						// get handedness of the tangent
 						forms::vec3 t = tangents[index].xyz();
 						tangents[index].w = (vertex.normal.crossProd(t)).dotProd(tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
-						vertex.tangent = tangents[index];
 
 						if (tangentFound) {
-							vertex.tangent = tangents[index];
-							//vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+							//std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << std::endl;
 						}
 						else {
 							vertex.tangent = tangents[index];
