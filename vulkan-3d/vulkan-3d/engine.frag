@@ -87,7 +87,11 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
     float NdotH = max(dot(N, H), 0.0);
     float NdotV = max(dot(N, V), 0.0);
     float VdotH = max(dot(V, H), 0.0);
-    float G = min(1.0, min((2.0 * NdotH * NdotV) / VdotH, (2.0 * NdotH * dot(N, L)) / VdotH));
+
+    float G1V = 2.0 * NdotV / (NdotV + sqrt(alpha * alpha + (1.0 - alpha * alpha) * (NdotV * NdotV)));
+    float G1L = 2.0 * dot(N, L) / (dot(N, L) + sqrt(alpha * alpha + (1.0 - alpha * alpha) * (dot(N, L) * dot(N, L))));
+    float G = G1V * G1L;
+
     
     // compute the roughness term (GGX)
     float D = alpha * alpha / (PI * pow(NdotH * NdotH * (alpha * alpha - 1.0) + 1.0, 2.0));
@@ -95,10 +99,12 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
     // compute the Fresnel term (schlick approximation)
     vec3 F0 = mix(vec3(0.04), albedo, metallic);  // reflectance at normal incidence
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+
+    // specular and diffuse terms
     vec3 specular = (D * G * F) / (4.0 * NdotV * dot(N, L));
     vec3 diffuse = (1.0 - metallic) * albedo * (1.0 / PI);
     
-    return (diffuse + specular);
+    return (diffuse + specular); // output final color
 }
 
 
