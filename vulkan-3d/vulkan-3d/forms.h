@@ -187,6 +187,10 @@ public:
 	};
 	struct vec2 {
 		float x, y;
+		friend std::ostream& operator<<(std::ostream& os, const vec2& v) {
+			os << "(" << v.x << ", " << v.y << ")";
+			return os;
+		}
 		bool operator==(const forms::vec2& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&

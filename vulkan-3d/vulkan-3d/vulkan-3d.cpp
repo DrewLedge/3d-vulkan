@@ -336,8 +336,8 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 
-	uint32_t texWidth = 512;
-	uint32_t texHeight = 512;
+	uint32_t texWidth = 1024;
+	uint32_t texHeight = 1024;
 	unsigned char* imageData;
 
 	VkImage depthImage;
@@ -867,6 +867,7 @@ private:
 	const float* getAccessorData(const auto& model, const auto& attributes, const std::string& attributeName) {
 		auto it = getAttributeIt(attributeName, attributes); // get the attribute iterator
 		const auto& accessor = model.accessors[it->second]; // get the accessor
+
 		const auto& bufferView = model.bufferViews[accessor.bufferView]; // get the buffer view from the accessor
 		const auto& buffer = model.buffers[bufferView.buffer]; // from the buffer view, get the buffer
 
@@ -1189,7 +1190,7 @@ private:
 
 						Vertex vertex;
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
-						vertex.tex = { texCoordData[2 * index], 1.0f - texCoordData[2 * index + 1] };
+						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
 
 						// get handedness of the tangent

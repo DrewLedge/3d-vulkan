@@ -117,8 +117,7 @@ void main() {
     float metallic = metallicRoughness.b;
 
 
-    vec3 normal = normalize(texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0);
-    normal.z *= -1.0;
+    vec3 normal = (texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
     normal = normalize(TBN * normal);
 
     vec3 color = albedo.rgb;
@@ -180,7 +179,6 @@ void main() {
     
     // final color calculation
     outColor = vec4(accumulated, 1.0);
-    //outColor = vec4(normal * 0.5 + 0.5, 1.0);
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
 
 }
