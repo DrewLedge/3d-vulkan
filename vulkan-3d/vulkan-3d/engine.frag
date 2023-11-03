@@ -77,7 +77,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
     return shadow;
 }
 
-vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float roughness) {
+vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
     float alpha = roughness * roughness;
     
     // compute halfway vector
@@ -97,12 +97,12 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec3 albedo, float metallic, float rou
     float D = alpha * alpha / (PI * pow(NdotH * NdotH * (alpha * alpha - 1.0) + 1.0, 2.0));
     
     // compute the Fresnel term (schlick approximation)
-    vec3 F0 = mix(vec3(0.04), albedo, metallic);  // reflectance at normal incidence
+    vec3 F0 = mix(vec3(0.04), albedo.rgb, metallic);  // reflectance at normal incidence
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 
     // specular and diffuse terms
     vec3 specular = (D * G * F) / (4.0 * NdotV * dot(N, L));
-    vec3 diffuse = (1.0 - metallic) * albedo * (1.0 / PI);
+    vec3 diffuse = (1.0 - metallic) * albedo.rgb * (1.0 / PI);
     
     return (diffuse + specular); // output final color
 }
@@ -120,7 +120,7 @@ void main() {
     vec3 normal = (texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
     normal = normalize(TBN * normal);
 
-    vec3 color = albedo.rgb;
+    vec4 color = albedo * fragColor; 
 
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
@@ -178,7 +178,7 @@ void main() {
     }
     
     // final color calculation
-    outColor = vec4(accumulated, 1.0);
+    outColor = vec4(accumulated, color.a);
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
 
 }

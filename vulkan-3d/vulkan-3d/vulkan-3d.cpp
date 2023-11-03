@@ -926,8 +926,6 @@ private:
 		r = r * m.rotation;
 		forms::mat4 translationMatrix = forms::mat4::translate(t);
 		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
-		std::cout << "quat: " << std::endl;
-		printMatrix(rotationMatrix);
 		forms::mat4 scaleMatrix = forms::mat4::scale(s);
 		if (node.matrix.size() == 16) {
 			forms::mat4 gltfMatrix = forms::mat4::gltfToMat4(node.matrix);
@@ -1108,11 +1106,17 @@ private:
 					const auto& normalAccessor = gltfModel.accessors[normalIt->second];
 					const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
 
+					// colors
+					auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
+					const auto& colorAccessor = gltfModel.accessors[colorIt->second];
+					const float* colorData = getAccessorData(gltfModel, primitive.attributes, "COLOR_0");
+
 					// indices
 					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
 					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
 					const float* tangentData = nullptr;
 
+					// tangents
 					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
 					if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
 						const auto& tangentAccessor = gltfModel.accessors[tangentIt->second];
@@ -1133,9 +1137,9 @@ private:
 						forms::vec3 pos2 = { positionData[3 * i2], positionData[3 * i2 + 1], positionData[3 * i2 + 2] };
 						forms::vec3 pos3 = { positionData[3 * i3], positionData[3 * i3 + 1], positionData[3 * i3 + 2] };
 
-						forms::vec2 tex1 = { texCoordData[2 * i1], 1.0f - texCoordData[2 * i1 + 1] };
-						forms::vec2 tex2 = { texCoordData[2 * i2], 1.0f - texCoordData[2 * i2 + 1] };
-						forms::vec2 tex3 = { texCoordData[2 * i3], 1.0f - texCoordData[2 * i3 + 1] };
+						forms::vec2 tex1 = { texCoordData[2 * i1], texCoordData[2 * i1 + 1] };
+						forms::vec2 tex2 = { texCoordData[2 * i2], texCoordData[2 * i2 + 1] };
+						forms::vec2 tex3 = { texCoordData[2 * i3], texCoordData[2 * i3 + 1] };
 
 						forms::vec3 edge1 = pos2 - pos1;
 						forms::vec3 edge2 = pos3 - pos1;
@@ -1192,6 +1196,7 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+						vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
 
 						// get handedness of the tangent
 						forms::vec3 t = tangents[index].xyz();
@@ -3535,11 +3540,10 @@ private:
 	// 17. convert to 3d  (done)
 	// 18. mip mapping and optimizations (done)
 	// 19. lighting (done)
-	// 20. shadows
-	// 21. transfer all indexing code to push constants
-	// 22. omnidirectional lighting using cubemaps
-	// 23. skybox
-	// 24. physcics
+	// 20. shadows (done)
+	// 21. omnidirectional lighting using cubemaps
+	// 22. skybox
+	// 23. physcics
 };
 int main() {
 	Engine app;
