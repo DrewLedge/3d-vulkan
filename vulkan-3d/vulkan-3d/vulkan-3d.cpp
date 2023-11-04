@@ -322,8 +322,43 @@ private:
 	};
 	struct sBox {
 		Texture tex;
-		VkFramebuffer frameBuffer;
+		VkPipelineLayout pipelineLayout;
+		VkPipeline pipeline;
+		bufData bufferData; // buffer data for the skybox (vert offsets, etc)
+		VkBuffer vertBuffer;
+		VkDeviceMemory vertBufferMem;
+		VkBuffer indBuffer;
+		VkDeviceMemory indBufferMem;
+		forms::vec3 vertices[8];
+		uint32_t indices[36];
+
+		sBox() {
+			// predefined indices for skybox
+			uint32_t predefinedIndices[36] = {
+				0, 1, 2, 2, 3, 0,
+				4, 5, 6, 6, 7, 4,
+				4, 5, 1, 1, 0, 4,
+				3, 2, 6, 6, 7, 3,
+				4, 0, 3, 3, 7, 4,
+				1, 5, 6, 6, 2, 1
+			};
+			std::copy(std::begin(predefinedIndices), std::end(predefinedIndices), indices);
+
+			// predefined vertices for skybox
+			forms::vec3 predefinedVertices[8] = {
+				{-1.0f,  1.0f, -1.0f},
+				{-1.0f, -1.0f, -1.0f},
+				{ 1.0f, -1.0f, -1.0f},
+				{ 1.0f,  1.0f, -1.0f},
+				{-1.0f,  1.0f,  1.0f},
+				{-1.0f, -1.0f,  1.0f},
+				{ 1.0f, -1.0f,  1.0f},
+				{ 1.0f,  1.0f,  1.0f}
+			};
+			std::copy(std::begin(predefinedVertices), std::end(predefinedVertices), vertices);
+		}
 	};
+
 
 	std::vector<bufData> bufferData;
 	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
@@ -391,14 +426,11 @@ private:
 	VkPipelineLayout shadowMapPipelineLayout;
 	VkPipeline shadowMapPipeline;
 
-	VkPipelineLayout skyboxPipelineLayout;
-	VkPipeline skyboxPipeline;
 
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
 	VkRenderPass renderPass;
 	VkRenderPass shadowMapRenderPass;
-	VkRenderPass skyboxRenderPass;
 	VkCommandPool commandPool;
 
 	std::vector<VkCommandBuffer> commandBuffers;
@@ -1046,6 +1078,10 @@ private:
 		createTexturedHDR(skybox.tex);
 		createTextureImgView(skybox.tex, false, "cube");
 		createTS(skybox.tex, false, "cube");
+		skybox.bufferData.vertexOffset = 0;
+		skybox.bufferData.vertexCount = 8;
+		skybox.bufferData.indexOffset = 0;
+		skybox.bufferData.indexCount = 36;
 	}
 
 	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec4 rot, std::string path) {
@@ -2670,9 +2706,9 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1; //number of subpasses
 		renderPassInf.pSubpasses = &subpass; //array of subpasses
-		VkResult RenderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
-		if (RenderPassResult != VK_SUCCESS) {
-			throw std::runtime_error("failed to create render pass! " + resultStr(RenderPassResult));
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
+		if (renderPassResult != VK_SUCCESS) {
+			throw std::runtime_error("failed to create render pass! " + resultStr(renderPassResult));
 		}
 
 		//pipeline setup: Describes the pipeline to be created
@@ -3007,7 +3043,7 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 2;
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &skyboxPipelineLayout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &skybox.pipelineLayout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
 		}
@@ -3046,17 +3082,6 @@ private:
 		subpass.pColorAttachments = &colorAttachmentRef;
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
-		VkRenderPassCreateInfo renderPassInf{};
-		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
-		renderPassInf.pAttachments = attachments.data();
-		renderPassInf.subpassCount = 1;
-		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &skyboxRenderPass);
-		if (renderPassResult != VK_SUCCESS) {
-			throw std::runtime_error("failed to create render pass! " + resultStr(renderPassResult));
-		}
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -3070,10 +3095,10 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.pDynamicState = &dynamicState;
-		pipelineInf.layout = skyboxPipelineLayout;
-		pipelineInf.renderPass = skyboxRenderPass;
+		pipelineInf.layout = skybox.pipelineLayout;
+		pipelineInf.renderPass = renderPass; // renderpass is global
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skyboxPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -3395,19 +3420,6 @@ private:
 		}
 	}
 
-
-	void createSkyboxCommandBuffers() {
-		skyboxCommandBuffers.resize(swapChainImages.size());  //resize based on swap chain images size
-		VkCommandBufferAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInf.commandPool = commandPool; //command pool to allocate from
-		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
-		allocInf.commandBufferCount = (uint32_t)skyboxCommandBuffers.size(); //number of command buffers to allocate
-		if (vkAllocateCommandBuffers(device, &allocInf, skyboxCommandBuffers.data()) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate command buffers for the skybox!");
-		}
-	}
-
 	void recordShadowCommandBuffers() {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3468,6 +3480,34 @@ private:
 			}
 		}
 	}
+	void createSkyboxCommandBuffers() {
+		skyboxCommandBuffers.resize(swapChainImages.size());  //resize based on swap chain images size
+		VkCommandBufferAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInf.commandPool = commandPool; //command pool to allocate from
+		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
+		allocInf.commandBufferCount = (uint32_t)skyboxCommandBuffers.size(); //number of command buffers to allocate
+		if (vkAllocateCommandBuffers(device, &allocInf, skyboxCommandBuffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers for the skybox!");
+		}
+	}
+
+	void createSkyboxBufferData() {
+		createBuffer(sizeof(forms::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, skybox.vertBuffer, skybox.vertBufferMem);
+
+		char* vertexData;
+		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(forms::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
+		memcpy(vertexData, skybox.vertices, sizeof(forms::vec3) * skybox.bufferData.vertexCount);
+		vkUnmapMemory(device, skybox.vertBufferMem);
+
+		createBuffer(sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skybox.indBuffer, skybox.indBufferMem);
+
+		char* indexData;
+		vkMapMemory(device, skybox.indBufferMem, 0, sizeof(uint32_t) * skybox.bufferData.indexCount, 0, reinterpret_cast<void**>(&indexData));
+		memcpy(indexData, skybox.indices, sizeof(uint32_t) * skybox.bufferData.indexCount);
+		vkUnmapMemory(device, skybox.indBufferMem);
+
+	}
 
 	void recordSkyboxCommandBuffers() {
 		std::array<VkClearValue, 2> clearValues = {
@@ -3488,7 +3528,7 @@ private:
 			vkCmdSetViewport(skyboxCommandBuffers[i], 0, 1, &vp);
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = skyboxRenderPass;
+			renderPassInfo.renderPass = renderPass;
 			renderPassInfo.framebuffer = swapChainFramebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
@@ -3496,24 +3536,22 @@ private:
 			renderPassInfo.pClearValues = clearValues.data();
 
 			vkCmdBeginRenderPass(skyboxCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipeline); // bind the graphics pipeline to the command buffer
+			vkCmdBindPipeline(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline); // bind the graphics pipeline to the command buffer
 
 			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[5] };
-			vkCmdBindDescriptorSets(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skyboxPipelineLayout, 0, 2, dSets, 0, nullptr);
+			vkCmdBindDescriptorSets(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, 2, dSets, 0, nullptr);
 
-			VkBuffer vertexBuffersArray[1] = { vertBuffer };
-			VkBuffer indexBuffer = indBuffer;
+			VkBuffer vertexBuffersArray[1] = { skybox.vertBuffer };
+			VkBuffer indexBuffer = skybox.indBuffer;
 			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(skyboxCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(skyboxCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-			for (size_t j = 0; j < objects.size(); j++) {
-				vkCmdDrawIndexed(skyboxCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
-			}
+			vkCmdDrawIndexed(skyboxCommandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
-			vkCmdEndRenderPass(commandBuffers[i]);
-			if (vkEndCommandBuffer(commandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
+			vkCmdEndRenderPass(skyboxCommandBuffers[i]);
+			if (vkEndCommandBuffer(skyboxCommandBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer for the skybox!");
 			}
 		}
 
@@ -3583,9 +3621,9 @@ private:
 		setupDepthResources();
 		createGraphicsPipeline();
 		createFrameBuffer();
-		recordShadowCommandBuffers();
 		recordSkyboxCommandBuffers();
 		recordCommandBuffers();
+		recordShadowCommandBuffers();
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
 		for (auto framebuffer : swapChainFramebuffers) {
@@ -3829,23 +3867,25 @@ private:
 		createSemaphores();
 		commandPool = createCommandPool();
 		loadUniqueObjects();
-		//debugLights();
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
 		loadSkybox("SkyBoxes/industrial.hdr");
+		createSkyboxBufferData();
 		setupDescriptorSets(); //setup and create all the descriptor sets
+		createGraphicsPipeline();
 		createSkyboxPipeline();
 		createShadowPipeline(); // pipeline for my shadow maps
-		createGraphicsPipeline();
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
+
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
 
+		createFrameBuffer();
 		createSkyboxCommandBuffers();
 		recordSkyboxCommandBuffers();
-		createFrameBuffer();
+
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
 		//debugModelMatricies();
@@ -3903,6 +3943,11 @@ private:
 		vkFreeMemory(device, vertBufferMem, nullptr);
 		vkDestroyBuffer(device, indBuffer, nullptr);
 		vkFreeMemory(device, indBufferMem, nullptr);
+		vkDestroyBuffer(device, skybox.vertBuffer, nullptr);
+		vkFreeMemory(device, skybox.vertBufferMem, nullptr);
+		vkDestroyBuffer(device, skybox.indBuffer, nullptr);
+		vkFreeMemory(device, skybox.indBufferMem, nullptr);
+
 		for (auto imageView : swapChainImageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
