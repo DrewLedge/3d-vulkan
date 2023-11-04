@@ -329,33 +329,31 @@ private:
 		VkDeviceMemory vertBufferMem;
 		VkBuffer indBuffer;
 		VkDeviceMemory indBufferMem;
-		forms::vec3 vertices[8];
-		uint32_t indices[36];
+		std::vector<forms::vec3> vertices;
+		std::vector<uint32_t> indices;
+		std::vector<VkFramebuffer> frameBuffers;
+		VkRenderPass renderPass;
 
 		sBox() {
-			// predefined indices for skybox
-			uint32_t predefinedIndices[36] = {
+			indices = {
 				0, 1, 2, 2, 3, 0,
-				4, 5, 6, 6, 7, 4,
+				7, 6, 5, 5, 4, 7,
 				4, 5, 1, 1, 0, 4,
 				3, 2, 6, 6, 7, 3,
 				4, 0, 3, 3, 7, 4,
 				1, 5, 6, 6, 2, 1
 			};
-			std::copy(std::begin(predefinedIndices), std::end(predefinedIndices), indices);
 
-			// predefined vertices for skybox
-			forms::vec3 predefinedVertices[8] = {
-				{-1.0f,  1.0f, -1.0f},
-				{-1.0f, -1.0f, -1.0f},
-				{ 1.0f, -1.0f, -1.0f},
-				{ 1.0f,  1.0f, -1.0f},
+			vertices = {
 				{-1.0f,  1.0f,  1.0f},
 				{-1.0f, -1.0f,  1.0f},
 				{ 1.0f, -1.0f,  1.0f},
-				{ 1.0f,  1.0f,  1.0f}
+				{ 1.0f,  1.0f,  1.0f},
+				{-1.0f,  1.0f, -1.0f},
+				{-1.0f, -1.0f, -1.0f},
+				{ 1.0f, -1.0f, -1.0f},
+				{ 1.0f,  1.0f, -1.0f}
 			};
-			std::copy(std::begin(predefinedVertices), std::end(predefinedVertices), vertices);
 		}
 	};
 
@@ -441,6 +439,7 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
+	VkSemaphore skyboxSemaphore;
 
 	VkBuffer vertBuffer;
 	VkDeviceMemory vertBufferMem;
@@ -2926,15 +2925,15 @@ private:
 
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(Vertex);
+		bindDesc.stride = sizeof(forms::vec3); // the stride is the size of vec3
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
 		std::array<VkVertexInputAttributeDescription, 1> attrDesc;
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
-		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-		attrDesc[0].offset = offsetof(Vertex, pos);
+		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // vec3 is three 32-bit floats
+		attrDesc[0].offset = 0; // offset within the vec3 is 0, since pos is the first element
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2988,8 +2987,8 @@ private:
 
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		dStencil.depthTestEnable = VK_TRUE;
-		dStencil.depthWriteEnable = VK_TRUE;
+		dStencil.depthTestEnable = VK_FALSE;
+		dStencil.depthWriteEnable = VK_FALSE;
 		dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
@@ -3041,11 +3040,11 @@ private:
 		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout6 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = 2;
+		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &skybox.pipelineLayout);
 		if (result != VK_SUCCESS) {
-			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
+			throw std::runtime_error("failed to create pipeline layout for skybox!! " + resultStr(result));
 		}
 
 		VkAttachmentDescription colorAttachment{};
@@ -3062,25 +3061,21 @@ private:
 		colorAttachmentRef.attachment = 0;
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentDescription depthAttachment{};
-		depthAttachment.format = depthFormat;
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference depthAttachmentRef{};
-		depthAttachmentRef.attachment = 1;
-		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkSubpassDescription subpass{};
+		VkSubpassDescription subpass = {};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
-		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+		VkRenderPassCreateInfo renderPassInfo = {};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInfo.attachmentCount = 1;
+		renderPassInfo.pAttachments = &colorAttachment;
+		renderPassInfo.subpassCount = 1;
+		renderPassInfo.pSubpasses = &subpass;
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &skybox.renderPass) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create skybox render pass!");
+		}
 
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
@@ -3096,11 +3091,11 @@ private:
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = skybox.pipelineLayout;
-		pipelineInf.renderPass = renderPass; // renderpass is global
+		pipelineInf.renderPass = skybox.renderPass;
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
-			throw std::runtime_error("failed to create graphics pipeline!");
+			throw std::runtime_error("failed to create graphics pipeline for skybox!");
 		}
 	}
 
@@ -3497,14 +3492,14 @@ private:
 
 		char* vertexData;
 		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(forms::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
-		memcpy(vertexData, skybox.vertices, sizeof(forms::vec3) * skybox.bufferData.vertexCount);
+		memcpy(vertexData, skybox.vertices.data(), sizeof(forms::vec3) * skybox.bufferData.vertexCount);
 		vkUnmapMemory(device, skybox.vertBufferMem);
 
 		createBuffer(sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skybox.indBuffer, skybox.indBufferMem);
 
 		char* indexData;
 		vkMapMemory(device, skybox.indBufferMem, 0, sizeof(uint32_t) * skybox.bufferData.indexCount, 0, reinterpret_cast<void**>(&indexData));
-		memcpy(indexData, skybox.indices, sizeof(uint32_t) * skybox.bufferData.indexCount);
+		memcpy(indexData, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount);
 		vkUnmapMemory(device, skybox.indBufferMem);
 
 	}
@@ -3528,8 +3523,8 @@ private:
 			vkCmdSetViewport(skyboxCommandBuffers[i], 0, 1, &vp);
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = renderPass;
-			renderPassInfo.framebuffer = swapChainFramebuffers[i];
+			renderPassInfo.renderPass = skybox.renderPass;
+			renderPassInfo.framebuffer = skybox.frameBuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swapChainExtent;
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3554,28 +3549,42 @@ private:
 				throw std::runtime_error("failed to record command buffer for the skybox!");
 			}
 		}
-
 	}
 
 
-	void createFrameBuffer() {
-		swapChainFramebuffers.resize(swapChainImageViews.size()); //resize the swap chain framebuffer vector
-		for (size_t i = 0; i < swapChainImageViews.size(); i++) {
-			std::array<VkImageView, 2> attachments = {
-				swapChainImageViews[i],
-				depthImageView
-			}; //array of attachments
-			VkFramebufferCreateInfo framebufferInf{};
-			framebufferInf.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			framebufferInf.renderPass = renderPass; //render pass that this framebuffer will be compatible with
-			framebufferInf.attachmentCount = static_cast<uint32_t>(attachments.size()); //attachment count now includes color and depth attachments
-			framebufferInf.pAttachments = attachments.data(); //array of attachments
-			framebufferInf.width = swapChainExtent.width; //width of the framebuffer
-			framebufferInf.height = swapChainExtent.height; //height of the framebuffer
-			framebufferInf.layers = 1; //1 means that each image only has one layer and there is no stereoscopic 3D
-			VkResult result = vkCreateFramebuffer(device, &framebufferInf, nullptr, &swapChainFramebuffers[i]);
-			if (result != VK_SUCCESS) {
-				throw std::runtime_error("failed to create framebuffer! " + resultStr(result));
+	void createFramebuffersSC(VkRenderPass renderPassF, std::vector<VkFramebuffer>& framebuffers, bool depth, VkImageView depthImageView = VK_NULL_HANDLE) {
+		// create the framebuffers for the swap chain
+		framebuffers.clear();
+		framebuffers.resize(swapChainImageViews.size());
+		std::array<VkImageView, 2> attachmentsD; // with color and depth
+		VkImageView attachment; // without depth
+
+		for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
+
+			if (depth) {
+				attachmentsD = { swapChainImageViews[i], depthImageView };
+			}
+			else {
+				attachment = { swapChainImageViews[i], };
+			}
+
+			VkFramebufferCreateInfo framebufferInfo{};
+			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			framebufferInfo.renderPass = renderPassF;
+			if (depth) {
+				framebufferInfo.attachmentCount = static_cast<uint32_t>(attachmentsD.size());
+				framebufferInfo.pAttachments = attachmentsD.data();
+			}
+			else {
+				framebufferInfo.attachmentCount = 1;
+				framebufferInfo.pAttachments = &attachment;
+			}
+			framebufferInfo.width = swapChainExtent.width;
+			framebufferInfo.height = swapChainExtent.height;
+			framebufferInfo.layers = 1;
+
+			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create framebuffer!");
 			}
 		}
 	}
@@ -3593,6 +3602,10 @@ private:
 		}
 		VkResult resultShadowFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &shadowSemaphore);
 		if (resultShadowFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow finished semaphore!");
+		}
+		VkResult resultSkyFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &skyboxSemaphore);
+		if (resultSkyFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow finished semaphore!");
 		}
 	}
@@ -3620,10 +3633,10 @@ private:
 		vkFreeMemory(device, depthImageMemory, nullptr);
 		setupDepthResources();
 		createGraphicsPipeline();
-		createFrameBuffer();
+		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
+		recordShadowCommandBuffers();
 		recordSkyboxCommandBuffers();
 		recordCommandBuffers();
-		recordShadowCommandBuffers();
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
 		for (auto framebuffer : swapChainFramebuffers) {
@@ -3664,43 +3677,64 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image! " + resultStr(result));
 		}
 
-		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore }; //semaphore to wait on before execution begins
-		VkSemaphore signalSemaphores[] = { shadowSemaphore }; // signal shadowSemaphore when shadow command buffer finishes execution
+		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
+		VkSemaphore shadowSignalSemaphores[] = { shadowSemaphore };
+		VkSemaphore skyboxSignalSemaphores[] = { skyboxSemaphore };
+		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
 
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
 		VkSubmitInfo submitInfo{};
 
-		// submit info struct for the shadow and main command buffers
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitDstStageMask = waitStages;
-		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
-		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
-		submitInfo.signalSemaphoreCount = 1;
+		// shadow pass submission
+		VkSubmitInfo shadowSubmitInfo{};
+		shadowSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		shadowSubmitInfo.waitSemaphoreCount = 1;
+		shadowSubmitInfo.pWaitSemaphores = waitSemaphores;
+		shadowSubmitInfo.pWaitDstStageMask = waitStages;
+		shadowSubmitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
+		shadowSubmitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
+		shadowSubmitInfo.signalSemaphoreCount = 1;
+		shadowSubmitInfo.pSignalSemaphores = shadowSignalSemaphores;
 
-		// first time around wait for imageAvailableSemaphore and signal shadowSemaphore
-		submitInfo.pWaitSemaphores = waitSemaphores;
-		submitInfo.pSignalSemaphores = signalSemaphores;
-
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, 1, &shadowSubmitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit shadow command buffer!");
 		}
 
-		// second time around wait for shadowSemaphore and signal renderFinishedSemaphore
-		waitSemaphores[0] = shadowSemaphore;
-		signalSemaphores[0] = renderFinishedSemaphore;
-		submitInfo.pCommandBuffers = &commandBuffers[imageIndex];
-		submitInfo.commandBufferCount = 1;
+		// skybox pass submission
+		VkSubmitInfo skyboxSubmitInfo{};
+		skyboxSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		skyboxSubmitInfo.waitSemaphoreCount = 1;
+		skyboxSubmitInfo.pWaitSemaphores = shadowSignalSemaphores;
+		skyboxSubmitInfo.pWaitDstStageMask = waitStages;
+		skyboxSubmitInfo.commandBufferCount = 1;
+		skyboxSubmitInfo.pCommandBuffers = &skyboxCommandBuffers[imageIndex];
+		skyboxSubmitInfo.signalSemaphoreCount = 1;
+		skyboxSubmitInfo.pSignalSemaphores = skyboxSignalSemaphores;
 
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit draw command buffer!");
+		if (vkQueueSubmit(graphicsQueue, 1, &skyboxSubmitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit skybox command buffer!");
+		}
+
+		// main scene pass submission
+		VkSubmitInfo mainSubmitInfo{};
+		mainSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		mainSubmitInfo.waitSemaphoreCount = 1;
+		mainSubmitInfo.pWaitSemaphores = skyboxSignalSemaphores;
+		mainSubmitInfo.pWaitDstStageMask = waitStages;
+		mainSubmitInfo.commandBufferCount = 1;
+		mainSubmitInfo.pCommandBuffers = &commandBuffers[imageIndex];
+		mainSubmitInfo.signalSemaphoreCount = 1;
+		mainSubmitInfo.pSignalSemaphores = renderFinishedSemaphores;
+
+		if (vkQueueSubmit(graphicsQueue, 1, &mainSubmitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit main draw command buffer!");
 		}
 
 		// present the image
 		VkPresentInfoKHR presentInfo{};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.pWaitSemaphores = signalSemaphores;
+		presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
 		VkSwapchainKHR swapChains[] = { swapChain };
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapChains;
@@ -3878,11 +3912,12 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
+		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
+		createFramebuffersSC(skybox.renderPass, skybox.frameBuffers, false);
 
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
 
-		createFrameBuffer();
 		createSkyboxCommandBuffers();
 		recordSkyboxCommandBuffers();
 
@@ -3920,6 +3955,7 @@ private:
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 		vkDestroySemaphore(device, shadowSemaphore, nullptr);
+		vkDestroySemaphore(device, skyboxSemaphore, nullptr);
 		for (size_t i = 0; i < 3; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
