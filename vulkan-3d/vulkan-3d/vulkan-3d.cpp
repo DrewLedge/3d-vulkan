@@ -132,6 +132,8 @@ private:
 		uint32_t texIndex; //used to know what textures belong to what material
 		tinygltf::Image gltfImage;
 		bool found;
+		uint16_t width;
+		uint16_t height;
 
 		Texture()
 			: sampler(VK_NULL_HANDLE),
@@ -143,7 +145,9 @@ private:
 			stagingBufferMem(VK_NULL_HANDLE),
 			texIndex(0),
 			gltfImage(),
-			found(false)
+			found(false),
+			width(1024),
+			height(1024)
 		{}
 
 		bool operator==(const Texture& other) const {
@@ -154,7 +158,10 @@ private:
 				&& path == other.path
 				&& mipLevels == other.mipLevels
 				&& stagingBuffer == other.stagingBuffer
-				&& stagingBufferMem == other.stagingBufferMem;
+				&& stagingBufferMem == other.stagingBufferMem
+				&& width == other.width
+				&& height == other.height;
+
 		}
 	};
 
@@ -170,6 +177,8 @@ private:
 			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
 			return seed;
 		}
@@ -336,16 +345,14 @@ private:
 	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 
-	uint32_t texWidth = 1024;
-	uint32_t texHeight = 1024;
 	unsigned char* imageData;
+	float* skyboxData;
 
 	VkImage depthImage;
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
 	VkFormat depthFormat;
 	sceneIndexSSBO sceneIndices = {};
-	VkDeviceSize imageSize = static_cast<VkDeviceSize>(texWidth) * texHeight * 4; // 4 bytes per pixel
 	VkDescriptorSetLayout imguiDescriptorSetLayout;
 	VkDescriptorPool imguiDescriptorPool;
 
@@ -1020,7 +1027,16 @@ private:
 		std::cout.flush();
 	}
 
+	void loadSkybox(std::string path) {
+		Texture cMap;
+		cMap.path = path;
+		createTexturedHDR(cMap);
+		createTextureImgView(cMap, false, "cube");
+		createTS(cMap, false, "cube");
+		std::cout << cMap.image << std::endl;
 
+
+	}
 
 	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec4 rot, std::string path) {
 		tf::Executor executor;
@@ -2001,6 +2017,11 @@ private:
 			samplerInf.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 			samplerInf.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 		}
+		if (type == "cube") {
+			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+			samplerInf.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // prevent seams at the edges
+		}
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
 		samplerInf.maxLod = doMipmap ? static_cast<float>(tex.mipLevels) : 1;
@@ -2014,6 +2035,8 @@ private:
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
+		viewInf.subresourceRange.baseArrayLayer = 0;
+		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		if (type == "shadow") {
 			viewInf.format = VK_FORMAT_D32_SFLOAT;
@@ -2031,16 +2054,20 @@ private:
 			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
+		else if (type == "cube") {
+			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
+			viewInf.subresourceRange.layerCount = 6;
+		}
 		viewInf.subresourceRange.baseMipLevel = 0;
 		viewInf.subresourceRange.levelCount = doMipmap ? tex.mipLevels - viewInf.subresourceRange.baseMipLevel : 1; //miplevel is influenced by the base 
-		viewInf.subresourceRange.baseArrayLayer = 0;
-		viewInf.subresourceRange.layerCount = 1;
 		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture image view!");
 		}
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage) {
+	void getGLTFImageData(const tinygltf::Image& gltfImage, Texture& t) {
 		int width = gltfImage.width; // Set the texture's width, height, and channels
 		int height = gltfImage.height;
 		int channels = gltfImage.component;
@@ -2066,7 +2093,7 @@ private:
 				}
 			}
 		}
-		imageData = resizeImage(imageData, width, height, texWidth, texHeight, channels);
+		imageData = resizeImage(imageData, width, height, t.width, t.height, channels);
 	}
 
 	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
@@ -2091,8 +2118,20 @@ private:
 		}
 	}
 
-	void createStagingBuffer(Texture& tex) { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void getImageDataHDR(std::string path, Texture& t) {
+		int texWidth, texHeight, texChannels;
+		skyboxData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 0);  // 0 to load all channels
+		t.width = texWidth;
+		t.height = texHeight;
+		if (!skyboxData) {
+			throw std::runtime_error("failed to load HDR image!");
+		}
+	}
+
+
+	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
+		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * 4;
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -2117,8 +2156,65 @@ private:
 		if (vkMapMemory(device, tex.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("failed to map staging buffer memory!");
 		}
-		memcpy(data, imageData, imageSize);
+		if (hdr) {
+			memcpy(data, skyboxData, imageSize);
+		}
+		else {
+			memcpy(data, imageData, imageSize);
+		}
 		vkUnmapMemory(device, tex.stagingBufferMem);
+	}
+	void createTexturedHDR(Texture& tex) {
+		getImageDataHDR(tex.path, tex);
+		if (skyboxData == nullptr) {
+			throw std::runtime_error("failed to load image data!");
+		}
+		createStagingBuffer(tex, true);
+
+		// clculate the size of one face of the cubemap
+		uint32_t faceSize = tex.height / 4;
+
+		// ensure the atlas dimensions are valid for a vertical cross layout
+		if (tex.width / 3 != faceSize) {
+			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
+		}
+
+		VkImageCreateInfo imageInfo{};
+		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		imageInfo.imageType = VK_IMAGE_TYPE_2D;
+		imageInfo.extent.width = faceSize;
+		imageInfo.extent.height = faceSize;
+		imageInfo.extent.depth = 1;
+		imageInfo.mipLevels = 1;
+		imageInfo.arrayLayers = 6; // 6 for the six faces of a cubemap
+		imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // HDR format
+		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+
+		// create the Vulkan image
+		if (vkCreateImage(device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create texture image!");
+		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, tex.image, &memRequirements);
+
+		VkMemoryAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInf.allocationSize = memRequirements.size;
+		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		if (vkAllocateMemory(device, &allocInf, nullptr, &tex.memory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate texture image memory!!!");
+		}
+		vkBindImageMemory(device, tex.image, tex.memory, 0);
+		stbi_image_free(skyboxData);
+		skyboxData = nullptr;
+
 	}
 
 	void createTexturedImage(Texture& tex, bool doMipmap, std::string type = "base") {
@@ -2127,16 +2223,16 @@ private:
 				getImageData(tex.path);
 			}
 			else {
-				getGLTFImageData(tex.gltfImage);
+				getGLTFImageData(tex.gltfImage, tex);
 			}
-			createStagingBuffer(tex);
-			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(texWidth, texHeight)))) + 1 : 1;
+			createStagingBuffer(tex, false);
+			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
 			// create image:
 			VkImageCreateInfo imageInf{};
 			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 			imageInf.imageType = VK_IMAGE_TYPE_2D;
-			imageInf.extent.width = texWidth;
-			imageInf.extent.height = texHeight;
+			imageInf.extent.width = tex.width;
+			imageInf.extent.height = tex.height;
 			imageInf.extent.depth = 1;
 			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
@@ -2150,7 +2246,6 @@ private:
 			if (type == "metallic") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			}
-
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
@@ -2185,7 +2280,7 @@ private:
 			region.imageSubresource.baseArrayLayer = 0;
 			region.imageSubresource.layerCount = 1;
 			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), 1 }; //gets the 2d image extent
+			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 }; //gets the 2d image extent
 
 			VkCommandBuffer tempBuffer = beginSingleTimeCommands(commandPool);
 
@@ -2207,8 +2302,8 @@ private:
 
 			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
-			int mipWidth = texWidth;
-			int mipHeight = texHeight;
+			int mipWidth = tex.width;
+			int mipHeight = tex.height;
 			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
 					VkImageMemoryBarrier barrierToSrc{};
@@ -3439,6 +3534,7 @@ private:
 		setupFences();
 		createSemaphores();
 		commandPool = createCommandPool();
+		loadSkybox("SkyBoxes/industrial.hdr");
 		loadUniqueObjects();
 		//debugLights();
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
