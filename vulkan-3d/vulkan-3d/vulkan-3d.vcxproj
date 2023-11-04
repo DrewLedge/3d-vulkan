@@ -146,6 +146,8 @@
     <None Include="engine.vert" />
     <None Include="shadow.frag" />
     <None Include="shadow.vert" />
+    <None Include="sky.frag" />
+    <None Include="sky.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ext\imgui\imconfig.h" />

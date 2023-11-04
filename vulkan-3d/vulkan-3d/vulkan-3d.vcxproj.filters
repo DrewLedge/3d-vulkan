@@ -71,6 +71,12 @@
     <None Include="shadow.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
+    <None Include="sky.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="sky.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="forms.h">
