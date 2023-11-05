@@ -331,8 +331,6 @@ private:
 		VkDeviceMemory indBufferMem;
 		std::vector<forms::vec3> vertices;
 		std::vector<uint32_t> indices;
-		std::vector<VkFramebuffer> frameBuffers;
-		VkRenderPass renderPass;
 
 		sBox() {
 			indices = {
@@ -629,6 +627,7 @@ private:
 		queueInf.pQueuePriorities = &queuePriority;
 
 		VkPhysicalDeviceFeatures deviceFeatures{};
+		deviceFeatures.imageCubeArray = VK_TRUE;
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
 		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -1401,7 +1400,7 @@ private:
 			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) { // only used for depth images for now
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t LC = 1, bool colorOnly = false) { // only used for depth images for now
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 
 		VkImageMemoryBarrier barrier{};
@@ -1411,25 +1410,36 @@ private:
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = image;
-		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (colorOnly) {
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		else {
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		}
 		barrier.subresourceRange.baseMipLevel = 0; // no mipmapping for depth images
 		barrier.subresourceRange.levelCount = 1;
 		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = 1;
+		barrier.subresourceRange.layerCount = LC;
 
 		// earliest stage in the pipeline that will wait on the barrier to be passed
 		VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 		VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
-		if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) { // if we are transitioning to a depth attachment
+		if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
 			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 			destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 		}
-		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) { // if we are transitioning to a shader read only layout for the shaders
+		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
 			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
@@ -1932,8 +1942,7 @@ private:
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorSetCount = 1; // 1 because we are allocating 1 descriptor set at a time
-
+		allocInfo.descriptorSetCount = 1;
 		std::array<VkDescriptorSetLayout, 6> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout6 };
 		std::array<VkDescriptorPool, 6> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5, descriptorPool6 };
 
@@ -2192,7 +2201,7 @@ private:
 
 	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
-		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * 4;
+		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * sizeof(float);
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -2254,7 +2263,7 @@ private:
 		imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
 		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT | VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
+		imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
 		// create the Vulkan image
 		if (vkCreateImage(device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
@@ -2987,27 +2996,13 @@ private:
 
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-		dStencil.depthTestEnable = VK_FALSE;
+		dStencil.depthTestEnable = VK_TRUE; //enable depth test
 		dStencil.depthWriteEnable = VK_FALSE;
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
 		dStencil.maxDepthBounds = 1.0f;
 		dStencil.stencilTestEnable = VK_FALSE;
-		dStencil.front.failOp = VK_STENCIL_OP_KEEP;
-		dStencil.front.passOp = VK_STENCIL_OP_KEEP;
-		dStencil.front.depthFailOp = VK_STENCIL_OP_KEEP;
-		dStencil.front.compareOp = VK_COMPARE_OP_ALWAYS;
-		dStencil.front.compareMask = 0;
-		dStencil.front.writeMask = 0;
-		dStencil.front.reference = 0;
-		dStencil.back.failOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
-		dStencil.back.compareMask = 0;
-		dStencil.back.writeMask = 0;
-		dStencil.back.reference = 0;
 
 		VkPipelineColorBlendAttachmentState colorBA{};
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
@@ -3067,16 +3062,6 @@ private:
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
 
-		VkRenderPassCreateInfo renderPassInfo = {};
-		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInfo.attachmentCount = 1;
-		renderPassInfo.pAttachments = &colorAttachment;
-		renderPassInfo.subpassCount = 1;
-		renderPassInfo.pSubpasses = &subpass;
-		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &skybox.renderPass) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create skybox render pass!");
-		}
-
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -3091,7 +3076,7 @@ private:
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = skybox.pipelineLayout;
-		pipelineInf.renderPass = skybox.renderPass;
+		pipelineInf.renderPass = renderPass;
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
@@ -3318,10 +3303,10 @@ private:
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
-		std::array<VkClearValue, 2> clearValues = {
-		VkClearValue{0.18f, 0.3f, 0.30f, 1.0f},  // clear color: light blue
-		VkClearValue{1.0f, 0}  // clear depth: 1.0f, 0 stencil
-		};
+		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
+		VkDescriptorSet skyboxDescriptorSets[] = { descriptorSets[0], descriptorSets[5] };
+		VkDescriptorSet descriptorSetsForScene[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4] };
+		VkDeviceSize offsets[] = { 0 };
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
 			vkResetCommandBuffer(commandBuffers[i], 0);
@@ -3333,7 +3318,7 @@ private:
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // Set the viewport to already existing viewport state from the pipeline
+			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // set the viewport to already existing viewport state from the pipeline
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = renderPass;
@@ -3343,18 +3328,23 @@ private:
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
 
-			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline); // bind the graphics pipeline to the command buffer
+			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
 
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4] };
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, dSets, 0, nullptr);
+			// FOR THE SKYBOX
+			transitionImageLayout(skybox.tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, 2, skyboxDescriptorSets, 0, nullptr);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skybox.vertBuffer, offsets);
+			vkCmdBindIndexBuffer(commandBuffers[i], skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdDrawIndexed(commandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
+			// FOR THE MAIN PASS
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, descriptorSetsForScene, 0, nullptr);
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
 			VkBuffer indexBuffer = indBuffer;
-			VkDeviceSize offsets[] = { 0 };
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
 			for (size_t j = 0; j < objects.size(); j++) {
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
@@ -3475,17 +3465,6 @@ private:
 			}
 		}
 	}
-	void createSkyboxCommandBuffers() {
-		skyboxCommandBuffers.resize(swapChainImages.size());  //resize based on swap chain images size
-		VkCommandBufferAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInf.commandPool = commandPool; //command pool to allocate from
-		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
-		allocInf.commandBufferCount = (uint32_t)skyboxCommandBuffers.size(); //number of command buffers to allocate
-		if (vkAllocateCommandBuffers(device, &allocInf, skyboxCommandBuffers.data()) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate command buffers for the skybox!");
-		}
-	}
 
 	void createSkyboxBufferData() {
 		createBuffer(sizeof(forms::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, skybox.vertBuffer, skybox.vertBufferMem);
@@ -3502,53 +3481,6 @@ private:
 		memcpy(indexData, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount);
 		vkUnmapMemory(device, skybox.indBufferMem);
 
-	}
-
-	void recordSkyboxCommandBuffers() {
-		std::array<VkClearValue, 2> clearValues = {
-		VkClearValue{1.0f, 1.0f, 1.0f, 1.0f},
-		VkClearValue{1.0f, 0}
-		};
-		for (size_t i = 0; i < swapChainImages.size(); i++) {
-			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
-			vkResetCommandBuffer(skyboxCommandBuffers[i], 0);
-
-			VkCommandBufferBeginInfo beginInfo{};
-			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-			beginInfo.pInheritanceInfo = nullptr;
-			if (vkBeginCommandBuffer(skyboxCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer for the skybox!");
-			}
-			vkCmdSetViewport(skyboxCommandBuffers[i], 0, 1, &vp);
-			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = skybox.renderPass;
-			renderPassInfo.framebuffer = skybox.frameBuffers[i];
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = swapChainExtent;
-			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-			renderPassInfo.pClearValues = clearValues.data();
-
-			vkCmdBeginRenderPass(skyboxCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline); // bind the graphics pipeline to the command buffer
-
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[5] };
-			vkCmdBindDescriptorSets(skyboxCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, 2, dSets, 0, nullptr);
-
-			VkBuffer vertexBuffersArray[1] = { skybox.vertBuffer };
-			VkBuffer indexBuffer = skybox.indBuffer;
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(skyboxCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
-			vkCmdBindIndexBuffer(skyboxCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			vkCmdDrawIndexed(skyboxCommandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
-
-			vkCmdEndRenderPass(skyboxCommandBuffers[i]);
-			if (vkEndCommandBuffer(skyboxCommandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer for the skybox!");
-			}
-		}
 	}
 
 
@@ -3635,7 +3567,6 @@ private:
 		createGraphicsPipeline();
 		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
 		recordShadowCommandBuffers();
-		recordSkyboxCommandBuffers();
 		recordCommandBuffers();
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
@@ -3679,7 +3610,6 @@ private:
 
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
 		VkSemaphore shadowSignalSemaphores[] = { shadowSemaphore };
-		VkSemaphore skyboxSignalSemaphores[] = { skyboxSemaphore };
 		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
 
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
@@ -3700,26 +3630,12 @@ private:
 			throw std::runtime_error("failed to submit shadow command buffer!");
 		}
 
-		// skybox pass submission
-		VkSubmitInfo skyboxSubmitInfo{};
-		skyboxSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		skyboxSubmitInfo.waitSemaphoreCount = 1;
-		skyboxSubmitInfo.pWaitSemaphores = shadowSignalSemaphores;
-		skyboxSubmitInfo.pWaitDstStageMask = waitStages;
-		skyboxSubmitInfo.commandBufferCount = 1;
-		skyboxSubmitInfo.pCommandBuffers = &skyboxCommandBuffers[imageIndex];
-		skyboxSubmitInfo.signalSemaphoreCount = 1;
-		skyboxSubmitInfo.pSignalSemaphores = skyboxSignalSemaphores;
-
-		if (vkQueueSubmit(graphicsQueue, 1, &skyboxSubmitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit skybox command buffer!");
-		}
 
 		// main scene pass submission
 		VkSubmitInfo mainSubmitInfo{};
 		mainSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		mainSubmitInfo.waitSemaphoreCount = 1;
-		mainSubmitInfo.pWaitSemaphores = skyboxSignalSemaphores;
+		mainSubmitInfo.pWaitSemaphores = shadowSignalSemaphores;
 		mainSubmitInfo.pWaitDstStageMask = waitStages;
 		mainSubmitInfo.commandBufferCount = 1;
 		mainSubmitInfo.pCommandBuffers = &commandBuffers[imageIndex];
@@ -3756,7 +3672,6 @@ private:
 
 	void recreateObjectBuffers() { // re-record command buffers to reference the new buffers
 		recordShadowCommandBuffers();
-		recordSkyboxCommandBuffers();
 		recordCommandBuffers();
 	}
 
@@ -3913,13 +3828,9 @@ private:
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
 		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
-		createFramebuffersSC(skybox.renderPass, skybox.frameBuffers, false);
 
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
-
-		createSkyboxCommandBuffers();
-		recordSkyboxCommandBuffers();
 
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
