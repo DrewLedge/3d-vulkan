@@ -1400,7 +1400,7 @@ private:
 			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t LC = 1, bool colorOnly = false) { // only used for depth images for now
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount = 1, bool colorOnly = false) {
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 
 		VkImageMemoryBarrier barrier{};
@@ -1419,7 +1419,7 @@ private:
 		barrier.subresourceRange.baseMipLevel = 0; // no mipmapping for depth images
 		barrier.subresourceRange.levelCount = 1;
 		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = LC;
+		barrier.subresourceRange.layerCount = layerCount;
 
 		// earliest stage in the pipeline that will wait on the barrier to be passed
 		VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
@@ -2149,33 +2149,33 @@ private:
 		}
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage, Texture& t) {
+	void getGLTFImageData(const tinygltf::Image& gltfImage, Texture& t, unsigned char*& imgData) {
 		int width = gltfImage.width; // Set the texture's width, height, and channels
 		int height = gltfImage.height;
 		int channels = gltfImage.component;
 
 
 		// delete previously allocated memory if any
-		if (imageData != nullptr) {
+		if (imgData != nullptr) {
 			delete[] imageData;
 		}
 
-		imageData = new unsigned char[width * height * 4]; // create a new array to hold the image data
+		imgData = new unsigned char[width * height * 4]; // create a new array to hold the image data
 
 		// iterate through the image data and copy it into the new array
 		for (int y = 0; y < height; ++y) {
 			for (int x = 0; x < width; ++x) {
 				for (int c = 0; c < channels; ++c) {
 					// copy the data from the original image into the new array
-					imageData[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
+					imgData[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
 				}
 				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
 				if (channels < 4) {
-					imageData[(y * width + x) * 4 + 3] = 255;
+					imgData[(y * width + x) * 4 + 3] = 255;
 				}
 			}
 		}
-		imageData = resizeImage(imageData, width, height, t.width, t.height, channels);
+		imgData = resizeImage(imgData, width, height, t.width, t.height, channels);
 	}
 
 	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
@@ -2192,10 +2192,10 @@ private:
 		return out;
 	}
 
-	void getImageData(std::string path) {
+	void getImageData(std::string path, unsigned char*& imgData) {
 		int texWidth, texHeight, texChannels;
-		imageData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (!imageData) {
+		imgData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		if (!imgData) {
 			throw std::runtime_error("failed to load image!");
 		}
 	}
@@ -2213,7 +2213,7 @@ private:
 
 	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
-		auto bpp = hdr ? 4 * sizeof(uint16_t) : 4;
+		auto bpp = hdr ? sizeof(float) : 4;
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
@@ -2296,18 +2296,13 @@ private:
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
 		vkBindImageMemory(device, tex.image, tex.memory, 0);
-
-		VkCommandBuffer transitionCmdBuffer = beginSingleTimeCommands(commandPool);
 		transitionImageLayout(tex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, true);
-		endSingleTimeCommands(transitionCmdBuffer, commandPool);
-
-
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		for (uint32_t i = 0; i < regions.size(); i++) {
 			VkBufferImageCopy& region = regions[i];
-			region.bufferOffset = i * faceSize * faceSize * 8;
+			region.bufferOffset = 0;
 			region.bufferRowLength = 0;
 			region.bufferImageHeight = 0;
 
@@ -2317,19 +2312,13 @@ private:
 			region.imageSubresource.layerCount = 1;
 
 			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent.width = faceSize;
-			region.imageExtent.height = faceSize;
-			region.imageExtent.depth = 1;
+			region.imageExtent = { faceSize, faceSize, 1 };
 		}
 
 		vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(regions.size()), regions.data());
 		endSingleTimeCommands(copyCmdBuffer, commandPool);
 
-		VkCommandBuffer finalTransitionCmdBuffer = beginSingleTimeCommands(commandPool);
-
-		transitionImageLayout(tex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
-		endSingleTimeCommands(finalTransitionCmdBuffer, commandPool);
-
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
 
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
@@ -2339,10 +2328,10 @@ private:
 	void createTexturedImage(Texture& tex, bool doMipmap, std::string type = "base") {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
-				getImageData(tex.path);
+				getImageData(tex.path, imageData);
 			}
 			else {
-				getGLTFImageData(tex.gltfImage, tex);
+				getGLTFImageData(tex.gltfImage, tex, imageData);
 			}
 			createStagingBuffer(tex, false);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
