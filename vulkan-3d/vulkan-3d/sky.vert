@@ -22,8 +22,8 @@ void main() {
     mat4 rotationOnlyView = view;
     rotationOnlyView[3] = vec4(0.0, 0.0, 0.0, 1.0);
     
-    outPos = projection * rotationOnlyView * vec4(inPosition, 1.0);
-    gl_Position = outPos;
+    outPos = vec4(inPosition, 1);
+    gl_Position = projection * rotationOnlyView * vec4(inPosition, 1.0);
 }
 
 

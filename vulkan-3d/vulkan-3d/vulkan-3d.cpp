@@ -1441,6 +1441,18 @@ private:
 			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		}
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
@@ -2125,7 +2137,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "cube") {
-			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
+			viewInf.format = VK_FORMAT_R16G16B16A16_SFLOAT; // for cubemaps
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			viewInf.subresourceRange.layerCount = 6;
@@ -2201,7 +2213,8 @@ private:
 
 	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
-		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * sizeof(float);
+		auto bpp = hdr ? 4 * sizeof(uint16_t) : 4;
+		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -2234,6 +2247,7 @@ private:
 		}
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
+
 	void createTexturedHDR(Texture& tex) {
 		getImageDataHDR(tex.path, tex);
 		if (skyboxData == nullptr) {
@@ -2257,7 +2271,7 @@ private:
 		imageInfo.extent.depth = 1;
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 6; // 6 for the six faces of a cubemap
-		imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // HDR format
+		imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT; // HDR format
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -2282,6 +2296,41 @@ private:
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
 		vkBindImageMemory(device, tex.image, tex.memory, 0);
+
+		VkCommandBuffer transitionCmdBuffer = beginSingleTimeCommands(commandPool);
+		transitionImageLayout(tex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, true);
+		endSingleTimeCommands(transitionCmdBuffer, commandPool);
+
+
+		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
+
+		std::array<VkBufferImageCopy, 6> regions;
+		for (uint32_t i = 0; i < regions.size(); i++) {
+			VkBufferImageCopy& region = regions[i];
+			region.bufferOffset = i * faceSize * faceSize * 8;
+			region.bufferRowLength = 0;
+			region.bufferImageHeight = 0;
+
+			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			region.imageSubresource.mipLevel = 0;
+			region.imageSubresource.baseArrayLayer = i;
+			region.imageSubresource.layerCount = 1;
+
+			region.imageOffset = { 0, 0, 0 };
+			region.imageExtent.width = faceSize;
+			region.imageExtent.height = faceSize;
+			region.imageExtent.depth = 1;
+		}
+
+		vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(regions.size()), regions.data());
+		endSingleTimeCommands(copyCmdBuffer, commandPool);
+
+		VkCommandBuffer finalTransitionCmdBuffer = beginSingleTimeCommands(commandPool);
+
+		transitionImageLayout(tex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
+		endSingleTimeCommands(finalTransitionCmdBuffer, commandPool);
+
+
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
 
@@ -2978,9 +3027,9 @@ private:
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-		rasterizer.depthBiasEnable = VK_TRUE;
+		rasterizer.cullMode = VK_CULL_MODE_NONE;
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f;
 		rasterizer.depthBiasClamp = 0.0f;
 		rasterizer.depthBiasSlopeFactor = 0.0f;
@@ -2997,7 +3046,7 @@ private:
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth test
-		dStencil.depthWriteEnable = VK_FALSE;
+		dStencil.depthWriteEnable = VK_FALSE; // dont write to the depth buffer
 		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
@@ -3006,23 +3055,13 @@ private:
 
 		VkPipelineColorBlendAttachmentState colorBA{};
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-		colorBA.blendEnable = VK_TRUE;
-		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
-		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+		colorBA.blendEnable = VK_FALSE; // disable blending for the skybox
 		VkPipelineColorBlendStateCreateInfo colorBS{};
 		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBS.logicOpEnable = VK_FALSE;
 		colorBS.logicOp = VK_LOGIC_OP_COPY;
 		colorBS.attachmentCount = 1;
 		colorBS.pAttachments = &colorBA;
-		colorBS.blendConstants[0] = 0.0f;
-		colorBS.blendConstants[1] = 0.0f;
-		colorBS.blendConstants[2] = 0.0f;
-		colorBS.blendConstants[3] = 0.0f;
 
 		VkDynamicState dynamicStates[] = {
 			VK_DYNAMIC_STATE_VIEWPORT
@@ -3331,7 +3370,6 @@ private:
 			vkCmdBeginRenderPass(commandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
 
 			// FOR THE SKYBOX
-			transitionImageLayout(skybox.tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, 2, skyboxDescriptorSets, 0, nullptr);
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skybox.vertBuffer, offsets);
@@ -3565,6 +3603,7 @@ private:
 		vkFreeMemory(device, depthImageMemory, nullptr);
 		setupDepthResources();
 		createGraphicsPipeline();
+		createSkyboxPipeline();
 		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
