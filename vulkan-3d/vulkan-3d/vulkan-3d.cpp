@@ -2200,13 +2200,13 @@ private:
 		}
 	}
 
-	void getImageDataHDR(std::string path, Texture& t) {
+	void getImageDataHDR(std::string path, Texture& t, float*& imgData) {
 		int texWidth, texHeight, texChannels;
-		skyboxData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 0);  // 0 to load all channels
+		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R16G16B16A16_SFLOAT format
 		t.width = texWidth;
 		t.height = texHeight;
-		if (!skyboxData) {
-			throw std::runtime_error("failed to load HDR image!");
+		if (!imgData) {
+			throw std::runtime_error("failed to load HDR image: " + path + "!");
 		}
 	}
 
@@ -2249,7 +2249,7 @@ private:
 	}
 
 	void createTexturedHDR(Texture& tex) {
-		getImageDataHDR(tex.path, tex);
+		getImageDataHDR(tex.path, tex, skyboxData);
 		if (skyboxData == nullptr) {
 			throw std::runtime_error("failed to load image data!");
 		}
