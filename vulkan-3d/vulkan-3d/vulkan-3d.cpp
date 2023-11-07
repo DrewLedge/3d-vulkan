@@ -2137,7 +2137,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "cube") {
-			viewInf.format = VK_FORMAT_R16G16B16A16_SFLOAT; // for cubemaps
+			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			viewInf.subresourceRange.layerCount = 6;
@@ -2206,15 +2206,25 @@ private:
 		t.width = texWidth;
 		t.height = texHeight;
 		if (!imgData) {
-			throw std::runtime_error("failed to load HDR image: " + path + "!");
+			std::string error = stbi_failure_reason(); // get the detailed error
+			throw std::runtime_error("failed to load HDR image: " + path + "! Reason: " + error);
 		}
 	}
 
 
 	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
-		auto bpp = hdr ? sizeof(float) : 4;
-		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
+		auto bpp = hdr ? sizeof(float) * 4 : 4;
+		VkDeviceSize imageSize;
+		if (hdr) {
+			uint32_t faceWidth = tex.width / 4;
+			uint32_t faceHeight = tex.height / 3;
+			VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
+			imageSize = faceSize * 6;
+		}
+		else {
+			imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
+		}
 		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferInf.size = imageSize;
 		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
@@ -2256,12 +2266,16 @@ private:
 		createStagingBuffer(tex, true);
 
 		// clculate the size of one face of the cubemap
-		uint32_t faceSize = tex.height / 4;
+		uint32_t faceSize = tex.width / 4;
+		uint32_t faceHeight = tex.height / 3;
+		auto bpp = sizeof(float) * 4;
+		VkDeviceSize faceImageSize = static_cast<VkDeviceSize>(faceSize) * faceHeight * bpp;
 
-		// ensure the atlas dimensions are valid for a vertical cross layout
-		if (tex.width / 3 != faceSize) {
+		// ensure the atlas dimensions are valid for a horizontal cross layout
+		if (tex.height / 3 != faceSize) {
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
 		}
+
 
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -2271,7 +2285,7 @@ private:
 		imageInfo.extent.depth = 1;
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 6; // 6 for the six faces of a cubemap
-		imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT; // HDR format
+		imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // HDR format
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -2296,13 +2310,13 @@ private:
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
 		vkBindImageMemory(device, tex.image, tex.memory, 0);
-		transitionImageLayout(tex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, true);
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, true);
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		for (uint32_t i = 0; i < regions.size(); i++) {
 			VkBufferImageCopy& region = regions[i];
-			region.bufferOffset = 0;
+			region.bufferOffset = faceImageSize * i;
 			region.bufferRowLength = 0;
 			region.bufferImageHeight = 0;
 
@@ -3847,7 +3861,7 @@ private:
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
-		loadSkybox("SkyBoxes/industrial.hdr");
+		loadSkybox("skyboxes/industrial.hdr");
 		createSkyboxBufferData();
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createGraphicsPipeline();
