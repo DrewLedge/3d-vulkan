@@ -2218,7 +2218,7 @@ private:
 			uint32_t faceWidth = tex.width / 4;
 			uint32_t faceHeight = tex.height / 3;
 			VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
-			imageSize = faceSize * 6;
+			imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 		}
 		else {
 			imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
@@ -2312,12 +2312,24 @@ private:
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
+		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = {
+			 {{2, 1}, // -x
+			 {0, 1}, // +x
+			 {1, 0}, // +y
+			 {1, 2}, // -y
+			 {1, 1}, // -z
+			 {3, 1}} // +z
+		};
+
 		for (uint32_t i = 0; i < regions.size(); i++) {
 			VkBufferImageCopy& region = regions[i];
-			region.bufferOffset = faceSize * i;
-			region.bufferRowLength = faceWidth;
-			region.bufferImageHeight = faceHeight;
 
+			uint32_t offsetX = faceOffsets[i].first * faceWidth;
+			uint32_t offsetY = faceOffsets[i].second * faceHeight;
+
+			region.bufferOffset = offsetY * tex.width * bpp + offsetX * bpp;
+			region.bufferRowLength = tex.width;
+			region.bufferImageHeight = 0;
 			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			region.imageSubresource.mipLevel = 0;
 			region.imageSubresource.baseArrayLayer = i;
@@ -2325,6 +2337,7 @@ private:
 
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { faceWidth, faceHeight, 1 };
+
 			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
 		endSingleTimeCommands(copyCmdBuffer, commandPool);
@@ -3004,12 +3017,6 @@ private:
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		inputAssem.primitiveRestartEnable = VK_FALSE;
 
-		vp.x = 0.0f;
-		vp.y = 0.0f;
-		vp.width = static_cast<float>(swapChainExtent.width);
-		vp.height = static_cast<float>(swapChainExtent.height);
-		vp.minDepth = 0.0f;
-		vp.maxDepth = 1.0f;
 		VkRect2D scissor{};
 		scissor.offset = { 0, 0 };
 		scissor.extent = swapChainExtent;
@@ -3079,27 +3086,6 @@ private:
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for skybox!! " + resultStr(result));
 		}
-
-		VkAttachmentDescription colorAttachment{};
-		colorAttachment.format = swapChainImageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
-
-		VkAttachmentReference colorAttachmentRef{};
-		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-
-		VkSubpassDescription subpass = {};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &colorAttachmentRef;
-
 
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
@@ -3857,7 +3843,7 @@ private:
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
-		loadSkybox("skyboxes/industrial.hdr");
+		loadSkybox("skyboxes/overcast-skies.hdr");
 		createSkyboxBufferData();
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createGraphicsPipeline();
