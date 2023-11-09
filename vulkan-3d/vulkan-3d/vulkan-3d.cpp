@@ -1073,7 +1073,7 @@ private:
 
 	void loadSkybox(std::string path) {
 		skybox.tex.path = path;
-		createTexturedHDR(skybox.tex);
+		createTexturedCubemap(skybox.tex);
 		createTextureImgView(skybox.tex, false, "cube");
 		createTS(skybox.tex, false, "cube");
 		skybox.bufferData.vertexOffset = 0;
@@ -1400,7 +1400,7 @@ private:
 			createTS(lights[i].shadowMapData, false, "shadow");
 		}
 	}
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount = 1, bool colorOnly = false) {
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 
 		VkImageMemoryBarrier barrier{};
@@ -1410,13 +1410,13 @@ private:
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.image = image;
-		if (colorOnly) {
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else {
+		if (format == VK_FORMAT_D32_SFLOAT) { // if the format is a depth format
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
-		barrier.subresourceRange.baseMipLevel = 0; // no mipmapping for depth images
+		else {
+			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		barrier.subresourceRange.baseMipLevel = 0;
 		barrier.subresourceRange.levelCount = 1;
 		barrier.subresourceRange.baseArrayLayer = 0;
 		barrier.subresourceRange.layerCount = layerCount;
@@ -1441,24 +1441,22 @@ private:
 			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 		}
-		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+			barrier.srcAccessMask = 0;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		}
-		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+			sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
 		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
-
 		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
-
 		endSingleTimeCommands(commandBuffer, commandPool);
 	}
 
@@ -2202,7 +2200,7 @@ private:
 
 	void getImageDataHDR(std::string path, Texture& t, float*& imgData) {
 		int texWidth, texHeight, texChannels;
-		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R16G16B16A16_SFLOAT format
+		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R32G32B32A32_SFLOAT format
 		t.width = texWidth;
 		t.height = texHeight;
 		if (!imgData) {
@@ -2212,11 +2210,11 @@ private:
 	}
 
 
-	void createStagingBuffer(Texture& tex, bool hdr) { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void createStagingBuffer(Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
-		auto bpp = hdr ? sizeof(float) * 4 : 4;
+		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
 		VkDeviceSize imageSize;
-		if (hdr) {
+		if (cubeMap) {
 			uint32_t faceWidth = tex.width / 4;
 			uint32_t faceHeight = tex.height / 3;
 			VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
@@ -2249,7 +2247,7 @@ private:
 		if (vkMapMemory(device, tex.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("failed to map staging buffer memory!");
 		}
-		if (hdr) {
+		if (cubeMap) {
 			memcpy(data, skyboxData, imageSize);
 		}
 		else {
@@ -2258,7 +2256,7 @@ private:
 		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
-	void createTexturedHDR(Texture& tex) {
+	void createTexturedCubemap(Texture& tex) {
 		getImageDataHDR(tex.path, tex, skyboxData);
 		if (skyboxData == nullptr) {
 			throw std::runtime_error("failed to load image data!");
@@ -2266,13 +2264,13 @@ private:
 		createStagingBuffer(tex, true);
 
 		// clculate the size of one face of the cubemap
-		uint32_t faceSize = tex.width / 4;
+		uint32_t faceWidth = tex.width / 4;
 		uint32_t faceHeight = tex.height / 3;
-		auto bpp = sizeof(float) * 4;
-		VkDeviceSize faceImageSize = static_cast<VkDeviceSize>(faceSize) * faceHeight * bpp;
+		auto bpp = sizeof(float) * 4; // four floats for R32G32B32A32_SFLOAT
+		VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
 
 		// ensure the atlas dimensions are valid for a horizontal cross layout
-		if (tex.height / 3 != faceSize) {
+		if (faceHeight != faceWidth) {
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
 		}
 
@@ -2280,8 +2278,8 @@ private:
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageInfo.extent.width = faceSize;
-		imageInfo.extent.height = faceSize;
+		imageInfo.extent.width = faceWidth;
+		imageInfo.extent.height = faceHeight;
 		imageInfo.extent.depth = 1;
 		imageInfo.mipLevels = 1;
 		imageInfo.arrayLayers = 6; // 6 for the six faces of a cubemap
@@ -2310,15 +2308,15 @@ private:
 			throw std::runtime_error("failed to allocate texture image memory!!!");
 		}
 		vkBindImageMemory(device, tex.image, tex.memory, 0);
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, true);
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		for (uint32_t i = 0; i < regions.size(); i++) {
 			VkBufferImageCopy& region = regions[i];
-			region.bufferOffset = faceImageSize * i;
-			region.bufferRowLength = 0;
-			region.bufferImageHeight = 0;
+			region.bufferOffset = faceSize * i;
+			region.bufferRowLength = faceWidth;
+			region.bufferImageHeight = faceHeight;
 
 			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			region.imageSubresource.mipLevel = 0;
@@ -2326,14 +2324,12 @@ private:
 			region.imageSubresource.layerCount = 1;
 
 			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { faceSize, faceSize, 1 };
+			region.imageExtent = { faceWidth, faceHeight, 1 };
+			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
-
-		vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, static_cast<uint32_t>(regions.size()), regions.data());
 		endSingleTimeCommands(copyCmdBuffer, commandPool);
 
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, true);
-
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
 
@@ -3457,7 +3453,7 @@ private:
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
+			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3500,7 +3496,7 @@ private:
 			}
 			// end the render pass and transition the shadowmap image to shader read only optimal
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
-			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
