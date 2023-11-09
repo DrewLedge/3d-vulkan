@@ -429,6 +429,9 @@ private:
 	VkRenderPass shadowMapRenderPass;
 	VkCommandPool commandPool;
 
+	std::vector<Texture> allTextures;
+	std::vector<Materials> allMaterials;
+
 	std::vector<VkCommandBuffer> commandBuffers;
 	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
 	std::vector<VkCommandBuffer> skyboxCommandBuffers;
@@ -1046,30 +1049,6 @@ private:
 		}
 	}
 
-	void loadBar(float percent, const std::string& what) {
-		int barWidth = 35;
-
-		if (percent < 90) {
-			std::cout << "Loading " << what << " [";
-			int pos = static_cast<int>(barWidth * (percent / 100.0));  // normalize percent
-			for (int i = 0; i < barWidth; ++i) {
-				if (i < pos) {
-					std::cout << "=";
-				}
-				else if (i == pos) {
-					std::cout << ">";
-				}
-				else {
-					std::cout << " ";
-				}
-			}
-			std::cout << "] " << static_cast<int>(percent) << " %\r";
-		}
-		else {
-			std::cout << std::string(what.length() + barWidth * 2, ' ') << "\r"; // erase the bar with spaces
-		}
-		std::cout.flush();
-	}
 
 	void loadSkybox(std::string path) {
 		skybox.tex.path = path;
@@ -1148,8 +1127,6 @@ private:
 						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
 					}
 					bool tangentFound = true;
-
-					loadBar(forms::gen::getPercent(sceneInd.modInd, gltfModel.meshes.size()), "vertecies");
 
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
@@ -1354,7 +1331,6 @@ private:
 			auto loadTextureTask = taskFlow.emplace([&]() {
 				size_t t = 0;
 				for (auto& object : objects) {
-					loadBar(forms::gen::getPercent(t, objects.size()), "textures");
 					t++;
 					for (size_t i = 0; i < object.materials.size(); i++) {
 						//create the texture image for each texture (for each material)
@@ -1832,11 +1808,9 @@ private:
 	}
 
 	std::vector<Texture> getAllTextures() {
-		std::vector<Texture> allTextures;
 		allTextures.reserve(totalTextureCount);
 		size_t t = 0;
 		for (const model& obj : objects) {
-			loadBar(forms::gen::getPercent(t, objects.size()), "texture array");
 			t++;
 			for (const Materials& materials : obj.materials) {
 				// directly construct textures in-place
@@ -1862,14 +1836,11 @@ private:
 		for (const auto& obj : objects) {
 			totalMaterials += obj.materials.size();
 		}
-
-		std::vector<Materials> allMaterials;
 		allMaterials.reserve(totalMaterials);
 		size_t t = 0;
 		for (const auto& obj : objects) {
 			for (auto& mat : obj.materials) {
 				t += 1;
-				loadBar(forms::gen::getPercent(t, totalMaterials), "material array");
 				allMaterials.push_back(mat);
 			}
 		}
@@ -1977,10 +1948,8 @@ private:
 
 		setupMatrixUBO(); //create the matrix UBOs for each object
 		setupLights();
-		std::vector<Texture> textures = getAllTextures(); // iterate through all objects and put all texture data into a vector
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
-		std::vector<Materials> mats = getAllMaterials(); // iterate through all objects and put all material data into a vector
-		setupTexIndices(textures, mats);
+		setupTexIndices(allTextures, allMaterials);
 
 		VkDescriptorBufferInfo matrixBufferInfo{};
 		matrixBufferInfo.buffer = matrixDataBuffer;
@@ -1990,8 +1959,8 @@ private:
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = textures[i].imageView;
-			imageInfos[i].sampler = textures[i].sampler;
+			imageInfos[i].imageView = allTextures[i].imageView;
+			imageInfos[i].sampler = allTextures[i].sampler;
 		}
 		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {
@@ -2003,7 +1972,6 @@ private:
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		skyboxInfo.imageView = skybox.tex.imageView;
 		skyboxInfo.sampler = skybox.tex.sampler;
-		std::cout << skybox.tex.sampler << " " << skybox.tex.imageView << " " << std::endl;
 
 		VkDescriptorBufferInfo indexBufferInfo{};
 		indexBufferInfo.buffer = sceneIndexBuffer;
@@ -2069,11 +2037,15 @@ private:
 	}
 
 
-	void setupDescriptorSets() {
+	void setupDescriptorSets(bool initial = true) {
 		descriptorSets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
 			totalTextureCount += object.materials.size() * 3;  // each material has 3 textures
+		}
+		if (initial) {
+			getAllTextures();
+			getAllMaterials();
 		}
 		createDS(); //create the descriptor set
 	}
@@ -3256,7 +3228,7 @@ private:
 	}
 	void recreateObjectRelated() {
 		cleanupDS();
-		setupDescriptorSets();
+		setupDescriptorSets(false);
 		createGraphicsPipeline();
 		recreateBuffers();
 	}
@@ -3271,36 +3243,37 @@ private:
 		uint32_t objSize = static_cast<uint32_t>(objects.size());
 		uint32_t texInd = -1;
 
-		// get maximum indices from original model
+		// get the texture indicies 	
 		for (auto& material : m.materials) {
-			if (material.metallicRoughness.texIndex > texInd)
-				material.metallicRoughness.texIndex = texInd;
-			if (material.baseColor.texIndex > texInd)
-				material.baseColor.texIndex = texInd;
-			if (material.normalMap.texIndex > texInd)
-				material.normalMap.texIndex = texInd;
+			if (material.metallicRoughness.texIndex > texInd) material.metallicRoughness.texIndex = texInd;
+			if (material.baseColor.texIndex > texInd) material.baseColor.texIndex = texInd;
+			if (material.normalMap.texIndex > texInd) material.normalMap.texIndex = texInd;
 			material.modelIndex = objSize;
+
+			// add the textures to the list of textures
+			allMaterials.emplace_back(material);
+			allTextures.emplace_back(material.baseColor);
+			allTextures.emplace_back(material.metallicRoughness);
+			allTextures.emplace_back(material.normalMap);
 		}
 
-		// increment indices for new model
-		texInd++;
-		for (size_t i = 0; i < m.vertices.size(); i++) {
+		size_t verticesSize = m.vertices.size(); // get the size of the vertices array before iteration
+		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = objSize;
 		}
 		forms::mat4 newModel = forms::mat4::translate(pos) * forms::mat4::rotateQ(rotation) * forms::mat4::scale(scale);
 		forms::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
 		convertMatrix(model, m.modelMatrix);
 
-		//create the model and reset the descriptor sets
-		objects.push_back(m);
+		objects.push_back(m); // add the model to the list
 	}
 
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
 		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
-		std::cout << "Current Object Count: " << objects.size() << std::endl;
 	}
 	void recreateBuffers() {
 		vkDeviceWaitIdle(device);  // wait for all frames to finish
@@ -3824,7 +3797,6 @@ private:
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
-			std::cout << cam.camAngle << std::endl;
 		}
 		cam.camAngle.z = 0.0f;
 	}
