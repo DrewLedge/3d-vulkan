@@ -79,7 +79,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="forms.h">
+    <ClInclude Include="dml.h">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="stb_image.h">

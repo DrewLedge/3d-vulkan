@@ -4,7 +4,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "ext/tiny_gltf.h" // load .obj and .mtl files
 #include "ext/stb_image_resize.h"
-#include "forms.h" // my header file with the math
+#include "dml.h" // my header file with the math
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
@@ -45,31 +45,31 @@ public:
 	}
 private:
 	struct Vertex {
-		forms::vec3 pos; // position coordinates x, y, z
-		forms::vec2 tex; // texture coordinates u, v
-		forms::vec3 col; // color r, g, b
-		forms::vec3 normal; // normal vector x, y, z
+		dml::vec3 pos; // position coordinates x, y, z
+		dml::vec2 tex; // texture coordinates u, v
+		dml::vec3 col; // color r, g, b
+		dml::vec3 normal; // normal vector x, y, z
 		float alpha;
 		uint32_t matIndex; // used to know which vertex belong to which material
-		forms::vec4 tangent;
+		dml::vec4 tangent;
 
 		// default constructor:
 		Vertex()
-			: pos(forms::vec3(0.0f, 0.0f, 0.0f)),
-			tex(forms::vec2(0.0f, 0.0f)),
-			col(forms::vec3(0.0f, 0.0f, 0.0f)),
-			normal(forms::vec3(0.0f, 0.0f, 0.0f)),
+			: pos(dml::vec3(0.0f, 0.0f, 0.0f)),
+			tex(dml::vec2(0.0f, 0.0f)),
+			col(dml::vec3(0.0f, 0.0f, 0.0f)),
+			normal(dml::vec3(0.0f, 0.0f, 0.0f)),
 			alpha(1.0f),
-			tangent(forms::vec4(0.0f, 0.0f, 0.0f, 0.0f))
+			tangent(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f))
 		{}
 
 		// constructor:
-		Vertex(const forms::vec3& position,
-			const forms::vec2& texture,
-			const forms::vec3& color,
-			const forms::vec3& normalVector,
+		Vertex(const dml::vec3& position,
+			const dml::vec2& texture,
+			const dml::vec3& color,
+			const dml::vec3& normalVector,
 			float alphaValue,
-			const forms::vec4& tang)
+			const dml::vec4& tang)
 			: pos(position),
 			tex(texture),
 			col(color),
@@ -196,9 +196,9 @@ private:
 		std::vector<uint32_t> indices;
 		std::string pathObj; // i.e "models/cube.obj"
 
-		forms::vec3 position;  // position of the model
-		forms::vec4 rotation;  // rotation of the model in quaternions
-		forms::vec3 scale;     // scale of the model
+		dml::vec3 position;  // position of the model
+		dml::vec4 rotation;  // rotation of the model in quaternions
+		dml::vec3 scale;     // scale of the model
 		float modelMatrix[16];
 		float projectionMatrix[16];
 		float viewMatrix[16];
@@ -213,9 +213,9 @@ private:
 			vertices(),
 			indices(),
 			pathObj(""),
-			position(forms::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
-			rotation(forms::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-			scale(forms::vec3(0.1f, 0.1f, 0.1f)),
+			position(dml::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
+			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
 			isLoaded(false),
 			startObj(true)
 		{
@@ -241,9 +241,9 @@ private:
 	};
 
 	struct light { // spotlight
-		forms::vec3 pos;
-		forms::vec3 col;
-		forms::vec3 target;
+		dml::vec3 pos;
+		dml::vec3 col;
+		dml::vec3 target;
 		float baseIntensity;
 		float proj[16];
 		float view[16];
@@ -260,9 +260,9 @@ private:
 	};
 
 	struct lightCords {
-		forms::vec3 pos;
-		forms::vec3 col;
-		forms::vec3 target;
+		dml::vec3 pos;
+		dml::vec3 col;
+		dml::vec3 target;
 		float baseIntensity;
 		float innerConeAngle; // in degrees
 		float outerConeAngle; // in degrees
@@ -301,9 +301,9 @@ private:
 		}
 	};
 	struct camData {
-		forms::vec3 camPos; //x, y, z
-		forms::vec3 camAngle; //angle of the camera is facing
-		forms::vec3 camRads; // radians of the camera is facing
+		dml::vec3 camPos; //x, y, z
+		dml::vec3 camAngle; //angle of the camera is facing
+		dml::vec3 camRads; // radians of the camera is facing
 	};
 	struct shadowMapProportionsObject {
 		uint32_t mapWidth = 2048;
@@ -329,7 +329,7 @@ private:
 		VkDeviceMemory vertBufferMem;
 		VkBuffer indBuffer;
 		VkDeviceMemory indBufferMem;
-		std::vector<forms::vec3> vertices;
+		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
 		sBox() {
@@ -357,7 +357,7 @@ private:
 
 
 	std::vector<bufData> bufferData;
-	camData cam = { forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f), forms::vec3(0.0f, 0.0f, 0.0f) };
+	camData cam = { dml::vec3(0.0f, 0.0f, 0.0f), dml::vec3(0.0f, 0.0f, 0.0f), dml::vec3(0.0f, 0.0f, 0.0f) };
 	meshIndicies sceneInd;
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
@@ -455,13 +455,13 @@ private:
 
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
-	forms formula;
+	dml formula;
 
 	// mutexes for multithreading
 	std::mutex modelMtx;
 	std::mutex mtx;
 
-	std::array<float, 3> toArray(const forms::vec3& v) {
+	std::array<float, 3> toArray(const dml::vec3& v) {
 		return { v.x, v.y, v.z };
 	}
 
@@ -497,10 +497,10 @@ private:
 		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
-	void createObject(std::string path, forms::vec3 scale, forms::vec4 rotation, forms::vec3 pos) {
+	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
 		loadScene(scale, pos, rotation, path);
 	}
-	void createLight(forms::vec3 pos, forms::vec3 color, float intensity, forms::vec3 t) {
+	void createLight(dml::vec3 pos, dml::vec3 color, float intensity, dml::vec3 t) {
 		light l;
 		l.col = color;
 		l.pos = pos;
@@ -947,10 +947,10 @@ private:
 		}
 	}
 
-	forms::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
-		forms::vec3 t = { 0.0f, 0.0f, 0.0f };
-		forms::vec4 r = { 0.0f, 0.0f, 0.0f, 1.0f };
-		forms::vec3 s = { 1.0f, 1.0f, 1.0f };
+	dml::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
+		dml::vec3 t = { 0.0f, 0.0f, 0.0f };
+		dml::vec4 r = { 0.0f, 0.0f, 0.0f, 1.0f };
+		dml::vec3 s = { 1.0f, 1.0f, 1.0f };
 		if (node.translation.size() >= 3) {
 			t = {
 				static_cast<float>(node.translation[0]),
@@ -978,11 +978,11 @@ private:
 		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
 		t += m.position;
 		r = r * m.rotation;
-		forms::mat4 translationMatrix = forms::mat4::translate(t);
-		forms::mat4 rotationMatrix = forms::mat4::rotateQ(r); // quaternion rotation
-		forms::mat4 scaleMatrix = forms::mat4::scale(s);
+		dml::mat4 translationMatrix = dml::translate(t);
+		dml::mat4 rotationMatrix = dml::rotateQ(r); // quaternion rotation
+		dml::mat4 scaleMatrix = dml::scale(s);
 		if (node.matrix.size() == 16) {
-			forms::mat4 gltfMatrix = forms::mat4::gltfToMat4(node.matrix);
+			dml::mat4 gltfMatrix = dml::gltfToMat4(node.matrix);
 			return translationMatrix * rotationMatrix * scaleMatrix * gltfMatrix;
 		}
 		else {
@@ -999,14 +999,14 @@ private:
 		return -1; // not found
 	}
 
-	forms::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, model& m) {
+	dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, model& m) {
 		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
-		forms::mat4 modelMatrix;
+		dml::mat4 modelMatrix;
 
 		// walk up the node hierarchy to accumulate transformations
 		while (currentNodeIndex != -1) {
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
-			forms::mat4 localMatrix = calcNodeLM(node, m);
+			dml::mat4 localMatrix = calcNodeLM(node, m);
 			modelMatrix = localMatrix * modelMatrix;
 
 			// move up to the parent node for the next iteration
@@ -1061,7 +1061,7 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
-	void loadScene(forms::vec3 scale, forms::vec3 pos, forms::vec4 rot, std::string path) {
+	void loadScene(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
 		uint32_t meshInd = 0;
@@ -1164,31 +1164,31 @@ private:
 						std::cerr << "WARNING: Tangent data not found for mesh: " << path << std::endl;
 						tangentFound = false;
 					}
-					std::vector<forms::vec4> tangents(indexAccessor.count, forms::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+					std::vector<dml::vec4> tangents(indexAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
 					for (size_t i = 0; i < indexAccessor.count; i += 3) {
 						uint32_t i1 = static_cast<const uint32_t*>(rawIndices)[i];
 						uint32_t i2 = static_cast<const uint32_t*>(rawIndices)[i + 1];
 						uint32_t i3 = static_cast<const uint32_t*>(rawIndices)[i + 2];
 
-						forms::vec3 pos1 = { positionData[3 * i1], positionData[3 * i1 + 1], positionData[3 * i1 + 2] };
-						forms::vec3 pos2 = { positionData[3 * i2], positionData[3 * i2 + 1], positionData[3 * i2 + 2] };
-						forms::vec3 pos3 = { positionData[3 * i3], positionData[3 * i3 + 1], positionData[3 * i3 + 2] };
+						dml::vec3 pos1 = { positionData[3 * i1], positionData[3 * i1 + 1], positionData[3 * i1 + 2] };
+						dml::vec3 pos2 = { positionData[3 * i2], positionData[3 * i2 + 1], positionData[3 * i2 + 2] };
+						dml::vec3 pos3 = { positionData[3 * i3], positionData[3 * i3 + 1], positionData[3 * i3 + 2] };
 
-						forms::vec2 tex1 = { texCoordData[2 * i1], texCoordData[2 * i1 + 1] };
-						forms::vec2 tex2 = { texCoordData[2 * i2], texCoordData[2 * i2 + 1] };
-						forms::vec2 tex3 = { texCoordData[2 * i3], texCoordData[2 * i3 + 1] };
+						dml::vec2 tex1 = { texCoordData[2 * i1], texCoordData[2 * i1 + 1] };
+						dml::vec2 tex2 = { texCoordData[2 * i2], texCoordData[2 * i2 + 1] };
+						dml::vec2 tex3 = { texCoordData[2 * i3], texCoordData[2 * i3 + 1] };
 
-						forms::vec3 edge1 = pos2 - pos1;
-						forms::vec3 edge2 = pos3 - pos1;
-						forms::vec2 deltaUV1 = tex2 - tex1;
-						forms::vec2 deltaUV2 = tex3 - tex1;
+						dml::vec3 edge1 = pos2 - pos1;
+						dml::vec3 edge2 = pos3 - pos1;
+						dml::vec2 deltaUV1 = tex2 - tex1;
+						dml::vec2 deltaUV2 = tex3 - tex1;
 
 						float denominator = (deltaUV1.x * deltaUV2.y - deltaUV1.y * deltaUV2.x);
 						if (std::abs(denominator) < 1e-6) { // if the denominator is too small, skip this iteration to prevent a divide by zero
 							continue;
 						}
 						float f = 1.0f / denominator;
-						forms::vec3 tangent = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * f;
+						dml::vec3 tangent = (edge1 * deltaUV2.y - edge2 * deltaUV1.y) * f;
 
 						tangents[i1].x += tangent.x;
 						tangents[i1].y += tangent.y;
@@ -1204,9 +1204,9 @@ private:
 
 
 					}
-					for (forms::vec4& tangent : tangents) {
+					for (dml::vec4& tangent : tangents) {
 						// normalize tangent.xyz
-						forms::vec3 normalizedTangent = tangent.xyz().normalize();
+						dml::vec3 normalizedTangent = tangent.xyz().normalize();
 						tangent.x = normalizedTangent.x;
 						tangent.y = normalizedTangent.y;
 						tangent.z = normalizedTangent.z;
@@ -1236,7 +1236,7 @@ private:
 						vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
 
 						// get handedness of the tangent
-						forms::vec3 t = tangents[index].xyz();
+						dml::vec3 t = tangents[index].xyz();
 						tangents[index].w = (vertex.normal.crossProd(t)).dotProd(tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
 
 						if (tangentFound) {
@@ -1654,7 +1654,7 @@ private:
 		//printIndices(sceneIndices, false); // debug
 	}
 
-	void printMatrix(const forms::mat4& matrix) { // prints the matrix in transposed order
+	void printMatrix(const dml::mat4& matrix) { // prints the matrix in transposed order
 		for (int j = 0; j < 4; j++) {
 			for (int i = 0; i < 4; i++) {
 				std::cout << std::fixed << std::setw(10) << std::setprecision(2) << matrix.m[i][j] << " ";
@@ -1664,10 +1664,10 @@ private:
 		std::cout << "---------------------------------" << std::endl;
 	}
 
-	void printVec3(const forms::vec3& vector) {
+	void printVec3(const dml::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
 	}
-	void printVec4(const forms::vec4& vector) {
+	void printVec4(const dml::vec4& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << ", " << vector.w << "}" << std::endl;
 	}
 
@@ -1689,8 +1689,8 @@ private:
 
 	void calcObjectMats(model& o) {
 		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
-		convertMatrix(forms::mat4::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(forms::mat4::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 15.0f), o.projectionMatrix);
+		convertMatrix(dml::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
+		convertMatrix(dml::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 15.0f), o.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {
@@ -1698,13 +1698,13 @@ private:
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 0.01f, farPlane = 100.0f;
 
-		forms::vec3 up = forms::vec3(0.0f, 1.0f, 0.0f);
+		dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
 		if (l.pos == l.target) {
 			throw std::runtime_error("Light position and target are the same!");
 		}
 
-		forms::mat4 viewMatrix = forms::mat4::lookAt(l.pos, l.target, up);
-		forms::mat4 projMatrix = forms::mat4::spotPerspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
+		dml::mat4 viewMatrix = dml::lookAt(l.pos, l.target, up);
+		dml::mat4 projMatrix = dml::spotPerspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
 		/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
 			printMatrix(viewMatrix);
 			std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
@@ -1742,9 +1742,9 @@ private:
 	}
 
 	void copyLightToLightCords(const light& src, lightCords& dest) {
-		memcpy(&dest.pos, &src.pos, sizeof(forms::vec3));
-		memcpy(&dest.col, &src.col, sizeof(forms::vec3));
-		memcpy(&dest.target, &src.target, sizeof(forms::vec3));
+		memcpy(&dest.pos, &src.pos, sizeof(dml::vec3));
+		memcpy(&dest.col, &src.col, sizeof(dml::vec3));
+		memcpy(&dest.target, &src.target, sizeof(dml::vec3));
 		memcpy(&dest.baseIntensity, &src.baseIntensity, sizeof(float));
 		memcpy(&dest.innerConeAngle, &src.innerConeAngle, sizeof(float));
 		memcpy(&dest.outerConeAngle, &src.outerConeAngle, sizeof(float));
@@ -1753,7 +1753,7 @@ private:
 		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
-	void convertMatrix(const forms::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
+	void convertMatrix(const dml::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		size_t index = 0;
 		for (size_t column = 0; column < 4; column++) {
 			for (size_t row = 0; row < 4; row++) {
@@ -1763,8 +1763,8 @@ private:
 		}
 	}
 
-	forms::mat4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
-		forms::mat4 destination;
+	dml::mat4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
+		dml::mat4 destination;
 		size_t index = 0;
 		for (size_t column = 0; column < 4; column++) {
 			for (size_t row = 0; row < 4; row++) {
@@ -2967,7 +2967,7 @@ private:
 
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(forms::vec3); // the stride is the size of vec3
+		bindDesc.stride = sizeof(dml::vec3); // the stride is the size of vec3
 		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
 		std::array<VkVertexInputAttributeDescription, 1> attrDesc;
@@ -3233,7 +3233,7 @@ private:
 		recreateBuffers();
 	}
 
-	void cloneObject(forms::vec3 pos, uint16_t object, forms::vec3 scale, forms::vec4 rotation) {
+	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
 		model m = objects[object];
 
 		m.scale = scale;
@@ -3261,8 +3261,8 @@ private:
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = objSize;
 		}
-		forms::mat4 newModel = forms::mat4::translate(pos) * forms::mat4::rotateQ(rotation) * forms::mat4::scale(scale);
-		forms::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
+		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
+		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
 		convertMatrix(model, m.modelMatrix);
 
 		objects.push_back(m); // add the model to the list
@@ -3271,8 +3271,8 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
-		cloneObject(forms::mat4::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(dml::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(dml::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 	}
 	void recreateBuffers() {
@@ -3463,11 +3463,11 @@ private:
 	}
 
 	void createSkyboxBufferData() {
-		createBuffer(sizeof(forms::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, skybox.vertBuffer, skybox.vertBufferMem);
+		createBuffer(sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, skybox.vertBuffer, skybox.vertBufferMem);
 
 		char* vertexData;
-		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(forms::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
-		memcpy(vertexData, skybox.vertices.data(), sizeof(forms::vec3) * skybox.bufferData.vertexCount);
+		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(dml::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
+		memcpy(vertexData, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount);
 		vkUnmapMemory(device, skybox.vertBufferMem);
 
 		createBuffer(sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skybox.indBuffer, skybox.indBufferMem);
@@ -3756,9 +3756,9 @@ private:
 			cam.camAngle.x = -90;
 		}
 
-		cam.camRads = forms::vec3::toRads(cam.camAngle);
-		forms::vec3 forward = forms::vec3::getForward(cam.camRads);
-		forms::vec3 right = cam.camPos.getRight(cam.camRads);
+		cam.camRads = dml::toRads(cam.camAngle);
+		dml::vec3 forward = dml::getForward(cam.camRads);
+		dml::vec3 right = dml::getRight(cam.camRads);
 		forward.y *= -1; //for vulkan
 
 		// camera movement:
@@ -3923,9 +3923,9 @@ private:
 	// 18. mip mapping and optimizations (done)
 	// 19. lighting (done)
 	// 20. shadows (done)
-	// 21. omnidirectional lighting using cubemaps
-	// 22. skybox
-	// 23. physcics
+	// 22. skybox (done)
+	// 23. omnidirectional lighting using cubemaps
+	// 24. physcics
 };
 int main() {
 	Engine app;

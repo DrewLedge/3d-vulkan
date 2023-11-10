@@ -155,7 +155,7 @@
     <ClInclude Include="ext\imgui\imgui_impl_glfw.h" />
     <ClInclude Include="ext\imgui\imgui_impl_vulkan.h" />
     <ClInclude Include="ext\imgui\imgui_internal.h" />
-    <ClInclude Include="forms.h" />
+    <ClInclude Include="dml.h" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
