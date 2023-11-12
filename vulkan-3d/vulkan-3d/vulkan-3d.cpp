@@ -302,8 +302,40 @@ private:
 	};
 	struct camData {
 		dml::vec3 camPos; //x, y, z
-		dml::vec3 camAngle; //angle of the camera is facing
-		dml::vec3 camRads; // radians of the camera is facing
+		dml::vec4 quat; 	
+		float rightAngle;
+		float upAngle;
+
+		dml::vec3 camAngle;	// temporary
+		dml::vec3 camRads; // temporary
+
+		camData() {
+			camPos = { 0.0f, 0.0f, 0.0f };
+			quat = { 0.0f, 0.0f, 0.0f, 1.0f};
+			rightAngle = 0.0f;
+			upAngle = 0.0f;
+			camAngle = { 0.0f, 0.0f, 0.0f };
+			camRads = { 0.0f, 0.0f, 0.0f };
+		}
+
+		dml::mat4 getOrientation() const {
+			const float degToRad = PI / 180.0f;
+			dml::vec4 qPitch = dml::angleAxis(-upAngle * degToRad, dml::vec3(1, 0, 0));
+			dml::vec4 qYaw = dml::angleAxis(rightAngle * degToRad, dml::vec3(0, 1, 0));
+			dml::vec4 q = qYaw * qPitch;
+			q = q.normalize();
+
+			return dml::rotateQ(q); // convert the quaternion to a rotation matrix
+		}
+
+		dml::vec3 getLookPoint() const {
+			return camPos + getOrientation() * dml::vec3(0, 0, -1);
+		}
+
+		dml::mat4 getViewMatrix() {
+			dml::vec3 up = dml::vec3(0, 1, 0);
+			return dml::lookAt(camPos, getLookPoint(), up);
+		}
 	};
 	struct shadowMapProportionsObject {
 		uint32_t mapWidth = 2048;
@@ -357,7 +389,7 @@ private:
 
 
 	std::vector<bufData> bufferData;
-	camData cam = { dml::vec3(0.0f, 0.0f, 0.0f), dml::vec3(0.0f, 0.0f, 0.0f), dml::vec3(0.0f, 0.0f, 0.0f) };
+	camData cam;
 	meshIndicies sceneInd;
 	std::vector<model> objects = { };
 	matrixDataSSBO matData = {};
@@ -1042,9 +1074,9 @@ private:
 			}
 		}
 
-		for (size_t i = 0; i < model.nodes.size(); ++i) {
+		for (int i = 0; i < model.nodes.size(); ++i) {
 			if (childNodes.find(i) == childNodes.end()) { // if a node doesn't appear in the childNodes set, it's a root
-				printNodeHierarchy(model, static_cast<int>(i));
+				printNodeHierarchy(model, i);
 			}
 		}
 	}
@@ -3798,7 +3830,6 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
-		cam.camAngle.z = 0.0f;
 	}
 
 	void initVulkan() { //initializes Vulkan functions

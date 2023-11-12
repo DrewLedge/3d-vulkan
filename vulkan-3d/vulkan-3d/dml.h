@@ -179,6 +179,18 @@ public:
 		vec2 xy() const { return vec2(x, y); }
 		vec3 xyz() const { return vec3(x, y, z); }
 
+		vec4 normalize() const{
+			float length = sqrt(x * x + y * y + z * z + w * w);
+			if (length == 0) {
+				return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+			}
+
+			return vec4(x / length, y / length, z / length , w / length);
+		}
+
+		vec4 conjugate() const {
+			return vec4(-x, -y, -z, w);
+		}
 
 		bool operator==(const vec4& other) const {
 			const float epsilon = 0.00001f;
@@ -421,6 +433,27 @@ public:
 		return quatCast(l);
 	}
 
+	static vec4 inverseQ(const vec4& q) { // quaternion inversion
+		float length = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;	
+		if (length == 0) {
+			return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
+		}
+
+		return vec4(-q.x / length, -q.y / length, -q.z / length, q.w / length);
+	}
+
+	static vec4 angleAxis(float angle, const vec3& axis) {
+		vec3 normAxis = axis.normalize();
+
+		// compute the sin and cos of half the angle
+		float half = angle * 0.5f;
+		float sinHalf = sin(half);
+		float cosHalf = cos(half);
+
+		// create the quaternion
+		return vec4(normAxis.x * sinHalf, normAxis.y * sinHalf, normAxis.z * sinHalf, cosHalf);
+	}
+
 	// ------------------ MATRIX4 FORMULAS ------------------ // 
 	static vec4 quatCast(const mat4& mat) {
 		float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
@@ -635,6 +668,7 @@ public:
 			* translate(position);
 		return result;
 	}
+
 
 	static vec3 getCamWorldPos(const mat4& viewMat) {
 		mat4 invView = inverseMatrix(viewMat);
