@@ -559,7 +559,7 @@ private:
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 3.0f, -1.5f });
+		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
@@ -1168,6 +1168,7 @@ private:
 						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
 					}
 					bool tangentFound = true;
+					bool colorFound = true;
 
 					// pos
 					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
@@ -1185,24 +1186,28 @@ private:
 					const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
 
 					// colors
+					const float* colorData = nullptr;
 					auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
-					const auto& colorAccessor = gltfModel.accessors[colorIt->second];
-					const float* colorData = getAccessorData(gltfModel, primitive.attributes, "COLOR_0");
+					if (colorIt != primitive.attributes.end()) { // check if the primitive has tangents
+						const auto& colorAccessor = gltfModel.accessors[colorIt->second];
+						colorData = getAccessorData(gltfModel, primitive.attributes, "COLOR_0");
+					}
+					else {
+						colorFound = false;
+					}
 
 					// indices
 					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
 					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
-					const float* tangentData = nullptr;
-
+				
 					// tangents
+					const float* tangentData = nullptr;
 					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
 					if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
 						const auto& tangentAccessor = gltfModel.accessors[tangentIt->second];
 						tangentData = getAccessorData(gltfModel, primitive.attributes, "TANGENT");
 					}
 					else {
-
-						std::cerr << "WARNING: Tangent data not found for mesh: " << path << std::endl;
 						tangentFound = false;
 					}
 					std::vector<dml::vec4> tangents(indexAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
@@ -1274,7 +1279,12 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-						vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
+						if (colorFound) {
+							vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
+						}
+						else {
+							vertex.col = {1.0f, 1.0f, 1.0f};
+						}
 
 						// get handedness of the tangent
 						dml::vec3 t = tangents[index].xyz();
