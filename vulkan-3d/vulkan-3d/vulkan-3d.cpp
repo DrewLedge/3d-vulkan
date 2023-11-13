@@ -436,8 +436,6 @@ private:
 	VkDescriptorPool descriptorPool1;
 	VkDescriptorSetLayout descriptorSetLayout2;
 	VkDescriptorPool descriptorPool2;
-	VkDescriptorSetLayout descriptorSetLayout3;
-	VkDescriptorPool descriptorPool3;
 	VkDescriptorSetLayout descriptorSetLayout4;
 	VkDescriptorPool descriptorPool4;
 	VkDescriptorSetLayout descriptorSetLayout5;
@@ -496,7 +494,6 @@ private:
 
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
-	dml formula;
 
 	// mutexes for multithreading
 	std::mutex modelMtx;
@@ -1696,7 +1693,7 @@ private:
 		std::cout << "-------------------------------" << std::endl;
 	}
 
-	void setupTexIndices(std::vector<Texture>& textures, std::vector<Materials>& materials) {
+	void setupTexIndices(std::vector<Texture>& textures, std::vector<Materials>& materials) { // depricated but keeping it for now
 		size_t materialCount = 0;
 		for (size_t i = 0; i < totalTextureCount; ++i) {
 			sceneIndices.texIndices[i] = textures[i].texIndex;
@@ -1996,21 +1993,19 @@ private:
 	}
 
 	void createDS() {
-		descriptorSets.resize(7);
+		descriptorSets.resize(6);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
 		//initialize descriptor set layouts and pools
 		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // model matricies ssbo
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // teture index data ssbo (deprecated)
-		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
-		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
-		descriptorSetLayout6 = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
-		descriptorSetLayout7 = createDSLayout(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ssbo
+		descriptorSetLayout4 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
+		descriptorSetLayout5 = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		descriptorSetLayout6 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
+		descriptorSetLayout7 = createDSLayout(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ssbo
 
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
-		descriptorPool3 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool4 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool5 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descriptorPool6 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
@@ -2019,11 +2014,10 @@ private:
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
-		std::array<VkDescriptorSetLayout, 7> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout6,
-			descriptorSetLayout7 };
-		std::array<VkDescriptorPool, 7> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5, descriptorPool6, descriptorPool7 };
+		std::array<VkDescriptorSetLayout, 6> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout6, descriptorSetLayout7 };
+		std::array<VkDescriptorPool, 6> pools = { descriptorPool1, descriptorPool2, descriptorPool4, descriptorPool5, descriptorPool6, descriptorPool7 };
 
-		std::array<uint32_t, 7> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1, lightSize, 1, 1 };
+		std::array<uint32_t, 6> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1 };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2046,7 +2040,6 @@ private:
 		setupCamMatUBO(); //create the camera matrix UBO
 		setupLights();
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
-		setupTexIndices(allTextures, allMaterials);
 
 		VkDescriptorBufferInfo modelMatBufferInfo{};
 		modelMatBufferInfo.buffer = modelMatBuffer;
@@ -2075,17 +2068,12 @@ private:
 		skyboxInfo.imageView = skybox.tex.imageView;
 		skyboxInfo.sampler = skybox.tex.sampler;
 
-		VkDescriptorBufferInfo indexBufferInfo{};
-		indexBufferInfo.buffer = sceneIndexBuffer;
-		indexBufferInfo.offset = 0;
-		indexBufferInfo.range = sizeof(sceneIndexSSBO);
-
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = sizeof(lightDataSSBO);
 
-		std::array<VkWriteDescriptorSet, 7> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, 6> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[0];
@@ -2109,39 +2097,31 @@ private:
 		descriptorWrites[2].dstArrayElement = 0;
 		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
 		descriptorWrites[2].descriptorCount = 1;
-		descriptorWrites[2].pBufferInfo = &indexBufferInfo;
+		descriptorWrites[2].pBufferInfo = &lightBufferInfo;
 
 		descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[3].dstSet = descriptorSets[3];
 		descriptorWrites[3].dstBinding = 3;
 		descriptorWrites[3].dstArrayElement = 0;
-		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
-		descriptorWrites[3].descriptorCount = 1;
-		descriptorWrites[3].pBufferInfo = &lightBufferInfo;
+		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[3].descriptorCount = static_cast<uint32_t>(lights.size());
+		descriptorWrites[3].pImageInfo = shadowInfos.data();
 
 		descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[4].dstSet = descriptorSets[4];
 		descriptorWrites[4].dstBinding = 4;
 		descriptorWrites[4].dstArrayElement = 0;
 		descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[4].descriptorCount = static_cast<uint32_t>(lights.size());
-		descriptorWrites[4].pImageInfo = shadowInfos.data();
+		descriptorWrites[4].descriptorCount = 1;
+		descriptorWrites[4].pImageInfo = &skyboxInfo;
 
 		descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[5].dstSet = descriptorSets[5];
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
-		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
 		descriptorWrites[5].descriptorCount = 1;
-		descriptorWrites[5].pImageInfo = &skyboxInfo;
-
-		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[6].dstSet = descriptorSets[6];
-		descriptorWrites[6].dstBinding = 6;
-		descriptorWrites[6].dstArrayElement = 0;
-		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
-		descriptorWrites[6].descriptorCount = 1;
-		descriptorWrites[6].pBufferInfo = &camMatBufferInfo;
+		descriptorWrites[5].pBufferInfo = &camMatBufferInfo;
 		
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -2803,7 +2783,7 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout7 };
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout7 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3396,7 +3376,6 @@ private:
 	void cleanupDS() {
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool6, nullptr);
@@ -3404,7 +3383,6 @@ private:
 
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout3, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout4, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout5, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout6, nullptr);
@@ -3413,8 +3391,8 @@ private:
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet skyboxDescriptorSets[] = { descriptorSets[5], descriptorSets[6] };
-		VkDescriptorSet descriptorSetsForScene[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4], descriptorSets[6] };
+		VkDescriptorSet skyboxDescriptorSets[] = { descriptorSets[4], descriptorSets[5] };
+		VkDescriptorSet descriptorSetsForScene[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[5] };
 		VkDeviceSize offsets[] = { 0 };
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
@@ -3448,7 +3426,7 @@ private:
 
 			// FOR THE MAIN PASS
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 6, descriptorSetsForScene, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, descriptorSetsForScene, 0, nullptr);
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
@@ -3544,7 +3522,7 @@ private:
 			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
 
 			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
-			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[3] };
+			VkDescriptorSet dSets[] = { descriptorSets[0], descriptorSets[2] };
 			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 2, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
@@ -3664,7 +3642,6 @@ private:
 		createImageViews();
 		vkDestroyDescriptorPool(device, descriptorPool1, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool2, nullptr);
-		vkDestroyDescriptorPool(device, descriptorPool3, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
 		setupDescriptorSets();

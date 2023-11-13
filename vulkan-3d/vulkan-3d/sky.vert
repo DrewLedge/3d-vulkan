@@ -5,7 +5,7 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 0) out vec4 outPos;
 
 
-layout(set = 1, binding = 6) buffer camBufferObject {
+layout(set = 1, binding = 5) buffer camBufferObject {
     mat4 view;
     mat4 proj;
 } camSSBO;

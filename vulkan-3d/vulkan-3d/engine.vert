@@ -32,15 +32,10 @@ layout(set = 0, binding = 0) buffer matBufferObject {
     matrixUBO matrixSSBO[MAX_MODELS];
 } matSSBO;
 
-layout(set = 5, binding = 6) buffer camBufferObject {
+layout(set = 4, binding = 5) buffer camBufferObject {
     mat4 view;
     mat4 proj;
 } camSSBO;
-
-layout(set = 2, binding = 2) buffer BufferObject {
-    uint texIndices[MAX_TEXTURES];     
-    uint modelIndices[MAX_MODELS]; // which materials are part of which objects. (add functionality for this)
-} idxSSBO;
 
 void main() {
     uint modelIndex = inVertIndex;

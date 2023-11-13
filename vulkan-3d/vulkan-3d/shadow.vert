@@ -33,8 +33,8 @@ struct lightData {
 };
 
 
-layout (set=1, binding = 3) buffer LightBuffer {
-	lightMatrix lightMatricies[20];
+layout (set=1, binding = 2) buffer LightBuffer {
+	lightMatrix lightMatricies[20]; // are used in the shader
     lightData lights[20]; // not used in this shader but needed because of the descriptor set and binding consistancy
 };
 
