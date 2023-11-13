@@ -27,12 +27,15 @@ layout(location = 20) out vec3 test;
 
 struct matrixUBO {
     mat4 model;
-    mat4 view;
-    mat4 proj;
 };
 layout(set = 0, binding = 0) buffer matBufferObject {
     matrixUBO matrixSSBO[MAX_MODELS];
 } matSSBO;
+
+layout(set = 5, binding = 6) buffer camBufferObject {
+    mat4 view;
+    mat4 proj;
+} camSSBO;
 
 layout(set = 2, binding = 2) buffer BufferObject {
     uint texIndices[MAX_TEXTURES];     
@@ -43,8 +46,8 @@ void main() {
     uint modelIndex = inVertIndex;
     uint texIndex = inVertIndex*3; // 3 textures per material
 
-    mat4 proj = matSSBO.matrixSSBO[modelIndex].proj;
-    mat4 view = matSSBO.matrixSSBO[modelIndex].view;
+    mat4 proj = camSSBO.proj;
+    mat4 view = camSSBO.view;
     mat4 model = matSSBO.matrixSSBO[modelIndex].model;
 
     vec3 worldCamPos = vec3(inverse(view)[3]);

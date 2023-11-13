@@ -4,8 +4,6 @@ layout (location = 0) in vec3 inPosition;
 
 struct matrixUBO { // matricies of the 3d models
     mat4 model;
-    mat4 modelView; // not used
-    mat4 modelProj; // not used
 };
 
 layout(set = 0, binding = 0) buffer matBufferObject {

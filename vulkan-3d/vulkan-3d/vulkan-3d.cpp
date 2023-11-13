@@ -93,7 +93,7 @@ private:
 		size_t operator()(const Vertex& vertex) const {
 			size_t seed = 0;
 
-			// combine hashes for 'pos' using XOR and bit shifting:
+			// combine hashes for the vertex data using XOR and bit shifting:
 			seed ^= std::hash<float>()(vertex.pos.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.pos.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.pos.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
@@ -1601,6 +1601,41 @@ private:
 		memcpy(data, &objMatData, bufferCreateInfo.size);
 		vkUnmapMemory(device, modelMatBufferMem);
 	}
+
+	void setupCamMatUBO() { // ubo containing the cameras matricies (view and projection)
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = sizeof(camUBO);
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
+
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &cam.buffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create matrix SSBO for camera!");
+		}
+
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, cam.buffer, &memoryRequirements);
+
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &cam.bufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
+		}
+
+		vkBindBufferMemory(device, cam.buffer, cam.bufferMem, 0);
+
+		// once memory is bound, map and fill it
+		void* data;
+		vkMapMemory(device, cam.bufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, &camMatData, bufferCreateInfo.size);
+		vkUnmapMemory(device, cam.bufferMem);
+	}
+
+
+
 	void setupLights() {
 		VkBufferCreateInfo bufferCreateInfo = {};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1998,6 +2033,7 @@ private:
 
 
 		setupModelMatUBO(); //create the model matrix UBOs for each object
+		setupCamMatUBO(); //create the camera matrix UBO
 		setupLights();
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		setupTexIndices(allTextures, allMaterials);
@@ -2010,7 +2046,7 @@ private:
 		VkDescriptorBufferInfo camMatBufferInfo{};
 		camMatBufferInfo.buffer = cam.buffer;
 		camMatBufferInfo.offset = 0;
-		camMatBufferInfo.range = sizeof(camMatData);
+		camMatBufferInfo.range = sizeof(camUBO);
 
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
@@ -2039,7 +2075,7 @@ private:
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = sizeof(lightDataSSBO);
 
-		std::array<VkWriteDescriptorSet, 6> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, 7> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descriptorSets[0];
@@ -2089,6 +2125,14 @@ private:
 		descriptorWrites[5].descriptorCount = 1;
 		descriptorWrites[5].pImageInfo = &skyboxInfo;
 
+		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[6].dstSet = descriptorSets[6];
+		descriptorWrites[6].dstBinding = 6;
+		descriptorWrites[6].dstArrayElement = 0;
+		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
+		descriptorWrites[6].descriptorCount = 1;
+		descriptorWrites[6].pBufferInfo = &camMatBufferInfo;
+		
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
@@ -2749,7 +2793,7 @@ private:
 		dynamicState.pDynamicStates = dynamicStates;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5 };
+		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout7 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3105,7 +3149,7 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
 		dynamicState.pDynamicStates = dynamicStates;
 
-		VkDescriptorSetLayout setLayouts[] = { descriptorSetLayout1, descriptorSetLayout6 };
+		VkDescriptorSetLayout setLayouts[] = {descriptorSetLayout6, descriptorSetLayout7 };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3346,6 +3390,7 @@ private:
 		vkDestroyDescriptorPool(device, descriptorPool4, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool5, nullptr);
 		vkDestroyDescriptorPool(device, descriptorPool6, nullptr);
+		vkDestroyDescriptorPool(device, descriptorPool7, nullptr);
 
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout1, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout2, nullptr);
@@ -3353,12 +3398,13 @@ private:
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout4, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout5, nullptr);
 		vkDestroyDescriptorSetLayout(device, descriptorSetLayout6, nullptr);
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout7, nullptr);
 	}
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet skyboxDescriptorSets[] = { descriptorSets[0], descriptorSets[5] };
-		VkDescriptorSet descriptorSetsForScene[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4] };
+		VkDescriptorSet skyboxDescriptorSets[] = { descriptorSets[5], descriptorSets[6] };
+		VkDescriptorSet descriptorSetsForScene[] = { descriptorSets[0], descriptorSets[1], descriptorSets[2], descriptorSets[3], descriptorSets[4], descriptorSets[6] };
 		VkDeviceSize offsets[] = { 0 };
 		for (size_t i = 0; i < swapChainImages.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
@@ -3392,7 +3438,7 @@ private:
 
 			// FOR THE MAIN PASS
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, descriptorSetsForScene, 0, nullptr);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 6, descriptorSetsForScene, 0, nullptr);
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
