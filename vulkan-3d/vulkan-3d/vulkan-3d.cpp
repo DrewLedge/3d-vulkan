@@ -200,8 +200,6 @@ private:
 		dml::vec4 rotation;  // rotation of the model in quaternions
 		dml::vec3 scale;     // scale of the model
 		float modelMatrix[16];
-		float projectionMatrix[16];
-		float viewMatrix[16];
 
 		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
@@ -277,13 +275,15 @@ private:
 	};
 
 
-	struct matrixUBO {
+	struct modelMat {
 		float model[16];
+	};
+	struct modelMatSSBO {
+		modelMat objectMatrixData[MAX_MODELS];
+	};
+	struct camUBO {
 		float view[16];
 		float proj[16];
-	};
-	struct matrixDataSSBO {
-		matrixUBO objectMatrixData[MAX_MODELS];
 	};
 	struct sceneIndexSSBO {
 		uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
@@ -302,16 +302,23 @@ private:
 	};
 	struct camData {
 		dml::vec3 camPos; //x, y, z
-		dml::vec4 quat; 	
+		dml::vec4 quat;
 		float rightAngle;
 		float upAngle;
 
 		dml::vec3 camAngle;	// temporary
 		dml::vec3 camRads; // temporary
 
+		float projectionMatrix[16];
+		float viewMatrix[16];
+
+		// buffers for the camera matrix ubo
+		VkBuffer buffer;
+		VkDeviceMemory bufferMem;
+
 		camData() {
 			camPos = { 0.0f, 0.0f, 0.0f };
-			quat = { 0.0f, 0.0f, 0.0f, 1.0f};
+			quat = { 0.0f, 0.0f, 0.0f, 1.0f };
 			rightAngle = 0.0f;
 			upAngle = 0.0f;
 			camAngle = { 0.0f, 0.0f, 0.0f };
@@ -352,7 +359,7 @@ private:
 		uint32_t texInd = 0; // which texture belongs to which material
 		uint32_t modInd = 0; // which material/textures to which mesh/model
 	};
-	struct sBox {
+	struct sBox { // skybox struct
 		Texture tex;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
@@ -392,7 +399,8 @@ private:
 	camData cam;
 	meshIndicies sceneInd;
 	std::vector<model> objects = { };
-	matrixDataSSBO matData = {};
+	modelMatSSBO objMatData = {};
+	camUBO camMatData = {};
 	lightDataSSBO lightData = {};
 	std::vector<light> lights = {};
 	shadowMapProportionsObject shadowProps;
@@ -436,12 +444,13 @@ private:
 	VkDescriptorPool descriptorPool5;
 	VkDescriptorSetLayout descriptorSetLayout6;
 	VkDescriptorPool descriptorPool6;
+	VkDescriptorSetLayout descriptorSetLayout7;
+	VkDescriptorPool descriptorPool7;
 
 	sBox skybox;
 
-
-	VkBuffer matrixDataBuffer;
-	VkDeviceMemory matrixDataBufferMem;
+	VkBuffer modelMatBuffer;
+	VkDeviceMemory modelMatBufferMem;
 
 	VkBuffer lightBuffer;
 	VkDeviceMemory lightBufferMem;
@@ -1561,36 +1570,36 @@ private:
 		return shaderModule;
 	}
 
-	void setupMatrixUBO() {
+	void setupModelMatUBO() { // ubo containing the model matricies for each object
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(matrixDataSSBO);
+		bufferCreateInfo.size = sizeof(modelMatSSBO);
 		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &matrixDataBuffer) != VK_SUCCESS) {
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &modelMatBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create matrix SSBO!");
 		}
 
 		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, matrixDataBuffer, &memoryRequirements);
+		vkGetBufferMemoryRequirements(device, modelMatBuffer, &memoryRequirements);
 
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
 		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &matrixDataBufferMem) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &modelMatBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
 		}
 
-		vkBindBufferMemory(device, matrixDataBuffer, matrixDataBufferMem, 0);
+		vkBindBufferMemory(device, modelMatBuffer, modelMatBufferMem, 0);
 
 		// once memory is bound, map and fill it
 		void* data;
-		vkMapMemory(device, matrixDataBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &matData, bufferCreateInfo.size);
-		vkUnmapMemory(device, matrixDataBufferMem);
+		vkMapMemory(device, modelMatBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, &objMatData, bufferCreateInfo.size);
+		vkUnmapMemory(device, modelMatBufferMem);
 	}
 	void setupLights() {
 		VkBufferCreateInfo bufferCreateInfo = {};
@@ -1721,8 +1730,8 @@ private:
 
 	void calcObjectMats(model& o) {
 		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
-		convertMatrix(dml::viewMatrix(cam.camPos, cam.camAngle), o.viewMatrix);
-		convertMatrix(dml::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 15.0f), o.projectionMatrix);
+		convertMatrix(dml::viewMatrix(cam.camPos, cam.camAngle), cam.viewMatrix);
+		convertMatrix(dml::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 15.0f), cam.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {
@@ -1760,17 +1769,24 @@ private:
 		memcpy(lData, &lightData, sizeof(lightData));
 		vkUnmapMemory(device, lightBufferMem);
 
+		// calc matricies for camera
+		memcpy(camMatData.view, cam.viewMatrix, sizeof(cam.viewMatrix));
+		memcpy(camMatData.proj, cam.projectionMatrix, sizeof(cam.projectionMatrix));
+
+		void* cData;
+		vkMapMemory(device, cam.bufferMem, 0, sizeof(camMatData), 0, &cData);
+		memcpy(cData, &camMatData, sizeof(camMatData));
+		vkUnmapMemory(device, cam.bufferMem);
+
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
 			calcObjectMats(objects[i]);
-			memcpy(matData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
-			memcpy(matData.objectMatrixData[i].view, objects[i].viewMatrix, sizeof(objects[i].viewMatrix));
-			memcpy(matData.objectMatrixData[i].proj, objects[i].projectionMatrix, sizeof(objects[i].projectionMatrix));
+			memcpy(objMatData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
 		}
 		void* matrixData;
-		vkMapMemory(device, matrixDataBufferMem, 0, sizeof(matData), 0, &matrixData);
-		memcpy(matrixData, &matData, sizeof(matData));
-		vkUnmapMemory(device, matrixDataBufferMem);
+		vkMapMemory(device, modelMatBufferMem, 0, sizeof(objMatData), 0, &matrixData);
+		memcpy(matrixData, &objMatData, sizeof(objMatData));
+		vkUnmapMemory(device, modelMatBufferMem);
 	}
 
 	void copyLightToLightCords(const light& src, lightCords& dest) {
@@ -1935,16 +1951,17 @@ private:
 	}
 
 	void createDS() {
-		descriptorSets.resize(6);
+		descriptorSets.resize(7);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
 		//initialize descriptor set layouts and pools
-		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // matrix data ssbo
+		descriptorSetLayout1 = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // model matricies ssbo
 		descriptorSetLayout2 = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
 		descriptorSetLayout3 = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // teture index data ssbo (deprecated)
 		descriptorSetLayout4 = createDSLayout(3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
 		descriptorSetLayout5 = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descriptorSetLayout6 = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
+		descriptorSetLayout7 = createDSLayout(6, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ssbo
 
 		descriptorPool1 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool2 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
@@ -1952,14 +1969,16 @@ private:
 		descriptorPool4 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descriptorPool5 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descriptorPool6 = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
+		descriptorPool7 = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
-		std::array<VkDescriptorSetLayout, 6> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout6 };
-		std::array<VkDescriptorPool, 6> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5, descriptorPool6 };
+		std::array<VkDescriptorSetLayout, 7> layouts = { descriptorSetLayout1, descriptorSetLayout2, descriptorSetLayout3, descriptorSetLayout4, descriptorSetLayout5, descriptorSetLayout6,
+			descriptorSetLayout7 };
+		std::array<VkDescriptorPool, 7> pools = { descriptorPool1, descriptorPool2, descriptorPool3,descriptorPool4, descriptorPool5, descriptorPool6, descriptorPool7 };
 
-		std::array<uint32_t, 6> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1,lightSize, 1 };
+		std::array<uint32_t, 7> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1 , 1, lightSize, 1, 1 };
 
 		for (uint32_t i = 0; i < descriptorSets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -1978,15 +1997,20 @@ private:
 		}
 
 
-		setupMatrixUBO(); //create the matrix UBOs for each object
+		setupModelMatUBO(); //create the model matrix UBOs for each object
 		setupLights();
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
 		setupTexIndices(allTextures, allMaterials);
 
-		VkDescriptorBufferInfo matrixBufferInfo{};
-		matrixBufferInfo.buffer = matrixDataBuffer;
-		matrixBufferInfo.offset = 0;
-		matrixBufferInfo.range = sizeof(matrixDataSSBO);
+		VkDescriptorBufferInfo modelMatBufferInfo{};
+		modelMatBufferInfo.buffer = modelMatBuffer;
+		modelMatBufferInfo.offset = 0;
+		modelMatBufferInfo.range = sizeof(modelMatSSBO);
+
+		VkDescriptorBufferInfo camMatBufferInfo{};
+		camMatBufferInfo.buffer = cam.buffer;
+		camMatBufferInfo.offset = 0;
+		camMatBufferInfo.range = sizeof(camMatData);
 
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
@@ -2023,7 +2047,7 @@ private:
 		descriptorWrites[0].dstArrayElement = 0;
 		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
 		descriptorWrites[0].descriptorCount = 1;
-		descriptorWrites[0].pBufferInfo = &matrixBufferInfo;
+		descriptorWrites[0].pBufferInfo = &modelMatBufferInfo;
 
 		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[1].dstSet = descriptorSets[1];
@@ -3303,8 +3327,8 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(dml::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
-		cloneObject(dml::getCamWorldPos(unflattenMatrix(m.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 	}
 	void recreateBuffers() {
@@ -3955,8 +3979,8 @@ private:
 	// 19. lighting (done)
 	// 20. shadows (done)
 	// 22. skybox (done)
-	// 23. omnidirectional lighting using cubemaps
-	// 24. physcics
+	// 23. cleanup codebase
+	// 24. omnidirectional lighting using cubemaps
 };
 int main() {
 	Engine app;
