@@ -399,6 +399,24 @@ private:
 		std::vector<VkDescriptorPool> pools;
 	};
 
+	struct pipelineData {
+		VkRenderPass renderPass;
+		VkPipelineLayout layout;
+		VkPipeline graphicsPipeline;
+	};
+	struct swapChainData {
+		VkSwapchainKHR swapChain;
+		std::vector<VkImage> images;
+		VkFormat imageFormat;
+		VkExtent2D extent;
+		std::vector<VkImageView> imageViews;
+		uint32_t imageCount;
+	};
+
+	pipelineData mainPipelineData;
+	pipelineData shadowMapPipelineData;
+
+	swapChainData swap;
 
 	std::vector<bufData> bufferData;
 	camData cam;
@@ -415,14 +433,8 @@ private:
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
-	VkSwapchainKHR swapChain;
-	std::vector<VkImage> swapChainImages;
-	VkFormat swapChainImageFormat;
-	VkExtent2D swapChainExtent;
-	uint32_t imageCount;
 	std::vector<VkFence> inFlightFences;
 	size_t currentFrame = 0;
-	std::vector<VkImageView> swapChainImageViews;
 	VkViewport vp{};
 
 	unsigned char* imageData;
@@ -448,17 +460,9 @@ private:
 	VkBuffer sceneIndexBuffer;
 	VkDeviceMemory sceneIndexBufferMem;
 
-	VkPipelineLayout pipelineLayout;
-	VkPipeline graphicsPipeline;
-
-	VkPipelineLayout shadowMapPipelineLayout;
-	VkPipeline shadowMapPipeline;
-
-
 	VkShaderModule fragShaderModule;
 	VkShaderModule vertShaderModule;
-	VkRenderPass renderPass;
-	VkRenderPass shadowMapRenderPass;
+
 	VkCommandPool commandPool;
 
 	std::vector<Texture> allTextures;
@@ -873,15 +877,15 @@ private:
 		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
 		VkPresentModeKHR present = chooseSwapPresentMode(swapChainSupport.presentModes);
 		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-		imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
-		if (swapChainSupport.capabilities.maxImageCount > 0 && imageCount > swapChainSupport.capabilities.maxImageCount) {
-			imageCount = swapChainSupport.capabilities.maxImageCount;
+		swap.imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
+		if (swapChainSupport.capabilities.maxImageCount > 0 && swap.imageCount > swapChainSupport.capabilities.maxImageCount) {
+			swap.imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
 		// create the swap chain.
 		VkSwapchainCreateInfoKHR newinfo{};
 		newinfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 		newinfo.surface = surface;
-		newinfo.minImageCount = imageCount;
+		newinfo.minImageCount = swap.imageCount;
 		newinfo.imageFormat = surfaceFormat.format;
 		newinfo.imageColorSpace = surfaceFormat.colorSpace;
 		newinfo.imageExtent = extent;
@@ -897,15 +901,15 @@ private:
 		newinfo.presentMode = present;
 		newinfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
 		newinfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
-		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swapChain) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create swap chain! " + resultStr(vkCreateSwapchainKHR(device, &newinfo, nullptr, &swapChain)));
+		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create swap chain! " + resultStr(vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain)));
 		}
 		// get the swap chain images
-		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, nullptr);
-		swapChainImages.resize(imageCount);
-		vkGetSwapchainImagesKHR(device, swapChain, &imageCount, swapChainImages.data()); //gets the images in the swap chain
-		swapChainImageFormat = surfaceFormat.format;
-		swapChainExtent = extent;
+		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
+		swap.images.resize(swap.imageCount);
+		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); //gets the images in the swap chain
+		swap.imageFormat = surfaceFormat.format;
+		swap.extent = extent;
 		createImageViews();
 	}
 	VkSurfaceFormatKHR  chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) { //choose the best surface format for the swap chain
@@ -1406,7 +1410,7 @@ private:
 
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
-		createDepthImage(depthImage, depthImageMemory, swapChainExtent.width, swapChainExtent.height, depthFormat);
+		createDepthImage(depthImage, depthImageMemory, swap.extent.width, swap.extent.height, depthFormat);
 		depthImageView = createDepthView(depthImage, depthFormat);
 	}
 
@@ -1532,13 +1536,13 @@ private:
 
 
 	void createImageViews() { //create the image views for the swap chain images
-		swapChainImageViews.resize(swapChainImages.size()); // resize swapChainImageViews to hold all the image views
-		for (size_t i = 0; i < swapChainImages.size(); i++) {
+		swap.imageViews.resize(swap.images.size()); // resize swapChainImageViews to hold all the image views
+		for (size_t i = 0; i < swap.images.size(); i++) {
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			newinfo.image = swapChainImages[i]; // assign the current swap chain image
+			newinfo.image = swap.images[i]; // assign the current swap chain image
 			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			newinfo.format = swapChainImageFormat;
+			newinfo.format = swap.imageFormat;
 			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
@@ -1548,7 +1552,7 @@ private:
 			newinfo.subresourceRange.levelCount = 1;
 			newinfo.subresourceRange.baseArrayLayer = 0;
 			newinfo.subresourceRange.layerCount = 1;
-			VkResult result = vkCreateImageView(device, &newinfo, nullptr, &swapChainImageViews[i]);
+			VkResult result = vkCreateImageView(device, &newinfo, nullptr, &swap.imageViews[i]);
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to create image views! Error code: " + resultStr(result));
 			}
@@ -1766,7 +1770,7 @@ private:
 	void calcObjectMats(model& o) {
 		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
 		convertMatrix(dml::viewMatrix(cam.camPos, cam.camAngle), cam.viewMatrix);
-		convertMatrix(dml::projection(60.0f, swapChainExtent.width / static_cast<float>(swapChainExtent.height), 0.01f, 15.0f), cam.projectionMatrix);
+		convertMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {
@@ -2678,13 +2682,13 @@ private:
 		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
 		vp.x = 0.0f;
 		vp.y = 0.0f;
-		vp.width = static_cast<float>(swapChainExtent.width); // swap chain extent width for the viewport
-		vp.height = static_cast<float>(swapChainExtent.height);
+		vp.width = static_cast<float>(swap.extent.width); // swap chain extent width for the viewport
+		vp.height = static_cast<float>(swap.extent.height);
 		vp.minDepth = 0.0f;
 		vp.maxDepth = 1.0f;
 		VkRect2D scissor{};
 		scissor.offset = { 0, 0 }; // top-left corner offset
-		scissor.extent = swapChainExtent;
+		scissor.extent = swap.extent;
 		VkPipelineViewportStateCreateInfo vpState{};
 		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 		vpState.viewportCount = 1;
@@ -2781,14 +2785,14 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &pipelineLayout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &mainPipelineData.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
 		}
 
 		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
 		VkAttachmentDescription colorAttachment{};
-		colorAttachment.format = swapChainImageFormat; //format of the color attachment
+		colorAttachment.format = swap.imageFormat; //format of the color attachment
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //what to do with the data in the attachment before rendering
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //what to do with the data in the attachment after rendering
@@ -2830,7 +2834,7 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1; //number of subpasses
 		renderPassInf.pSubpasses = &subpass; //array of subpasses
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &mainPipelineData.renderPass);
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass! " + resultStr(renderPassResult));
 		}
@@ -2848,12 +2852,12 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.pDynamicState = &dynamicState;
-		pipelineInf.layout = pipelineLayout;
-		pipelineInf.renderPass = renderPass;
+		pipelineInf.layout = mainPipelineData.layout;
+		pipelineInf.renderPass = mainPipelineData.renderPass;
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &graphicsPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &mainPipelineData.graphicsPipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -2983,7 +2987,7 @@ private:
 		renderPassInfo.pAttachments = &depthAttachment;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
-		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapRenderPass) != VK_SUCCESS) {
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapPipelineData.renderPass) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map render pass!");
 		}
 
@@ -3003,7 +3007,7 @@ private:
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipelineLayout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipelineData.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
 		}
@@ -3020,12 +3024,12 @@ private:
 		pipelineInfo.pMultisampleState = &multiSamp;
 		pipelineInfo.pDepthStencilState = &dStencil;
 		pipelineInfo.pColorBlendState = &colorBlending;
-		pipelineInfo.layout = shadowMapPipelineLayout;
-		pipelineInfo.renderPass = shadowMapRenderPass;
+		pipelineInfo.layout = shadowMapPipelineData.layout;
+		pipelineInfo.renderPass = shadowMapPipelineData.renderPass;
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipelineData.graphicsPipeline) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map pipeline!!!!");
 		}
 	}
@@ -3074,7 +3078,7 @@ private:
 
 		VkRect2D scissor{};
 		scissor.offset = { 0, 0 };
-		scissor.extent = swapChainExtent;
+		scissor.extent = swap.extent;
 		VkPipelineViewportStateCreateInfo vpState{};
 		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 		vpState.viewportCount = 1;
@@ -3155,7 +3159,7 @@ private:
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = skybox.pipelineLayout;
-		pipelineInf.renderPass = renderPass;
+		pipelineInf.renderPass = mainPipelineData.renderPass;
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
@@ -3179,10 +3183,10 @@ private:
 		initInfo.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
 		initInfo.DescriptorPool = imguiDescriptorPool;
 		initInfo.Allocator = VK_NULL_HANDLE;
-		initInfo.MinImageCount = imageCount;
-		initInfo.ImageCount = imageCount;
+		initInfo.MinImageCount = swap.imageCount;
+		initInfo.ImageCount = swap.imageCount;
 		initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
-		ImGui_ImplVulkan_Init(&initInfo, renderPass);
+		ImGui_ImplVulkan_Init(&initInfo, mainPipelineData.renderPass);
 
 		// upload fonts, etc:
 		VkCommandPool guiCommandPool = createCommandPool();
@@ -3193,7 +3197,7 @@ private:
 	}
 
 	void setupFences() {
-		inFlightFences.resize(swapChainImages.size());
+		inFlightFences.resize(swap.images.size());
 		VkFenceCreateInfo fenceInfo{};
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
@@ -3219,7 +3223,7 @@ private:
 	}
 
 	void createCommandBuffer() {
-		commandBuffers.resize(swapChainImages.size());  //resize based on swap chain images size
+		commandBuffers.resize(swap.images.size());  //resize based on swap chain images size
 		VkCommandBufferAllocateInfo allocInf{};
 		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInf.commandPool = commandPool; //command pool to allocate from
@@ -3380,7 +3384,7 @@ private:
 		VkDescriptorSet skyboxDescriptorSets[] = { descs.sets[4], descs.sets[5] };
 		VkDescriptorSet descriptorSetsForScene[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[3], descs.sets[5] };
 		VkDeviceSize offsets[] = { 0 };
-		for (size_t i = 0; i < swapChainImages.size(); i++) {
+		for (size_t i = 0; i < swap.images.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
 			vkResetCommandBuffer(commandBuffers[i], 0);
 
@@ -3394,10 +3398,10 @@ private:
 			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // set the viewport to already existing viewport state from the pipeline
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = renderPass;
+			renderPassInfo.renderPass = mainPipelineData.renderPass;
 			renderPassInfo.framebuffer = swapChainFramebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = swapChainExtent;
+			renderPassInfo.renderArea.extent = swap.extent;
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
 
@@ -3411,8 +3415,8 @@ private:
 			vkCmdDrawIndexed(commandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
 			// FOR THE MAIN PASS
-			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, graphicsPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 5, descriptorSetsForScene, 0, nullptr);
+			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineData.graphicsPipeline);
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineData.layout, 0, 5, descriptorSetsForScene, 0, nullptr);
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
@@ -3429,7 +3433,7 @@ private:
 			// draw the imgui text
 			std::string str = std::to_string(fps);
 			std::string text = "fps: " + str;
-			drawText(text.c_str(), static_cast<float>(swapChainExtent.width / 2), 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+			drawText(text.c_str(), static_cast<float>(swap.extent.width / 2), 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
 
 			// render the imgui frame and draw imgui's commands into the command buffer:
 			ImGui::Render();
@@ -3444,7 +3448,7 @@ private:
 	void createFB(VkFramebuffer& frameBuf, VkImageView IV, uint32_t width, uint32_t height) {
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = shadowMapRenderPass;
+		frameBufferInfo.renderPass = shadowMapPipelineData.renderPass;
 		frameBufferInfo.attachmentCount = 1;
 		frameBufferInfo.pAttachments = &IV; // imageview
 		frameBufferInfo.width = width;
@@ -3492,7 +3496,7 @@ private:
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = shadowMapRenderPass;
+			renderPassInfo.renderPass = shadowMapPipelineData.renderPass;
 			renderPassInfo.framebuffer = lights[i].shadowMapData.frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
@@ -3505,11 +3509,11 @@ private:
 			renderPassInfo.pClearValues = &clearValue;
 			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline);
+			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineData.graphicsPipeline);
 
 			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
 			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[2] };
-			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineLayout, 0, 2, dSets, 0, nullptr);
+			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineData.layout, 0, 2, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
 			VkBuffer vertexBuffersArray[1] = { vertBuffer };
@@ -3526,7 +3530,7 @@ private:
 				pushConst.modelIndex = static_cast<int>(j);
 				pushConst.lightIndex = static_cast<int>(i);
 
-				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0); // 3d models vert and index buffers
 			}
 			// end the render pass and transition the shadowmap image to shader read only optimal
@@ -3559,17 +3563,17 @@ private:
 	void createFramebuffersSC(VkRenderPass renderPassF, std::vector<VkFramebuffer>& framebuffers, bool depth, VkImageView depthImageView = VK_NULL_HANDLE) {
 		// create the framebuffers for the swap chain
 		framebuffers.clear();
-		framebuffers.resize(swapChainImageViews.size());
+		framebuffers.resize(swap.imageViews.size());
 		std::array<VkImageView, 2> attachmentsD; // with color and depth
 		VkImageView attachment; // without depth
 
-		for (size_t i = 0; i < swapChainImageViews.size(); ++i) {
+		for (size_t i = 0; i < swap.imageViews.size(); ++i) {
 
 			if (depth) {
-				attachmentsD = { swapChainImageViews[i], depthImageView };
+				attachmentsD = { swap.imageViews[i], depthImageView };
 			}
 			else {
-				attachment = { swapChainImageViews[i], };
+				attachment = { swap.imageViews[i], };
 			}
 
 			VkFramebufferCreateInfo framebufferInfo{};
@@ -3583,8 +3587,8 @@ private:
 				framebufferInfo.attachmentCount = 1;
 				framebufferInfo.pAttachments = &attachment;
 			}
-			framebufferInfo.width = swapChainExtent.width;
-			framebufferInfo.height = swapChainExtent.height;
+			framebufferInfo.width = swap.extent.width;
+			framebufferInfo.height = swap.extent.height;
 			framebufferInfo.layers = 1;
 
 			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &framebuffers[i]) != VK_SUCCESS) {
@@ -3634,7 +3638,7 @@ private:
 		setupDepthResources();
 		createGraphicsPipeline();
 		createSkyboxPipeline();
-		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swapChainFramebuffers, true, depthImageView);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 	}
@@ -3642,13 +3646,13 @@ private:
 		for (auto framebuffer : swapChainFramebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyRenderPass(device, renderPass, nullptr);
-		for (auto imageView : swapChainImageViews) {
+		vkDestroyPipeline(device, mainPipelineData.graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, mainPipelineData.layout, nullptr);
+		vkDestroyRenderPass(device, mainPipelineData.renderPass, nullptr);
+		for (auto imageView : swap.imageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
-		vkDestroySwapchainKHR(device, swapChain, nullptr);
+		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
 	}
 
 	void submitShadowCommandBuffers() { // submit the shadow command buffers to the queue
@@ -3663,11 +3667,13 @@ private:
 	}
 
 
-	void drawFrame() { //draw frame function
+	void drawFrame() { // draw frame function
 		uint32_t imageIndex;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
-		VkResult result = vkAcquireNextImageKHR(device, swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex); //acquire an image from the swap chain
+
+		// acquire an image from the swap chain
+		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);	
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
@@ -3681,7 +3687,7 @@ private:
 		VkSemaphore shadowSignalSemaphores[] = { shadowSemaphore };
 		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
 
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; //stage to wait: color attachment output stage
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
 		VkSubmitInfo submitInfo{};
 
 		// shadow pass submission
@@ -3720,7 +3726,7 @@ private:
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
 		presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
-		VkSwapchainKHR swapChains[] = { swapChain };
+		VkSwapchainKHR swapChains[] = { swap.swapChain };
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapChains;
 		presentInfo.pImageIndices = &imageIndex;
@@ -3801,7 +3807,7 @@ private:
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
 			drawFrame();
-			currentFrame = (currentFrame + 1) % swapChainImages.size();
+			currentFrame = (currentFrame + 1) % swap.images.size();
 			handleKeyboardInput(window); // handle keyboard input to change cam position
 			recreateObjectBuffers();
 			updateUBO(); // update ubo matrices and populate the buffer
@@ -3894,7 +3900,7 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
-		createFramebuffersSC(renderPass, swapChainFramebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swapChainFramebuffers, true, depthImageView);
 
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
@@ -3945,9 +3951,9 @@ private:
 		vkDestroyShaderModule(device, vertShaderModule, nullptr);
 		vkDestroyShaderModule(device, fragShaderModule, nullptr);
 		cleanupDS();
-		vkDestroyPipeline(device, graphicsPipeline, nullptr);
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-		vkDestroyRenderPass(device, renderPass, nullptr);
+		vkDestroyPipeline(device, mainPipelineData.graphicsPipeline, nullptr);
+		vkDestroyPipelineLayout(device, mainPipelineData.layout, nullptr);
+		vkDestroyRenderPass(device, mainPipelineData.renderPass, nullptr);
 		ImGui_ImplVulkan_Shutdown();
 		ImGui_ImplGlfw_Shutdown();
 		ImGui::DestroyContext();
@@ -3962,11 +3968,11 @@ private:
 		vkDestroyBuffer(device, skybox.indBuffer, nullptr);
 		vkFreeMemory(device, skybox.indBufferMem, nullptr);
 
-		for (auto imageView : swapChainImageViews) {
+		for (auto imageView : swap.imageViews) {
 			vkDestroyImageView(device, imageView, nullptr);
 		}
 
-		vkDestroySwapchainKHR(device, swapChain, nullptr);
+		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
 		vkDestroySurfaceKHR(instance, surface, nullptr);
 		vkDestroyDevice(device, nullptr);
 		vkDestroyInstance(instance, nullptr);
