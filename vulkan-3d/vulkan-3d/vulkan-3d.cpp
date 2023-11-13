@@ -404,6 +404,7 @@ private:
 		VkPipelineLayout layout;
 		VkPipeline graphicsPipeline;
 	};
+
 	struct swapChainData {
 		VkSwapchainKHR swapChain;
 		std::vector<VkImage> images;
@@ -411,86 +412,97 @@ private:
 		VkExtent2D extent;
 		std::vector<VkImageView> imageViews;
 		uint32_t imageCount;
+		std::vector<VkFramebuffer> framebuffers;
 	};
 
-	pipelineData mainPipelineData;
-	pipelineData shadowMapPipelineData;
-
-	swapChainData swap;
-
-	std::vector<bufData> bufferData;
-	camData cam;
-	meshIndicies sceneInd;
-	std::vector<model> objects = { };
-	modelMatSSBO objMatData = {};
-	camUBO camMatData = {};
-	lightDataSSBO lightData = {};
-	std::vector<light> lights = {};
-	shadowMapProportionsObject shadowProps;
-
-	VkSurfaceKHR surface;
+	// window and rendering context
 	GLFWwindow* window;
+	VkSurfaceKHR surface;
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkDevice device;
-	std::vector<VkFence> inFlightFences;
+	VkQueue presentQueue;
+	VkQueue graphicsQueue;
+
+	// swap chain and framebuffers
+	swapChainData swap;
 	size_t currentFrame = 0;
+
+	// viewport config
 	VkViewport vp{};
 
-	unsigned char* imageData;
-	float* skyboxData;
+	// rendering pipeline data
+	pipelineData mainPipelineData;
+	pipelineData shadowMapPipelineData;
 
-	descriptorSetObject descs;
+	// command buffers and command pool
+	VkCommandPool commandPool;
+	std::vector<VkCommandBuffer> commandBuffers;
+	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
+	std::vector<VkCommandBuffer> skyboxCommandBuffers;
 
-	VkImage depthImage;
-	VkDeviceMemory depthImageMemory;
-	VkImageView depthImageView;
-	VkFormat depthFormat;
-	sceneIndexSSBO sceneIndices = {};
-	VkDescriptorSetLayout imguiDescriptorSetLayout;
-	VkDescriptorPool imguiDescriptorPool;
-
-	sBox skybox;
-
+	// buffers and related memory
+	VkBuffer vertBuffer;
+	VkDeviceMemory vertBufferMem;
+	VkBuffer indBuffer;
+	VkDeviceMemory indBufferMem;
 	VkBuffer modelMatBuffer;
 	VkDeviceMemory modelMatBufferMem;
-
 	VkBuffer lightBuffer;
 	VkDeviceMemory lightBufferMem;
 	VkBuffer sceneIndexBuffer;
 	VkDeviceMemory sceneIndexBufferMem;
 
-	VkShaderModule fragShaderModule;
-	VkShaderModule vertShaderModule;
-
-	VkCommandPool commandPool;
-
-	std::vector<Texture> allTextures;
-	std::vector<Materials> allMaterials;
-
-	std::vector<VkCommandBuffer> commandBuffers;
-	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
-	std::vector<VkCommandBuffer> skyboxCommandBuffers;
-
-	std::vector<VkFramebuffer> swapChainFramebuffers;
+	// synchronization primitives
+	std::vector<VkFence> inFlightFences;
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
 	VkSemaphore skyboxSemaphore;
 
-	VkBuffer vertBuffer;
-	VkDeviceMemory vertBufferMem;
-	VkBuffer indBuffer;
-	VkDeviceMemory indBufferMem;
+	// shader modules
+	VkShaderModule fragShaderModule;
+	VkShaderModule vertShaderModule;
 
-	uint32_t fps;
+	// depth buffering
+	VkImage depthImage;
+	VkDeviceMemory depthImageMemory;
+	VkImageView depthImageView;
+	VkFormat depthFormat;
+
+	// descriptor sets and pools
+	descriptorSetObject descs;
+	VkDescriptorSetLayout imguiDescriptorSetLayout;
+	VkDescriptorPool imguiDescriptorPool;
+
+	// scene data and objects
+	std::vector<bufData> bufferData;
+	camData cam;
+	meshIndicies sceneInd;
+	std::vector<model> objects;
+	modelMatSSBO objMatData;
+	camUBO camMatData;
+	lightDataSSBO lightData;
+	std::vector<light> lights;
+	sceneIndexSSBO sceneIndices;
+	shadowMapProportionsObject shadowProps;
+
+	// textures and materials
+	std::vector<Texture> allTextures;
+	std::vector<Materials> allMaterials;
+	size_t totalTextureCount = 0;
+	unsigned char* imageData;
+
+	// skybox data
+	float* skyboxData;
+	sBox skybox;
+
+	// font data
 	ImFont* font_small;
 	ImFont* font_large;
 
-	size_t totalTextureCount = 0;
-
-	VkQueue presentQueue;
-	VkQueue graphicsQueue;
+	// performance metrics
+	uint32_t fps;
 
 	// mutexes for multithreading
 	std::mutex modelMtx;
@@ -1193,7 +1205,7 @@ private:
 					// indices
 					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
 					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
-				
+
 					// tangents
 					const float* tangentData = nullptr;
 					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
@@ -1277,7 +1289,7 @@ private:
 							vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
 						}
 						else {
-							vertex.col = {1.0f, 1.0f, 1.0f};
+							vertex.col = { 1.0f, 1.0f, 1.0f };
 						}
 
 						// get handedness of the tangent
@@ -2119,7 +2131,7 @@ private:
 		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
 		descriptorWrites[5].descriptorCount = 1;
 		descriptorWrites[5].pBufferInfo = &camMatBufferInfo;
-		
+
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
@@ -3399,7 +3411,7 @@ private:
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = mainPipelineData.renderPass;
-			renderPassInfo.framebuffer = swapChainFramebuffers[i];
+			renderPassInfo.framebuffer = swap.framebuffers[i];
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = swap.extent;
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3638,12 +3650,12 @@ private:
 		setupDepthResources();
 		createGraphicsPipeline();
 		createSkyboxPipeline();
-		createFramebuffersSC(mainPipelineData.renderPass, swapChainFramebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
-		for (auto framebuffer : swapChainFramebuffers) {
+		for (auto framebuffer : swap.framebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
 		vkDestroyPipeline(device, mainPipelineData.graphicsPipeline, nullptr);
@@ -3673,7 +3685,7 @@ private:
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
 		// acquire an image from the swap chain
-		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);	
+		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
@@ -3900,7 +3912,7 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
-		createFramebuffersSC(mainPipelineData.renderPass, swapChainFramebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
 
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
@@ -3943,7 +3955,7 @@ private:
 		for (size_t i = 0; i < 3; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
-		for (auto frameBuffer : swapChainFramebuffers) {
+		for (auto frameBuffer : swap.framebuffers) {
 			vkDestroyFramebuffer(device, frameBuffer, nullptr);
 		}
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
