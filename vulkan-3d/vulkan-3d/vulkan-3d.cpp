@@ -165,7 +165,6 @@ private:
 		}
 	};
 
-
 	struct texHash {
 		size_t operator()(const Texture& tex) const {
 			size_t seed = 0;
@@ -306,9 +305,6 @@ private:
 		float rightAngle;
 		float upAngle;
 
-		dml::vec3 camAngle;	// temporary
-		dml::vec3 camRads; // temporary
-
 		float projectionMatrix[16];
 		float viewMatrix[16];
 
@@ -321,16 +317,13 @@ private:
 			quat = { 0.0f, 0.0f, 0.0f, 1.0f };
 			rightAngle = 0.0f;
 			upAngle = 0.0f;
-			camAngle = { 0.0f, 0.0f, 0.0f };
-			camRads = { 0.0f, 0.0f, 0.0f };
 		}
 
 		dml::mat4 getOrientation() const {
-			const float degToRad = PI / 180.0f;
-			dml::vec4 qPitch = dml::angleAxis(-upAngle * degToRad, dml::vec3(1, 0, 0));
-			dml::vec4 qYaw = dml::angleAxis(rightAngle * degToRad, dml::vec3(0, 1, 0));
-			dml::vec4 q = qYaw * qPitch;
-			q = q.normalize();
+			const float dr = PI / 180.0f;
+			dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(1, 0, 0));
+			dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(0, 1, 0));
+			dml::vec4 q = xRot * yRot;
 
 			return dml::rotateQ(q); // convert the quaternion to a rotation matrix
 		}
@@ -340,8 +333,8 @@ private:
 		}
 
 		dml::mat4 getViewMatrix() {
-			dml::vec3 up = dml::vec3(0, 1, 0);
-			return dml::lookAt(camPos, getLookPoint(), up);
+			const float dr = PI / 180.0f;
+			return dml::viewMatrix(camPos, rightAngle * dr, upAngle * dr);
 		}
 	};
 	struct shadowMapProportionsObject {
@@ -503,6 +496,7 @@ private:
 
 	// performance metrics
 	uint32_t fps;
+	double lastFrame = 0.0;
 
 	// mutexes for multithreading
 	std::mutex modelMtx;
@@ -1294,7 +1288,7 @@ private:
 
 						// get handedness of the tangent
 						dml::vec3 t = tangents[index].xyz();
-						tangents[index].w = (vertex.normal.crossProd(t)).dotProd(tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
+						tangents[index].w = dml::dot(dml::cross(vertex.normal, t), tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
 
 						if (tangentFound) {
 							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
@@ -1779,9 +1773,8 @@ private:
 	}
 
 
-	void calcObjectMats(model& o) {
-		//convertMatrix(forms::mat4::modelMatrix(o.position, o.rotation, o.scale), o.modelMatrix);
-		convertMatrix(dml::viewMatrix(cam.camPos, cam.camAngle), cam.viewMatrix);
+	void calcCameraMats() {
+		convertMatrix(cam.getViewMatrix(), cam.viewMatrix);
 		convertMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
 	}
 
@@ -1821,6 +1814,7 @@ private:
 		vkUnmapMemory(device, lightBufferMem);
 
 		// calc matricies for camera
+		calcCameraMats();
 		memcpy(camMatData.view, cam.viewMatrix, sizeof(cam.viewMatrix));
 		memcpy(camMatData.proj, cam.projectionMatrix, sizeof(cam.projectionMatrix));
 
@@ -1831,7 +1825,6 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			calcObjectMats(objects[i]);
 			memcpy(objMatData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
 		}
 		void* matrixData;
@@ -3831,27 +3824,20 @@ private:
 
 
 	void handleKeyboardInput(GLFWwindow* window) {
-		static double previousTime = glfwGetTime();
-		double currentTime = glfwGetTime();
-		float deltaTime = static_cast<float>(currentTime - previousTime) * 200;
-		previousTime = currentTime;
-		float cameraSpeed = 0.01f * deltaTime;
-		float cameraRotationSpeed = 1.0f * deltaTime;
+		double currentFrame = glfwGetTime();
+		float deltaTime = currentFrame - lastFrame;
+		lastFrame = currentFrame;
 
-		cam.camAngle.y = fmod(cam.camAngle.y + 360.0f, 360.0f);
-		if (cam.camAngle.x > 90) {
-			cam.camAngle.x = 90;
-		}
-		if (cam.camAngle.x < -90) {
-			cam.camAngle.x = -90;
-		}
+		float cameraSpeed = 2.0f * deltaTime;
+		float cameraRotationSpeed = 200.0f * deltaTime;
 
-		cam.camRads = dml::toRads(cam.camAngle);
-		dml::vec3 forward = dml::getForward(cam.camRads);
-		dml::vec3 right = dml::getRight(cam.camRads);
-		forward.y *= -1; //for vulkan
+		dml::vec3 forward = cam.getLookPoint() - cam.camPos;
 
-		// camera movement:
+		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
+
+		dml::vec3 right = dml::cross(forward, dml::vec3(0, 1, 0));
+
+		// camera movement
 		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
 			cam.camPos -= forward * cameraSpeed;
 		}
@@ -3859,11 +3845,13 @@ private:
 			cam.camPos += forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
-			cam.camPos += right * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
 			cam.camPos -= right * cameraSpeed;
 		}
+		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+			cam.camPos += right * cameraSpeed;
+		}
+
+		// up and down movement
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
 			cam.camPos.y -= 1 * cameraSpeed;
 		}
@@ -3874,16 +3862,16 @@ private:
 
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.camAngle.x += cameraRotationSpeed;
+			cam.rightAngle += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.camAngle.x -= cameraRotationSpeed;
+			cam.rightAngle -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.camAngle.y += cameraRotationSpeed;
+			cam.upAngle += cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.camAngle.y -= cameraRotationSpeed;
+			cam.upAngle -= cameraRotationSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");

@@ -112,16 +112,6 @@ public:
 			return vec3(x * sx, y * sy, z * sz);
 		}
 
-		vec3 crossProd(vec3& v) const {
-			return vec3(
-				y * v.z - z * v.y,
-				z * v.x - x * v.z,
-				x * v.y - y * v.x
-			);
-		}
-		float dotProd(const vec3& v) const {
-			return x * v.x + y * v.y + z * v.z;
-		}
 		float length() const {
 			return std::sqrt(x * x + y * y + z * z);
 		}
@@ -179,13 +169,13 @@ public:
 		vec2 xy() const { return vec2(x, y); }
 		vec3 xyz() const { return vec3(x, y, z); }
 
-		vec4 normalize() const{
+		vec4 normalize() const {
 			float length = sqrt(x * x + y * y + z * z + w * w);
 			if (length == 0) {
 				return vec4(0.0f, 0.0f, 0.0f, 1.0f);
 			}
 
-			return vec4(x / length, y / length, z / length , w / length);
+			return vec4(x / length, y / length, z / length, w / length);
 		}
 
 		vec4 conjugate() const {
@@ -402,13 +392,13 @@ public:
 	static vec3 getRight(const vec3& camData) { // computes camera's right direction (left handed coordinate system) (only use for camera)
 		vec3 forward = getForward(camData);
 		vec3 up(0.0f, -1.0f, 0.0f);
-		return forward.crossProd(up);
+		return cross(forward, up);
 	}
 
 	static vec3 getUp(const vec3& camData) { // computes camera's up direction (left handed coordinate system) (only use for camera)
 		vec3 forward = getForward(camData);
 		vec3 right = getRight(camData);
-		return right.crossProd(forward);
+		return cross(right, forward);
 	}
 
 	static vec3 toRads(const vec3& v) {
@@ -426,6 +416,17 @@ public:
 		return degree * (PI / 180.0f);
 	}
 
+	static vec3 cross(const vec3& a, const vec3& b) {
+		return vec3(
+			a.y * b.z - a.z * b.y,
+			a.z * b.x - a.x * b.z,
+			a.x * b.y - a.y * b.x
+		);
+	}
+	static float dot(const vec3& a, const vec3& b) {
+		return a.x * b.x + a.y * b.y + a.z * b.z;
+	}
+
 	// ------------------ VECTOR4 FORMULAS ------------------ //
 	static vec4 targetToQ(const vec3& position, const vec3& target) {
 		vec3 up = { 0.0f, 1.0f, 0.0f };
@@ -434,7 +435,7 @@ public:
 	}
 
 	static vec4 inverseQ(const vec4& q) { // quaternion inversion
-		float length = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;	
+		float length = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
 		if (length == 0) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
 		}
@@ -537,7 +538,7 @@ public:
 		result = rotZ * rotY * rotX;
 		return result;
 	}
-	static mat4 rotateQ(const vec4 q) { // quaternian rotation (right handed - column major)
+	static mat4 rotateQ(const vec4 q) { // quaternian rotation (column major)
 		// formula from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
 		mat4 result;
 
@@ -662,11 +663,18 @@ public:
 		return inverse;
 	}
 
-	static mat4 viewMatrix(const vec3& position, const vec3& rotation) {
+	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
 		mat4 result;
-		result = rotate(rotation)
-			* translate(position);
-		return result;
+
+		vec4 xRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
+		vec4 yRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
+		vec4 orientation = xRot * yRot;
+		orientation = orientation.normalize();
+		mat4 rotation = rotateQ(orientation).transpose();
+
+		mat4 translation;
+		translation = translate(position * -1);
+		return rotation * translation;
 	}
 
 
@@ -678,25 +686,25 @@ public:
 
 	static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
 		vec3 f = (target - eye).normalize(); // forward vector
-		vec3 r = f.crossProd(inputUpVector).normalize(); // right vector
-		vec3 u = r.crossProd(f).normalize(); // up vector
+		vec3 r = cross(f, inputUpVector).normalize(); // right vector
+		vec3 u = cross(r, f).normalize(); // up vector
 		mat4 result;
 
 		result.m[0][0] = r.x;
 		result.m[1][0] = r.y;
 		result.m[2][0] = r.z;
-		result.m[3][0] = -r.dotProd(eye);
+		result.m[3][0] = dot(r * -1, eye);
 
 		result.m[0][1] = u.x;
 		result.m[1][1] = u.y;
 		result.m[2][1] = u.z;
-		result.m[3][1] = -u.dotProd(eye);
+		result.m[3][1] = dot(u * -1, eye);
 
 		// negate f due to right hand cord system
 		result.m[0][2] = -f.x;
 		result.m[1][2] = -f.y;
 		result.m[2][2] = -f.z;
-		result.m[3][2] = f.dotProd(eye);
+		result.m[3][2] = dot(f, eye);
 
 		result.m[3][3] = 1.0f;
 		return result.transpose();
