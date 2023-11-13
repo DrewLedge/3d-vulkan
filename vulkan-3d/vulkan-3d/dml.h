@@ -666,9 +666,9 @@ public:
 	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
 		mat4 result;
 
-		vec4 xRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
-		vec4 yRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
-		vec4 orientation = xRot * yRot;
+		vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
+		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
+		vec4 orientation = yRot * xRot;
 		orientation = orientation.normalize();
 		mat4 rotation = rotateQ(orientation).transpose();
 

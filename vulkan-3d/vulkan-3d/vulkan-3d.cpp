@@ -302,8 +302,8 @@ private:
 	struct camData {
 		dml::vec3 camPos; //x, y, z
 		dml::vec4 quat;
-		float rightAngle;
 		float upAngle;
+		float rightAngle;
 
 		float projectionMatrix[16];
 		float viewMatrix[16];
@@ -321,9 +321,9 @@ private:
 
 		dml::mat4 getOrientation() const {
 			const float dr = PI / 180.0f;
-			dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(1, 0, 0));
-			dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(0, 1, 0));
-			dml::vec4 q = xRot * yRot;
+			dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(1, 0, 0));
+			dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(0, 1, 0));
+			dml::vec4 q = yRot * xRot;
 
 			return dml::rotateQ(q); // convert the quaternion to a rotation matrix
 		}
@@ -334,7 +334,7 @@ private:
 
 		dml::mat4 getViewMatrix() {
 			const float dr = PI / 180.0f;
-			return dml::viewMatrix(camPos, rightAngle * dr, upAngle * dr);
+			return dml::viewMatrix(camPos, upAngle * dr, rightAngle * dr);
 		}
 	};
 	struct shadowMapProportionsObject {
@@ -3831,10 +3831,10 @@ private:
 		float cameraSpeed = 2.0f * deltaTime;
 		float cameraRotationSpeed = 200.0f * deltaTime;
 
-		dml::vec3 forward = cam.getLookPoint() - cam.camPos;
-
 		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
+		cam.rightAngle = fmod(cam.rightAngle + 360.0f, 360.0f);
 
+		dml::vec3 forward = cam.getLookPoint() - cam.camPos;
 		dml::vec3 right = dml::cross(forward, dml::vec3(0, 1, 0));
 
 		// camera movement
@@ -3853,26 +3853,28 @@ private:
 
 		// up and down movement
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-			cam.camPos.y -= 1 * cameraSpeed;
+			cam.camPos.y += 1 * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-			cam.camPos.y += 1 * cameraSpeed;
+			cam.camPos.y -= 1 * cameraSpeed;
 		}
 
 
 		// camera rotation
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.rightAngle += cameraRotationSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.rightAngle -= cameraRotationSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
 			cam.upAngle += cameraRotationSpeed;
 		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
 			cam.upAngle -= cameraRotationSpeed;
 		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+			cam.rightAngle += cameraRotationSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+			cam.rightAngle -= cameraRotationSpeed;
+		}
+
+		// realtime object loading
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
