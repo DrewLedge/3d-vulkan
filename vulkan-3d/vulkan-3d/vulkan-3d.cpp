@@ -35,6 +35,54 @@
 const uint32_t WIDTH = 3200;
 const uint32_t HEIGHT = 1800;
 
+struct camData {
+	dml::vec3 camPos; //x, y, z
+	dml::vec4 quat;
+	float upAngle;
+	float rightAngle;
+
+	float projectionMatrix[16];
+	float viewMatrix[16];
+
+	// buffers for the camera matrix ubo
+	VkBuffer buffer;
+	VkDeviceMemory bufferMem;
+
+	float lastX;
+	float lastY;
+	bool locked;
+
+	camData() {
+		camPos = { 0.0f, 0.0f, 0.0f };
+		quat = { 0.0f, 0.0f, 0.0f, 1.0f };
+		rightAngle = 0.0f;
+		upAngle = 0.0f;
+		lastX = 0.0f;
+		lastY = 0.0f;
+		locked = true;
+	}
+
+	dml::mat4 getOrientation() const {
+		const float dr = PI / 180.0f;
+		dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(1, 0, 0));
+		dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(0, 1, 0));
+		dml::vec4 q = yRot * xRot;
+
+		return dml::rotateQ(q); // convert the quaternion to a rotation matrix
+	}
+
+	dml::vec3 getLookPoint() const {
+		return camPos + getOrientation() * dml::vec3(0, 0, -1);
+	}
+
+	dml::mat4 getViewMatrix() {
+		const float dr = PI / 180.0f;
+		return dml::viewMatrix(camPos, upAngle * dr, rightAngle * dr);
+	}
+};
+
+camData cam;
+
 class Engine {
 public:
 	void run() {
@@ -299,44 +347,7 @@ private:
 			}
 		}
 	};
-	struct camData {
-		dml::vec3 camPos; //x, y, z
-		dml::vec4 quat;
-		float upAngle;
-		float rightAngle;
 
-		float projectionMatrix[16];
-		float viewMatrix[16];
-
-		// buffers for the camera matrix ubo
-		VkBuffer buffer;
-		VkDeviceMemory bufferMem;
-
-		camData() {
-			camPos = { 0.0f, 0.0f, 0.0f };
-			quat = { 0.0f, 0.0f, 0.0f, 1.0f };
-			rightAngle = 0.0f;
-			upAngle = 0.0f;
-		}
-
-		dml::mat4 getOrientation() const {
-			const float dr = PI / 180.0f;
-			dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(1, 0, 0));
-			dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(0, 1, 0));
-			dml::vec4 q = yRot * xRot;
-
-			return dml::rotateQ(q); // convert the quaternion to a rotation matrix
-		}
-
-		dml::vec3 getLookPoint() const {
-			return camPos + getOrientation() * dml::vec3(0, 0, -1);
-		}
-
-		dml::mat4 getViewMatrix() {
-			const float dr = PI / 180.0f;
-			return dml::viewMatrix(camPos, upAngle * dr, rightAngle * dr);
-		}
-	};
 	struct shadowMapProportionsObject {
 		uint32_t mapWidth = 2048;
 		uint32_t mapHeight = 2048;
@@ -408,6 +419,10 @@ private:
 		std::vector<VkFramebuffer> framebuffers;
 	};
 
+	struct keyPressObj { // prevent a certain key from being held down
+		bool escPressedLastFrame = false; // unlock mouse
+	};
+
 	// window and rendering context
 	GLFWwindow* window;
 	VkSurfaceKHR surface;
@@ -416,6 +431,7 @@ private:
 	VkDevice device;
 	VkQueue presentQueue;
 	VkQueue graphicsQueue;
+	keyPressObj keyPO;
 
 	// swap chain and framebuffers
 	swapChainData swap;
@@ -470,7 +486,6 @@ private:
 
 	// scene data and objects
 	std::vector<bufData> bufferData;
-	camData cam;
 	meshIndicies sceneInd;
 	std::vector<model> objects;
 	modelMatSSBO objMatData;
@@ -3646,6 +3661,7 @@ private:
 		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
+		initializeMouseInput(true);
 	}
 	void cleanupSwapChain() { //this needs heavy modification lol
 		for (auto framebuffer : swap.framebuffers) {
@@ -3813,7 +3829,7 @@ private:
 			glfwPollEvents();
 			drawFrame();
 			currentFrame = (currentFrame + 1) % swap.images.size();
-			handleKeyboardInput(window); // handle keyboard input to change cam position
+			handleKeyboardInput(); // handle keyboard input
 			recreateObjectBuffers();
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
@@ -3822,14 +3838,57 @@ private:
 		vkDeviceWaitIdle(device);
 	}
 
+	void initializeMouseInput(bool initial) {
+		// set the lastX and lastY to the center of the screen
+		if (initial) {
+			cam.lastX = static_cast<float>(swap.extent.width) / 2.0f;
+			cam.lastY = static_cast<float>(swap.extent.height) / 2.0f;
+		}
 
-	void handleKeyboardInput(GLFWwindow* window) {
+		// only hide and capture cursor if cam.locked is true
+		if (cam.locked) {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
+
+		// set the mouse callback
+		glfwSetCursorPosCallback(window, mouseCallback);
+	}
+
+
+
+	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
+		static bool mouseFirst = true;
+		if (mouseFirst) {
+			cam.lastX = xPos;
+			cam.lastY = yPos;
+			mouseFirst = false;
+		}
+
+		float xoff = cam.lastX - xPos;
+		float yoff = cam.lastY - yPos;	
+		cam.lastX = xPos;
+		cam.lastY = yPos;
+
+		float sens = 0.1f;
+		xoff *= sens;
+		yoff *= sens;
+
+		cam.rightAngle += xoff;
+		cam.upAngle += yoff;
+	}
+
+
+	void handleKeyboardInput() {
+		bool isEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
+
 		double currentFrame = glfwGetTime();
 		float deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
 
 		float cameraSpeed = 2.0f * deltaTime;
-		float cameraRotationSpeed = 200.0f * deltaTime;
 
 		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
 		cam.rightAngle = fmod(cam.rightAngle + 360.0f, 360.0f);
@@ -3838,16 +3897,16 @@ private:
 		dml::vec3 right = dml::cross(forward, dml::vec3(0, 1, 0));
 
 		// camera movement
-		if (glfwGetKey(window, GLFW_KEY_UP) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
 			cam.camPos -= forward * cameraSpeed;
 		}
-		if (glfwGetKey(window, GLFW_KEY_DOWN) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
 			cam.camPos += forward * cameraSpeed;
 		}
-		if (glfwGetKey(window, GLFW_KEY_LEFT) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
 			cam.camPos -= right * cameraSpeed;
 		}
-		if (glfwGetKey(window, GLFW_KEY_RIGHT) == GLFW_PRESS) {
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
 			cam.camPos += right * cameraSpeed;
 		}
 
@@ -3859,25 +3918,17 @@ private:
 			cam.camPos.y -= 1 * cameraSpeed;
 		}
 
-
-		// camera rotation
-		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.upAngle += cameraRotationSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.upAngle -= cameraRotationSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.rightAngle += cameraRotationSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.rightAngle -= cameraRotationSpeed;
-		}
-
 		// realtime object loading
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
+
+		// lock / unlock mouse
+		if (isEsc && !keyPO.escPressedLastFrame) {
+			cam.locked = !cam.locked;
+			initializeMouseInput(false);
+		}
+		keyPO.escPressedLastFrame = isEsc;
 	}
 
 	void initVulkan() { //initializes Vulkan functions
@@ -3890,6 +3941,7 @@ private:
 		setupFences();
 		createSemaphores();
 		commandPool = createCommandPool();
+		initializeMouseInput(true);
 		loadUniqueObjects();
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
