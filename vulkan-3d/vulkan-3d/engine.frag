@@ -79,29 +79,34 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 
 vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
     float alpha = roughness * roughness;
+    float alphaS = alpha * alpha;
+    float specScale = 0.4;
     
     // compute halfway vector
     vec3 H = normalize(V + L);
     
-    // compute the geometric term (GGX)
+    // compute the geometric term
     float NdotH = max(dot(N, H), 0.0);
     float NdotV = max(dot(N, V), 0.0);
     float VdotH = max(dot(V, H), 0.0);
+    float NdotL = dot(N, L) ;
 
-    float G1V = 2.0 * NdotV / (NdotV + sqrt(alpha * alpha + (1.0 - alpha * alpha) * (NdotV * NdotV)));
-    float G1L = 2.0 * dot(N, L) / (dot(N, L) + sqrt(alpha * alpha + (1.0 - alpha * alpha) * (dot(N, L) * dot(N, L))));
+    // geometric attenuation factor from the view dir
+    float G1V = 2.0 * NdotV / (NdotV + sqrt(alphaS + (1.0 - alphaS) * (NdotV * NdotV))); 
+
+    // geometric attenuation factor from the light dir
+    float G1L = 2.0 * NdotL / (NdotL + sqrt(alphaS + (1.0 - alphaS) * (NdotL * NdotL)));
     float G = G1V * G1L;
-
     
-    // compute the roughness term (GGX)
-    float D = alpha * alpha / (PI * pow(NdotH * NdotH * (alpha * alpha - 1.0) + 1.0, 2.0));
+    // compute the roughness term
+    float D = alphaS / (PI * pow(NdotH * NdotH * (alphaS - 1.0) + 1.0, 2.0));
     
     // compute the Fresnel term (schlick approximation)
     vec3 F0 = mix(vec3(0.04), albedo.rgb, metallic);  // reflectance at normal incidence
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 
     // specular and diffuse terms
-    vec3 specular = (D * G * F) / (4.0 * NdotV * dot(N, L));
+    vec3 specular = specScale * (D * G * F) / (4.0 * NdotV * NdotL);
     vec3 diffuse = (1.0 - metallic) * albedo.rgb * (1.0 / PI);
     
     return (diffuse + specular); // output final color
