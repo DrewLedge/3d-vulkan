@@ -6,7 +6,7 @@
 #define MAX_MODELS 1200
 
 layout(location = 0) in vec3 inPosition; 
-layout(location = 1) in vec3 inColor; 
+layout(location = 1) in vec4 inColor; 
 layout(location = 2) in float inAlpha;
 layout(location = 3) in vec2 inTexCoord;
 layout(location = 4) in uint inVertIndex;
@@ -50,7 +50,7 @@ void main() {
     vec3 viewDir = normalize(worldPos.xyz - worldCamPos);
 
     gl_Position = proj * view * model * vec4(inPosition, 1.0);
-    fragColor = vec4(inColor, 1.0);
+    fragColor = inColor;
     outTexCoord = inTexCoord;
     if (texIndex <= MAX_TEXTURES) {
         outTexIndex = texIndex; // pass the texture index to the fragment shader

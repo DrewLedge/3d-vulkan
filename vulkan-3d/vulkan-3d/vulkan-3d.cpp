@@ -95,7 +95,7 @@ private:
 	struct Vertex {
 		dml::vec3 pos; // position coordinates x, y, z
 		dml::vec2 tex; // texture coordinates u, v
-		dml::vec3 col; // color r, g, b
+		dml::vec4 col; // color r, g, b, a
 		dml::vec3 normal; // normal vector x, y, z
 		float alpha;
 		uint32_t matIndex; // used to know which vertex belong to which material
@@ -105,7 +105,7 @@ private:
 		Vertex()
 			: pos(dml::vec3(0.0f, 0.0f, 0.0f)),
 			tex(dml::vec2(0.0f, 0.0f)),
-			col(dml::vec3(0.0f, 0.0f, 0.0f)),
+			col(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),
 			normal(dml::vec3(0.0f, 0.0f, 0.0f)),
 			alpha(1.0f),
 			tangent(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f))
@@ -114,7 +114,7 @@ private:
 		// constructor:
 		Vertex(const dml::vec3& position,
 			const dml::vec2& texture,
-			const dml::vec3& color,
+			const dml::vec4& color,
 			const dml::vec3& normalVector,
 			float alphaValue,
 			const dml::vec4& tang)
@@ -152,6 +152,7 @@ private:
 			seed ^= std::hash<float>()(vertex.col.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.col.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.col.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<float>()(vertex.col.w) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
 			seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
@@ -1203,7 +1204,7 @@ private:
 					// colors
 					const float* colorData = nullptr;
 					auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
-					if (colorIt != primitive.attributes.end()) { // check if the primitive has tangents
+					if (colorIt != primitive.attributes.end()) { // check if the primitive has color data
 						const auto& colorAccessor = gltfModel.accessors[colorIt->second];
 						colorData = getAccessorData(gltfModel, primitive.attributes, "COLOR_0");
 					}
@@ -1295,10 +1296,10 @@ private:
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
 						if (colorFound) {
-							vertex.col = { colorData[3 * index], colorData[3 * index + 1], colorData[3 * index + 2] };
+							vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
 						}
 						else {
-							vertex.col = { 1.0f, 1.0f, 1.0f };
+							vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f};
 						}
 
 						// get handedness of the tangent
@@ -2653,7 +2654,7 @@ private:
 		// color
 		attrDesc[1].binding = 0;
 		attrDesc[1].location = 1;
-		attrDesc[1].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for color
+		attrDesc[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for color
 		attrDesc[1].offset = offsetof(Vertex, col);
 
 		// alpha (transparency)
