@@ -3378,8 +3378,9 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
-		cloneObject(dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix)), 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
-		cloneObject(dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix)), 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
+		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
 		recreateObjectRelated();
 	}
 	void recreateBuffers() {
@@ -3955,10 +3956,8 @@ private:
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
 		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
-
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		recordShadowCommandBuffers();
-
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
 		//debugModelMatricies();
