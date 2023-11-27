@@ -2067,9 +2067,7 @@ private:
 		}
 
 		setupModelMatUBO(); //create the model matrix UBOs for each object
-		setupCamMatUBO(); //create the camera matrix UBO
-		setupLights();
-		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // iterate through all objects and put all texture data into a vector
+		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
 
 		VkDescriptorBufferInfo modelMatBufferInfo{};
 		modelMatBufferInfo.buffer = modelMatBuffer;
@@ -2166,6 +2164,8 @@ private:
 		if (initial) {
 			getAllTextures();
 			getAllMaterials();
+			setupCamMatUBO(); //create the camera matrix UBO
+			setupLights();
 		}
 		createDS(); //create the descriptor set
 	}
@@ -3363,7 +3363,9 @@ private:
 		uint32_t objSize = static_cast<uint32_t>(objects.size());
 		uint32_t texInd = -1;
 
-		// get the texture indicies 	
+		// get the texture indicies
+		allMaterials.reserve(allMaterials.size() + m.materials.size());
+		allTextures.reserve(allTextures.size() + 3 * m.materials.size());
 		for (auto& material : m.materials) {
 			if (material.metallicRoughness.texIndex > texInd) material.metallicRoughness.texIndex = texInd;
 			if (material.baseColor.texIndex > texInd) material.baseColor.texIndex = texInd;
@@ -3381,6 +3383,7 @@ private:
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = objSize;
 		}
+
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
 		convertMatrix(model, m.modelMatrix);
@@ -3392,8 +3395,8 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		model m = objects[1];
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
-		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
-		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 0.0f });
+		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		recreateObjectRelated();
 	}
 	void recreateBuffers() {
