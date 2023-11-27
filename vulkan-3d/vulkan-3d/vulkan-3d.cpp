@@ -575,6 +575,7 @@ private:
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
 		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
@@ -1004,7 +1005,12 @@ private:
 		}
 	}
 
-	dml::mat4 calcNodeLM(const tinygltf::Node& node, model& m) { // get the local matrix of the node
+	dml::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
+		if (node.matrix.size() == 16) { // if the node already has a matrix just return it
+			return dml::gltfToMat4(node.matrix);
+		}
+
+		// default values
 		dml::vec3 t = { 0.0f, 0.0f, 0.0f };
 		dml::vec4 r = { 0.0f, 0.0f, 0.0f, 1.0f };
 		dml::vec3 s = { 1.0f, 1.0f, 1.0f };
@@ -1032,19 +1038,11 @@ private:
 				static_cast<float>(node.scale[2])
 			};
 		}
-		s = s * m.scale; // multiply the scale by the pre set scale to tweak the original scale
-		t += m.position;
-		r = r * m.rotation;
+		// calculate the matricies
 		dml::mat4 translationMatrix = dml::translate(t);
 		dml::mat4 rotationMatrix = dml::rotateQ(r); // quaternion rotation
 		dml::mat4 scaleMatrix = dml::scale(s);
-		if (node.matrix.size() == 16) {
-			dml::mat4 gltfMatrix = dml::gltfToMat4(node.matrix);
-			return translationMatrix * rotationMatrix * scaleMatrix * gltfMatrix;
-		}
-		else {
-			return translationMatrix * rotationMatrix * scaleMatrix;
-		}
+		return translationMatrix * rotationMatrix * scaleMatrix;
 	}
 
 	int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
@@ -1060,10 +1058,20 @@ private:
 		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
 		dml::mat4 modelMatrix;
 
+		// get the matricies for object positioning
+		dml::mat4 translationMatrix = dml::translate(m.position);
+		dml::mat4 rotationMatrix = dml::rotateQ(m.rotation);
+		dml::mat4 scaleMatrix = dml::scale(m.scale);
+
 		// walk up the node hierarchy to accumulate transformations
 		while (currentNodeIndex != -1) {
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
-			dml::mat4 localMatrix = calcNodeLM(node, m);
+			dml::mat4 localMatrix = calcNodeLM(node);
+
+			// apply the scale matrix to the local matrix to scale the object
+			localMatrix = scaleMatrix * localMatrix;
+
+			// combine the localMatrix with the accumulated modelMatrix
 			modelMatrix = localMatrix * modelMatrix;
 
 			// move up to the parent node for the next iteration
@@ -1075,6 +1083,8 @@ private:
 			}
 		}
 
+		// after accumulating all local transformations and scaling, apply the rotation and translation
+		modelMatrix = translationMatrix * rotationMatrix * modelMatrix;
 		return modelMatrix;
 	}
 
@@ -1299,7 +1309,7 @@ private:
 							vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
 						}
 						else {
-							vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f};
+							vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 						}
 
 						// get handedness of the tangent
@@ -1382,7 +1392,9 @@ private:
 				newObject.position = pos;
 				newObject.rotation = rot;
 
-				convertMatrix(calcMeshWM(gltfModel, meshInd, parentInd, newObject), newObject.modelMatrix);
+				// calculate the model matrix for the mesh
+				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
+				convertMatrix(meshModelMatrix, newObject.modelMatrix);
 
 				// add newObject to global objects list
 				modelMtx.lock();
@@ -3870,7 +3882,7 @@ private:
 		}
 
 		float xoff = cam.lastX - xPos;
-		float yoff = cam.lastY - yPos;	
+		float yoff = cam.lastY - yPos;
 		cam.lastX = xPos;
 		cam.lastY = yPos;
 
