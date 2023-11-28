@@ -3350,31 +3350,34 @@ private:
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
 		model m = objects[object];
-
 		m.scale = scale;
 		m.position = pos;
 		m.startObj = false;
 		m.rotation = rotation;
-		uint32_t objSize = static_cast<uint32_t>(objects.size());
-		uint32_t texInd = -1;
+
+		size_t objSize = objects.size();
+		size_t verticesSize = m.vertices.size();
+		size_t materialsSize = m.materials.size();
+		size_t allMaterialsSize = allMaterials.size();
+
+		//uint32_t texInd = -1;
 
 		// get the texture indicies
-		allMaterials.reserve(allMaterials.size() + m.materials.size());
-		allTextures.reserve(allTextures.size() + 3 * m.materials.size());
+		allMaterials.reserve(allMaterialsSize + materialsSize);
+		allTextures.reserve(allMaterialsSize + 3 * materialsSize);
 		for (auto& material : m.materials) {
-			if (material.metallicRoughness.texIndex > texInd) material.metallicRoughness.texIndex = texInd;
-			if (material.baseColor.texIndex > texInd) material.baseColor.texIndex = texInd;
-			if (material.normalMap.texIndex > texInd) material.normalMap.texIndex = texInd;
-			material.modelIndex = objSize;
+			/*	if (material.metallicRoughness.texIndex > texInd) material.metallicRoughness.texIndex = texInd;
+				if (material.baseColor.texIndex > texInd) material.baseColor.texIndex = texInd;
+				if (material.normalMap.texIndex > texInd) material.normalMap.texIndex = texInd;*/
 
-			// add the textures to the list of textures
 			allMaterials.emplace_back(material);
 			allTextures.emplace_back(material.baseColor);
 			allTextures.emplace_back(material.metallicRoughness);
 			allTextures.emplace_back(material.normalMap);
+
+			material.modelIndex = objSize;
 		}
 
-		size_t verticesSize = m.vertices.size(); // get the size of the vertices array before iteration
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = objSize;
 		}
