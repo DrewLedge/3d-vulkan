@@ -3280,36 +3280,36 @@ private:
 
 	void createModelBuffers() { // creates the vertex and index buffers for the models into a single buffer
 		bufferData.resize(objects.size());
+
+		// get the total size of the vertex and index buffers
 		VkDeviceSize totalVertexBufferSize = 0;
 		VkDeviceSize totalIndexBufferSize = 0;
-		for (size_t i = 0; i < objects.size(); i++) {
-			totalVertexBufferSize += sizeof(Vertex) * objects[i].vertices.size();
-			totalIndexBufferSize += sizeof(uint32_t) * objects[i].indices.size();
+		for (const auto& obj : objects) {
+			totalVertexBufferSize += sizeof(Vertex) * obj.vertices.size();
+			totalIndexBufferSize += sizeof(uint32_t) * obj.indices.size();
 		}
 
+		// create and map the vertex buffer
 		createBuffer(totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertBuffer, vertBufferMem); // create the combined vertex buffer
-
 		char* vertexData;
-		vkMapMemory(device, vertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData)); // fill vertex buffer and save object data
+		vkMapMemory(device, vertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
+
+		// create and map the index buffer
+		createBuffer(totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indBuffer, indBufferMem); // create the combined index buffer
+		char* indexData;
+		vkMapMemory(device, indBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+		VkDeviceSize currentIndexOffset = 0;
+
 		for (size_t i = 0; i < objects.size(); i++) {
+			// vertex data
 			bufferData[i].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
 			bufferData[i].vertexCount = static_cast<uint32_t>(objects[i].vertices.size());
 			memcpy(vertexData, objects[i].vertices.data(), bufferData[i].vertexCount * sizeof(Vertex));
 			vertexData += bufferData[i].vertexCount * sizeof(Vertex);
 			currentVertexOffset += bufferData[i].vertexCount;
-		}
 
-		vkUnmapMemory(device, vertBufferMem);
-		createBuffer(totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indBuffer, indBufferMem); // create the combined index buffer
-
-		// map index buffer memory into the applications address space and save the pointer in indexData as a void*
-		char* indexData;
-		vkMapMemory(device, indBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
-		VkDeviceSize currentIndexOffset = 0;
-
-		// iterate through all objects and copy their index data into the index buffer
-		for (size_t i = 0; i < objects.size(); i++) {
+			// index data
 			bufferData[i].indexOffset = static_cast<uint32_t>(currentIndexOffset);
 			bufferData[i].indexCount = static_cast<uint32_t>(objects[i].indices.size());
 			memcpy(indexData, objects[i].indices.data(), bufferData[i].indexCount * sizeof(uint32_t));
@@ -3317,6 +3317,7 @@ private:
 			currentIndexOffset += bufferData[i].indexCount;
 		}
 
+		vkUnmapMemory(device, vertBufferMem);
 		vkUnmapMemory(device, indBufferMem);
 	}
 
@@ -3345,12 +3346,6 @@ private:
 		}
 
 		vkBindBufferMemory(device, buffer, bufferMemory, 0);
-	}
-	void recreateObjectRelated() {
-		cleanupDS();
-		setupDescriptorSets(false);
-		createGraphicsPipeline();
-		recreateBuffers();
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
@@ -3397,7 +3392,11 @@ private:
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		recreateObjectRelated();
+
+		cleanupDS();
+		setupDescriptorSets(false);
+		createGraphicsPipeline();
+		recreateBuffers();
 	}
 	void recreateBuffers() {
 		vkDeviceWaitIdle(device);  // wait for all frames to finish
