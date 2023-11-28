@@ -3375,23 +3375,23 @@ private:
 			allTextures.emplace_back(material.metallicRoughness);
 			allTextures.emplace_back(material.normalMap);
 
-			material.modelIndex = objSize;
+			material.modelIndex = static_cast<uint32_t>(objSize);
 		}
 
 		for (size_t i = 0; i < verticesSize; i++) {
-			m.vertices[i].matIndex = objSize;
+			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
 		}
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
 		convertMatrix(model, m.modelMatrix);
 
-		objects.push_back(m); // add the model to the list
+		objects.push_back(std::move(m));
+
 	}
 
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		model m = objects[1];
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
@@ -3880,16 +3880,19 @@ private:
 
 	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
 		static bool mouseFirst = true;
+		float xp = static_cast<float>(xPos);
+		float yp = static_cast<float>(yPos);
+
 		if (mouseFirst) {
-			cam.lastX = xPos;
-			cam.lastY = yPos;
+			cam.lastX = xp;
+			cam.lastY = yp;
 			mouseFirst = false;
 		}
 
-		float xoff = cam.lastX - xPos;
-		float yoff = cam.lastY - yPos;
-		cam.lastX = xPos;
-		cam.lastY = yPos;
+		float xoff = cam.lastX - xp;
+		float yoff = cam.lastY - yp;
+		cam.lastX = xp;
+		cam.lastY = yp;
 
 		float sens = 0.1f;
 		xoff *= sens;
@@ -3904,7 +3907,7 @@ private:
 		bool isEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
 
 		double currentFrame = glfwGetTime();
-		float deltaTime = currentFrame - lastFrame;
+		float deltaTime = static_cast<float>(currentFrame - lastFrame);
 		lastFrame = currentFrame;
 
 		float cameraSpeed = 2.0f * deltaTime;
