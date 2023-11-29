@@ -3670,7 +3670,7 @@ private:
 		createSC();
 		createImageViews();
 		cleanupDS();
-		setupDescriptorSets();
+		setupDescriptorSets(false);
 		vkDestroyImageView(device, depthImageView, nullptr);
 		vkDestroyImage(device, depthImage, nullptr);
 		vkFreeMemory(device, depthImageMemory, nullptr);

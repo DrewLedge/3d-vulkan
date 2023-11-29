@@ -121,7 +121,6 @@ void main() {
     float roughness = metallicRoughness.g;
     float metallic = metallicRoughness.b;
 
-
     vec3 normal = (texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
     normal = normalize(TBN * normal);
 
@@ -162,6 +161,13 @@ void main() {
             continue;
         }
         if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
+            // attenuation calculation
+            float lightDistance = length(lightPos - inFragPos);
+            float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
+            if (attenuation < 0.005) { // early out if attenuation is too small
+				continue;
+			}
+
             vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
             float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
@@ -171,10 +177,6 @@ void main() {
             } else {
                 intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
             }
-
-            // attenuation calculation
-            float lightDistance = length(lightPos - inFragPos);
-            float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
 
             // cook-torrance specular lighting
             vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
