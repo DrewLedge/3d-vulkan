@@ -21,6 +21,7 @@ layout(location = 4) out vec3 outFragPos;
 layout(location = 5) out vec3 outViewDirection;
 layout(location = 6) out mat3 TBN;
 layout(location = 9) out float handedness;
+layout(location = 10) flat out uint render; // if 0 render, if 1 don't render
 layout(location = 20) out vec3 test;
 
 
@@ -37,8 +38,17 @@ layout(set = 4, binding = 5) buffer camBufferObject {
     mat4 proj;
 } camSSBO;
 
+layout(push_constant) uniform PC {
+    int notRender;
+} pc;
+
+
 void main() {
     uint modelIndex = inVertIndex;
+    render = 0;
+    if (pc.notRender == modelIndex) {
+        render = 1; // dont render this model
+	}
     uint texIndex = inVertIndex*3; // 3 textures per material
 
     mat4 proj = camSSBO.proj;

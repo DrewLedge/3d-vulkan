@@ -252,6 +252,8 @@ private:
 		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
 
+		bool player = false; // if the object is treated as a player model or not
+
 
 		// default constructor:
 		model()
@@ -570,6 +572,13 @@ private:
 		l.outerConeAngle = 45.0f;
 		lights.push_back(l);
 	}
+	void setPlayer(uint16_t i) {
+		model p = objects[i];
+		p.player = true;
+		p.scale = { 0.3f, 0.3f, 0.3f };
+		p.position = { -3.0f, 0.0f, 3.0f };
+		objects.push_back(p);
+	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
@@ -580,6 +589,9 @@ private:
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+
+		setPlayer(2);
+		setPlayer(3);
 	}
 
 	void createInstance() {
@@ -1853,7 +1865,18 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			memcpy(objMatData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+			if (objects[i].player) {
+				float updatedModel[16];
+				dml::mat4 t = dml::translate(cam.camPos);
+				dml::mat4 r;
+				dml::mat4 s = dml::scale(objects[i].scale);
+				dml::mat4 model = (t * r * s) * unflattenMatrix(objects[i].modelMatrix);
+				convertMatrix(model, updatedModel);
+				memcpy(objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
+			}
+			else {
+				memcpy(objMatData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+			}
 		}
 		void* matrixData;
 		vkMapMemory(device, modelMatBufferMem, 0, sizeof(objMatData), 0, &matrixData);
@@ -2812,12 +2835,19 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
 		dynamicState.pDynamicStates = dynamicStates;
 
+		VkPushConstantRange pushConstantRange{};
+		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+		pushConstantRange.offset = 0;
+		pushConstantRange.size = sizeof(int); // 1 int for the model index to not render
+
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[3], descs.layouts[5] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+		pipelineLayoutInf.pushConstantRangeCount = 1;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &mainPipelineData.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!! " + resultStr(result));
@@ -3461,6 +3491,14 @@ private:
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 			for (size_t j = 0; j < objects.size(); j++) {
+				struct {
+					int notRender;
+				} pushConst;
+				if (objects[j].player) {
+					pushConst.notRender = static_cast<int>(j);
+				}
+
+				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
 

@@ -42,6 +42,7 @@ layout(location = 4) in vec3 inFragPos;
 layout(location = 5) in vec3 inViewDir;
 layout(location = 6) in mat3 TBN;
 layout(location = 9) in float handedness;
+layout(location = 10) flat in uint render; // if 0 render, if 1 don't render
 layout(location = 20) in vec3 test;
 
 
@@ -115,6 +116,9 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float rou
 
 
 void main() {
+    if (render == 1) {
+        discard;
+    }
     vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
 
     vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
@@ -154,7 +158,7 @@ void main() {
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
         float theta = dot(spotDirection, fragToLightDir);
         vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
-        ambient = 0.0007 * lightColor; // low influence
+        ambient = 0.002 * lightColor; // low influence
 
         // spotlight cutoff
         if (theta <= cos(outerConeRads)) { // if the fragment is not in the cone, continue to next iteration
