@@ -178,7 +178,6 @@ private:
 		uint32_t mipLevels;
 		VkBuffer stagingBuffer;
 		VkDeviceMemory stagingBufferMem;
-		uint32_t texIndex; //used to know what textures belong to what material
 		tinygltf::Image gltfImage;
 		bool found;
 		uint16_t width;
@@ -192,7 +191,6 @@ private:
 			mipLevels(1),
 			stagingBuffer(VK_NULL_HANDLE),
 			stagingBufferMem(VK_NULL_HANDLE),
-			texIndex(0),
 			gltfImage(),
 			found(false),
 			width(1024),
@@ -236,7 +234,6 @@ private:
 		Texture metallicRoughness;
 		Texture baseColor;
 		Texture normalMap;
-		uint32_t modelIndex; //used to know what model the material belongs to
 	};
 	struct model {
 		std::vector<Materials> materials; //used to store all the textures/materials of the model
@@ -334,21 +331,6 @@ private:
 	struct camUBO {
 		float view[16];
 		float proj[16];
-	};
-	struct sceneIndexSSBO {
-		uint32_t texIndices[MAX_TEXTURES]; //array of indices for which textures belong to what materials
-		uint32_t modelIndices[MAX_MODELS]; // array of indices for which materials belong to what models
-
-		// default constructor:
-		sceneIndexSSBO() {
-			// by default, all the unused indices are max + 1 so glsl can ignore them
-			for (int i = 0; i < MAX_TEXTURES; i++) {
-				texIndices[i] = MAX_TEXTURES + 1;
-			}
-			for (int i = 0; i < MAX_MODELS; i++) {
-				modelIndices[i] = MAX_MODELS + 1;
-			}
-		}
 	};
 
 	struct shadowMapProportionsObject {
@@ -495,7 +477,6 @@ private:
 	camUBO camMatData;
 	lightDataSSBO lightData;
 	std::vector<light> lights;
-	sceneIndexSSBO sceneIndices;
 	shadowMapProportionsObject shadowProps;
 
 	// textures and materials
@@ -585,13 +566,13 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		//createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
 
-		setPlayer(2);
-		setPlayer(3);
+		setPlayer(4);
+		setPlayer(5);
 	}
 
 	void createInstance() {
@@ -1353,7 +1334,6 @@ private:
 							auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.baseColor.gltfImage = gltfModel.images[tex.source];
-							texture.baseColor.texIndex = sceneInd.texInd;
 							texture.baseColor.path = "gltf";
 							texture.baseColor.found = true;
 						}
@@ -1366,7 +1346,6 @@ private:
 							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
-							texture.metallicRoughness.texIndex = sceneInd.texInd;
 							texture.metallicRoughness.path = "gltf";
 							texture.metallicRoughness.found = true;
 						}
@@ -1379,7 +1358,6 @@ private:
 							auto& texInfo = material.normalTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.normalMap.gltfImage = gltfModel.images[tex.source];
-							texture.normalMap.texIndex = sceneInd.texInd;
 							texture.normalMap.path = "gltf";
 							texture.normalMap.found = true;
 						}
@@ -1388,7 +1366,6 @@ private:
 						}
 
 						sceneInd.texInd += 1;
-						texture.modelIndex = sceneInd.modInd;
 						newObject.materials.push_back(texture);
 					}
 					else {
@@ -1711,73 +1688,6 @@ private:
 		vkMapMemory(device, lightBufferMem, 0, bufferCreateInfo.size, 0, &data);
 		memcpy(data, &lightData, bufferCreateInfo.size);
 		vkUnmapMemory(device, lightBufferMem);
-	}
-
-	void printIndices(const sceneIndexSSBO& indexBuffer, bool extra = true) {
-		if (extra) {
-			for (model& obj : objects) {
-				for (Vertex& vert : obj.vertices) {
-					std::cout << "Vertex " << vert.pos.x << ", " << vert.pos.y << ", " << vert.pos.z << " goes with Material " << vert.matIndex << std::endl;
-				}
-			}
-		}
-		std::cout << "-------------------------------" << std::endl;
-		for (size_t i = 0; i < MAX_TEXTURES; i++) {
-			if (indexBuffer.texIndices[i] < MAX_TEXTURES) {
-				std::cout << "Texture " << i << " goes with Material " << indexBuffer.texIndices[i] << std::endl;
-			}
-		}
-		for (size_t i = 0; i < MAX_MODELS; i++) {
-			if (indexBuffer.modelIndices[i] < MAX_MODELS) {
-				std::cout << "Material " << i << " goes with Model/Object " << indexBuffer.modelIndices[i] << std::endl;
-				std::cout << "Material" << i << " goes with Texture " << i * 3 << std::endl;
-			}
-		}
-		std::cout << "-------------------------------" << std::endl;
-	}
-
-	void setupTexIndices(std::vector<Texture>& textures, std::vector<Materials>& materials) { // depricated but keeping it for now
-		size_t materialCount = 0;
-		for (size_t i = 0; i < totalTextureCount; ++i) {
-			sceneIndices.texIndices[i] = textures[i].texIndex;
-		}
-		for (size_t h = 0; h < objects.size(); h++) {
-			materialCount += objects[h].materials.size();
-		}
-		for (size_t g = 0; g < materialCount; g++) {
-			sceneIndices.modelIndices[g] = materials[g].modelIndex;
-		}
-		//printIndices(sceneIndices);
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(sceneIndexSSBO);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
-
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &sceneIndexBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create index buffer!");
-		}
-
-		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, sceneIndexBuffer, &memoryRequirements);
-
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &sceneIndexBufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for index buffer!");
-		}
-
-		vkBindBufferMemory(device, sceneIndexBuffer, sceneIndexBufferMem, 0);
-
-		// once memory is bound, map and fill it
-		void* data;
-		vkMapMemory(device, sceneIndexBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &sceneIndices, bufferCreateInfo.size);
-		vkUnmapMemory(device, sceneIndexBufferMem);
-		//printIndices(sceneIndices, false); // debug
 	}
 
 	void printMatrix(const dml::mat4& matrix) { // prints the matrix in transposed order
@@ -3396,16 +3306,10 @@ private:
 		allMaterials.reserve(allMaterialsSize + materialsSize);
 		allTextures.reserve(allMaterialsSize + 3 * materialsSize);
 		for (auto& material : m.materials) {
-			/*	if (material.metallicRoughness.texIndex > texInd) material.metallicRoughness.texIndex = texInd;
-				if (material.baseColor.texIndex > texInd) material.baseColor.texIndex = texInd;
-				if (material.normalMap.texIndex > texInd) material.normalMap.texIndex = texInd;*/
-
 			allMaterials.emplace_back(material);
 			allTextures.emplace_back(material.baseColor);
 			allTextures.emplace_back(material.metallicRoughness);
 			allTextures.emplace_back(material.normalMap);
-
-			material.modelIndex = static_cast<uint32_t>(objSize);
 		}
 
 		for (size_t i = 0; i < verticesSize; i++) {
