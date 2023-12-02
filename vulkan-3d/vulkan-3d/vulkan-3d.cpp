@@ -566,7 +566,7 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
@@ -1054,15 +1054,12 @@ private:
 		// get the matricies for object positioning
 		dml::mat4 translationMatrix = dml::translate(m.position);
 		dml::mat4 rotationMatrix = dml::rotateQ(m.rotation);
-		dml::mat4 scaleMatrix = dml::scale(m.scale);
+		dml::mat4 scaleMatrix = dml::scale(m.scale * 0.03); // 0.03 scales it down to a reasonable size
 
 		// walk up the node hierarchy to accumulate transformations
 		while (currentNodeIndex != -1) {
 			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
 			dml::mat4 localMatrix = calcNodeLM(node);
-
-			// apply the scale matrix to the local matrix to scale the object
-			localMatrix = scaleMatrix * localMatrix;
 
 			// combine the localMatrix with the accumulated modelMatrix
 			modelMatrix = localMatrix * modelMatrix;
@@ -1076,7 +1073,8 @@ private:
 			}
 		}
 
-		// after accumulating all local transformations and scaling, apply the rotation and translation
+		// after accumulating all local matricies, apply scaling first and then translation and rotation
+		modelMatrix = scaleMatrix * modelMatrix;
 		modelMatrix = translationMatrix * rotationMatrix * modelMatrix;
 		return modelMatrix;
 	}
