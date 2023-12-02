@@ -549,8 +549,8 @@ private:
 		l.constantAttenuation = 1.0f;
 		l.linearAttenuation = 0.1f;
 		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 30.0f;
-		l.outerConeAngle = 45.0f;
+		l.innerConeAngle = 6.6f;
+		l.outerConeAngle = 10.0f;
 		lights.push_back(l);
 	}
 	void setPlayer(uint16_t i) {
@@ -568,8 +568,8 @@ private:
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
 		createObject("models/sniper_rifle_pbr.glb", { 0.6f, 0.6f, 0.6f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.5f });
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
-		createLight({ -2.0f, 0.0f, 2.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.0f, 0.0f });
+		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
+		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
 		setPlayer(4);
 		setPlayer(5);
@@ -1739,7 +1739,7 @@ private:
 		}
 
 		dml::mat4 viewMatrix = dml::lookAt(l.pos, l.target, up);
-		dml::mat4 projMatrix = dml::spotPerspective(l.outerConeAngle, aspectRatio, nearPlane, farPlane);
+		dml::mat4 projMatrix = dml::spotPerspective(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
 		/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
 			printMatrix(viewMatrix);
 			std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;

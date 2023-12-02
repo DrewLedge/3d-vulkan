@@ -81,8 +81,8 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
     float alpha = roughness * roughness;
     float alphaS = alpha * alpha;
-    float specScale = 0.4;
-    
+    float specScale = metallic; // ensure that the specular term is scaled by the metallic factor
+
     // compute halfway vector
     vec3 H = normalize(V + L);
     
@@ -175,16 +175,18 @@ void main() {
             vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
             float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
+            // spotlight intensity calculation
             float intensity;
             if (theta > cos(innerConeRads)) {
                 intensity = 1.0; 
             } else {
                 intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
             }
+            intensity = clamp(intensity * attenuation, 0.0, 1.0);
 
             // cook-torrance specular lighting
             vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
-            accumulated += (lightColor * brdf * attenuation * shadowFactor) + ambient;
+            accumulated += lightColor * brdf * intensity * shadowFactor;
         }
     }
     
