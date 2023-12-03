@@ -486,6 +486,7 @@ private:
 	// textures and materials
 	std::vector<Texture> allTextures;
 	std::vector<Materials> allMaterials;
+	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
 	unsigned char* imageData;
 
@@ -1901,12 +1902,29 @@ private:
 	}
 	std::vector<Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
+		size_t currentIndex = 0;
 		for (const model& obj : objects) {
-			if (obj.material.baseColor.found) allTextures.emplace_back(obj.material.baseColor);
-			if (obj.material.metallicRoughness.found) allTextures.emplace_back(obj.material.metallicRoughness);
-			if (obj.material.normalMap.found) allTextures.emplace_back(obj.material.normalMap);
-			if (obj.material.emissiveMap.found) allTextures.emplace_back(obj.material.emissiveMap);
-			if (obj.material.occlusionMap.found) allTextures.emplace_back(obj.material.occlusionMap);
+			meshTexStartInd.push_back(currentIndex);
+			if (obj.material.baseColor.found) {
+				allTextures.emplace_back(obj.material.baseColor);
+				currentIndex++;
+			}
+			if (obj.material.metallicRoughness.found) {
+				allTextures.emplace_back(obj.material.metallicRoughness);
+				currentIndex++;
+			}
+			if (obj.material.normalMap.found) {
+				allTextures.emplace_back(obj.material.normalMap);
+				currentIndex++;
+			}
+			if (obj.material.emissiveMap.found) {
+				allTextures.emplace_back(obj.material.emissiveMap);
+				currentIndex++;
+			}
+			if (obj.material.occlusionMap.found) {
+				allTextures.emplace_back(obj.material.occlusionMap);
+				currentIndex++;
+			}
 		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
@@ -3338,11 +3356,24 @@ private:
 
 		allMaterials.emplace_back(m.material);
 
-		if (m.material.baseColor.found) allTextures.emplace_back(m.material.baseColor);
-		if (m.material.metallicRoughness.found) allTextures.emplace_back(m.material.metallicRoughness);
-		if (m.material.normalMap.found) allTextures.emplace_back(m.material.normalMap);
-		if (m.material.emissiveMap.found) allTextures.emplace_back(m.material.emissiveMap);
-		if (m.material.occlusionMap.found) allTextures.emplace_back(m.material.occlusionMap);
+		size_t startIndex = allTextures.size();
+		meshTexStartInd.push_back(startIndex);
+
+		if (m.material.baseColor.found) {
+			allTextures.emplace_back(m.material.baseColor);
+		}
+		if (m.material.metallicRoughness.found) {
+			allTextures.emplace_back(m.material.metallicRoughness);
+		}
+		if (m.material.normalMap.found) {
+			allTextures.emplace_back(m.material.normalMap);
+		}
+		if (m.material.emissiveMap.found) {
+			allTextures.emplace_back(m.material.emissiveMap);
+		}
+		if (m.material.occlusionMap.found) {
+			allTextures.emplace_back(m.material.occlusionMap);
+		}
 
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
@@ -3438,14 +3469,14 @@ private:
 				struct {
 					int notRender;
 					int textureExist;
-					int texCount;
+					int texIndex;
 				} pushConst;
 
 				if (objects[j].player) {
 					pushConst.notRender = static_cast<int>(j);
 				}
 				pushConst.textureExist = textureExistence;
-				pushConst.texCount = static_cast<int>(objects[j].textureCount);
+				pushConst.texIndex = meshTexStartInd[j];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}

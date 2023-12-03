@@ -125,10 +125,6 @@ void main() {
     vec3 emissive = vec3(1.0f);
     vec3 occlusion = vec3(1.0f);
 
-    
-    float roughness = metallicRoughness.g;
-    float metallic = metallicRoughness.b;
-
     bool albedoExists = (bitfield & 1) != 0;
     bool metallicRoughnessExists = (bitfield & 2) != 0;
     bool normalExists = (bitfield & 4) != 0;
@@ -159,7 +155,6 @@ void main() {
     }
     if (occlusionExists) {
 		occlusion = texture(texSamplers[nextTexture], inTexCoord).rgb;
-        nextTexture += 1;
 	}
           
     
@@ -171,6 +166,8 @@ void main() {
     vec3 ambient = vec3(0.0);
     vec3 accumulated = vec3(0.0);
 
+    float roughness = metallicRoughness.g;
+    float metallic = metallicRoughness.b;
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
         if (lights[i].intensity == 0.0) { // if the light is off, continue to next iteration
@@ -226,9 +223,9 @@ void main() {
     }
     
     // final color calculation
-    outColor = albedo;
     //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
+    outColor = vec4(accumulated, color.a);
 
 }
 

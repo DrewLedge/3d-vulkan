@@ -43,7 +43,7 @@ layout(set = 4, binding = 5) buffer camBufferObject {
 layout(push_constant) uniform PC {
     int notRender;
     int textureExist;
-    int texCount;
+    int texInd;
 } pc;
 
 
@@ -53,7 +53,7 @@ void main() {
     if (pc.notRender == modelIndex) {
         render = 1; // dont render this model
 	}
-    uint texIndex = inVertIndex * pc.texCount;
+    uint texIndex = pc.texInd;
     bitfield = pc.textureExist;
 
     mat4 proj = camSSBO.proj;
