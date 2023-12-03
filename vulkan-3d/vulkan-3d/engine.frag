@@ -43,6 +43,7 @@ layout(location = 5) in vec3 inViewDir;
 layout(location = 6) in mat3 TBN;
 layout(location = 9) in float handedness;
 layout(location = 10) flat in uint render; // if 0 render, if 1 don't render
+layout(location = 11) flat in uint bitfield;
 layout(location = 20) in vec3 test;
 
 
@@ -119,15 +120,49 @@ void main() {
     if (render == 1) {
         discard;
     }
-    vec4 albedo = texture(texSamplers[inTexIndex], inTexCoord);
+    vec4 metallicRoughness = vec4(1.0f);
+    vec3 normal = vec3(1.0f);
+    vec3 emissive = vec3(1.0f);
+    vec3 occlusion = vec3(1.0f);
 
-    vec4 metallicRoughness = texture(texSamplers[inTexIndex + 1], inTexCoord);
+    
     float roughness = metallicRoughness.g;
     float metallic = metallicRoughness.b;
 
-    vec3 normal = (texture(texSamplers[inTexIndex + 2], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
-    normal = normalize(TBN * normal);
+    bool albedoExists = (bitfield & 1) != 0;
+    bool metallicRoughnessExists = (bitfield & 2) != 0;
+    bool normalExists = (bitfield & 4) != 0;
+    bool emissiveExists = (bitfield & 8) != 0;
+    bool occlusionExists = (bitfield & 16) != 0;
 
+
+    if (!albedoExists) {
+        discard;
+	}
+
+    uint nextTexture = inTexIndex;
+    vec4 albedo = texture(texSamplers[nextTexture], inTexCoord);
+    nextTexture += albedoExists ? 1 : 0;
+
+    if (metallicRoughnessExists) {
+        metallicRoughness = texture(texSamplers[nextTexture], inTexCoord);
+        nextTexture += 1;
+	}
+    if (normalExists) {
+        normal = (texture(texSamplers[nextTexture], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
+        normal = normalize(TBN * normal);
+		nextTexture += 1;
+    }
+    if (emissiveExists) {
+		emissive = texture(texSamplers[nextTexture], inTexCoord).rgb;
+        nextTexture += 1;
+    }
+    if (occlusionExists) {
+		occlusion = texture(texSamplers[nextTexture], inTexCoord).rgb;
+        nextTexture += 1;
+	}
+          
+    
     vec4 color = albedo * fragColor; 
 
     vec3 diffuse = vec3(0.0);
@@ -191,7 +226,8 @@ void main() {
     }
     
     // final color calculation
-    outColor = vec4(accumulated, color.a);
+    outColor = albedo;
+    //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
 
 }

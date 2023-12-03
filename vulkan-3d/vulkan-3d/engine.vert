@@ -22,6 +22,8 @@ layout(location = 5) out vec3 outViewDirection;
 layout(location = 6) out mat3 TBN;
 layout(location = 9) out float handedness;
 layout(location = 10) flat out uint render; // if 0 render, if 1 don't render
+layout(location = 11) flat out uint bitfield; // number of textures per model
+
 layout(location = 20) out vec3 test;
 
 
@@ -40,6 +42,8 @@ layout(set = 4, binding = 5) buffer camBufferObject {
 
 layout(push_constant) uniform PC {
     int notRender;
+    int textureExist;
+    int texCount;
 } pc;
 
 
@@ -49,7 +53,8 @@ void main() {
     if (pc.notRender == modelIndex) {
         render = 1; // dont render this model
 	}
-    uint texIndex = inVertIndex*3; // 3 textures per material
+    uint texIndex = inVertIndex * pc.texCount;
+    bitfield = pc.textureExist;
 
     mat4 proj = camSSBO.proj;
     mat4 view = camSSBO.view;

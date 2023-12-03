@@ -1176,7 +1176,6 @@ private:
 			// loop over each mesh (object)
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;
-				uint16_t texc = 0; // number of textures in the mesh
 
 				std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 				std::vector<Vertex> tempVertices;
@@ -1338,9 +1337,10 @@ private:
 							texture.baseColor.gltfImage = gltfModel.images[tex.source];
 							texture.baseColor.path = "gltf";
 							texture.baseColor.found = true;
+							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a base color texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a base color texture" << std::endl;
 						}
 
 						// metallic-roughness Texture
@@ -1350,10 +1350,10 @@ private:
 							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
 							texture.metallicRoughness.path = "gltf";
 							texture.metallicRoughness.found = true;
-							texc += 1;
+							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a metallic-roughness texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a metallic-roughness texture" << std::endl;
 						}
 
 						// normal map
@@ -1363,37 +1363,43 @@ private:
 							texture.normalMap.gltfImage = gltfModel.images[tex.source];
 							texture.normalMap.path = "gltf";
 							texture.normalMap.found = true;
-							texc += 1;
+							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a normal map" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a normal map" << std::endl;
+
 						}
+
+						// emissive map
 						if (material.emissiveTexture.index >= 0) {
 							auto& texInfo = material.emissiveTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.emissiveMap.gltfImage = gltfModel.images[tex.source];
 							texture.emissiveMap.path = "gltf";
 							texture.emissiveMap.found = true;
-							texc += 1;
+							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have an emissive texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have an emissive map" << std::endl;
 						}
+
+						// occlusion map
 						if (material.occlusionTexture.index >= 0) {
 							auto& texInfo = material.occlusionTexture;
 							auto& tex = gltfModel.textures[texInfo.index];
 							texture.occlusionMap.gltfImage = gltfModel.images[tex.source];
 							texture.occlusionMap.path = "gltf";
 							texture.occlusionMap.found = true;
-							texc += 1;
+							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have an occlusion texture" << std::endl;
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path" << path << " doesn't have a occlusion texture" << std::endl;
 						}
 
 						sceneInd.texInd += 1;
 						newObject.material = texture;
 					}
+
 					else {
 						std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
 					}
@@ -1406,8 +1412,6 @@ private:
 				newObject.scale = scale;
 				newObject.position = pos;
 				newObject.rotation = rot;
-
-				newObject.textureCount = texc;
 
 				// calculate the model matrix for the mesh
 				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
@@ -1426,12 +1430,18 @@ private:
 
 			auto loadTextureTask = taskFlow.emplace([&]() {
 				for (auto& object : objects) {
-					//create the texture image for each texture (for each material)
-					//also create mipmaps for each texture
+					//create the texture image for each texture (material)
+					//also create mipmaps for certain textures
 					if (object.material.baseColor.found) {
 						createTexturedImage(object.material.baseColor, true);
 						createTextureImgView(object.material.baseColor, true);
 						createTS(object.material.baseColor, true);
+					}
+
+					if (object.material.metallicRoughness.found) {
+						createTexturedImage(object.material.metallicRoughness, false, "metallic");
+						createTextureImgView(object.material.metallicRoughness, false, "metallic");
+						createTS(object.material.metallicRoughness, false, "metallic");
 					}
 
 					if (object.material.normalMap.found) {
@@ -1440,16 +1450,12 @@ private:
 						createTS(object.material.normalMap, false, "norm");
 					}
 
-					if (object.material.metallicRoughness.found) {
-						createTexturedImage(object.material.metallicRoughness, false, "metallic");
-						createTextureImgView(object.material.metallicRoughness, false, "metallic");
-						createTS(object.material.metallicRoughness, false, "metallic");
-					}
 					if (object.material.emissiveMap.found) {
 						createTexturedImage(object.material.emissiveMap, false, "emissive");
 						createTextureImgView(object.material.emissiveMap, false, "emissive");
 						createTS(object.material.emissiveMap, false, "emissive");
 					}
+
 					if (object.material.occlusionMap.found) {
 						createTexturedImage(object.material.occlusionMap, false, "occlusion");
 						createTextureImgView(object.material.occlusionMap, false, "occlusion");
@@ -1893,15 +1899,14 @@ private:
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
-
 	std::vector<Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
-		size_t t = 0;
 		for (const model& obj : objects) {
-			// directly construct textures in-place
-			allTextures.emplace_back(obj.material.baseColor);
-			allTextures.emplace_back(obj.material.metallicRoughness);
-			allTextures.emplace_back(obj.material.normalMap);
+			if (obj.material.baseColor.found) allTextures.emplace_back(obj.material.baseColor);
+			if (obj.material.metallicRoughness.found) allTextures.emplace_back(obj.material.metallicRoughness);
+			if (obj.material.normalMap.found) allTextures.emplace_back(obj.material.normalMap);
+			if (obj.material.emissiveMap.found) allTextures.emplace_back(obj.material.emissiveMap);
+			if (obj.material.occlusionMap.found) allTextures.emplace_back(obj.material.occlusionMap);
 		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
@@ -2117,7 +2122,7 @@ private:
 		descs.sets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			totalTextureCount += 3;  // each material has 3 textures
+			totalTextureCount += object.textureCount;
 		}
 		if (initial) {
 			getAllTextures();
@@ -2775,7 +2780,9 @@ private:
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = sizeof(int); // 1 int for the model index to not render
+
+		// 1 int for the model index to not render, 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
+		pushConstantRange.size = sizeof(int) * 3;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[3], descs.layouts[5] };
@@ -3327,11 +3334,15 @@ private:
 
 		// get the texture indicies
 		allMaterials.reserve(objSize);
-		allTextures.reserve(objSize * 3);
+		allTextures.reserve(objSize * m.textureCount);
+
 		allMaterials.emplace_back(m.material);
-		allTextures.emplace_back(m.material.baseColor);
-		allTextures.emplace_back(m.material.metallicRoughness);
-		allTextures.emplace_back(m.material.normalMap);
+
+		if (m.material.baseColor.found) allTextures.emplace_back(m.material.baseColor);
+		if (m.material.metallicRoughness.found) allTextures.emplace_back(m.material.metallicRoughness);
+		if (m.material.normalMap.found) allTextures.emplace_back(m.material.normalMap);
+		if (m.material.emissiveMap.found) allTextures.emplace_back(m.material.emissiveMap);
+		if (m.material.occlusionMap.found) allTextures.emplace_back(m.material.occlusionMap);
 
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
@@ -3415,14 +3426,26 @@ private:
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+			int textureExistence = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
+				// bitfield for which textures exist
+				textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
+				textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
+				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
+				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
+				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
+
 				struct {
 					int notRender;
+					int textureExist;
+					int texCount;
 				} pushConst;
+
 				if (objects[j].player) {
 					pushConst.notRender = static_cast<int>(j);
 				}
-
+				pushConst.textureExist = textureExistence;
+				pushConst.texCount = static_cast<int>(objects[j].textureCount);
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
