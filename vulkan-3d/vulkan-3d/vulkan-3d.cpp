@@ -234,9 +234,11 @@ private:
 		Texture metallicRoughness;
 		Texture baseColor;
 		Texture normalMap;
+		Texture occlusionMap;
+		Texture emissiveMap;
 	};
 	struct model {
-		std::vector<Materials> materials; //used to store all the textures/materials of the model
+		Materials material; //used to store all the textures/materials of the model
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 		std::string pathObj; // i.e "models/cube.obj"
@@ -245,6 +247,7 @@ private:
 		dml::vec4 rotation;  // rotation of the model in quaternions
 		dml::vec3 scale;     // scale of the model
 		float modelMatrix[16];
+		uint16_t textureCount; // number of textures in the model
 
 		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
@@ -254,7 +257,7 @@ private:
 
 		// default constructor:
 		model()
-			: materials(),
+			: material(),
 			vertices(),
 			indices(),
 			pathObj(""),
@@ -262,7 +265,8 @@ private:
 			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
 			isLoaded(false),
-			startObj(true)
+			startObj(true),
+			textureCount(0)
 		{
 			std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
 		}
@@ -534,7 +538,6 @@ private:
 		std::cout << "model: " << stru.pathObj << std::endl;
 		std::cout << "vertices: " << stru.vertices.size() << std::endl;
 		std::cout << "indices: " << stru.indices.size() << std::endl;
-		std::cout << "texture: " << stru.materials.size() << std::endl;
 		std::cout << " ----------------" << std::endl;
 	}
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
@@ -1173,6 +1176,7 @@ private:
 			// loop over each mesh (object)
 			for (const auto& mesh : gltfModel.meshes) {
 				model newObject;
+				uint16_t texc = 0; // number of textures in the mesh
 
 				std::unordered_map<Vertex, uint32_t, vertHash> uniqueVertices;
 				std::vector<Vertex> tempVertices;
@@ -1346,6 +1350,7 @@ private:
 							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
 							texture.metallicRoughness.path = "gltf";
 							texture.metallicRoughness.found = true;
+							texc += 1;
 						}
 						else {
 							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a metallic-roughness texture" << std::endl;
@@ -1358,13 +1363,36 @@ private:
 							texture.normalMap.gltfImage = gltfModel.images[tex.source];
 							texture.normalMap.path = "gltf";
 							texture.normalMap.found = true;
+							texc += 1;
 						}
 						else {
 							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have a normal map" << std::endl;
 						}
+						if (material.emissiveTexture.index >= 0) {
+							auto& texInfo = material.emissiveTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.emissiveMap.gltfImage = gltfModel.images[tex.source];
+							texture.emissiveMap.path = "gltf";
+							texture.emissiveMap.found = true;
+							texc += 1;
+						}
+						else {
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have an emissive texture" << std::endl;
+						}
+						if (material.occlusionTexture.index >= 0) {
+							auto& texInfo = material.occlusionTexture;
+							auto& tex = gltfModel.textures[texInfo.index];
+							texture.occlusionMap.gltfImage = gltfModel.images[tex.source];
+							texture.occlusionMap.path = "gltf";
+							texture.occlusionMap.found = true;
+							texc += 1;
+						}
+						else {
+							std::cerr << "WARNING: Texture " << sceneInd.texInd << " doesn't have an occlusion texture" << std::endl;
+						}
 
 						sceneInd.texInd += 1;
-						newObject.materials.push_back(texture);
+						newObject.material = texture;
 					}
 					else {
 						std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
@@ -1378,6 +1406,8 @@ private:
 				newObject.scale = scale;
 				newObject.position = pos;
 				newObject.rotation = rot;
+
+				newObject.textureCount = texc;
 
 				// calculate the model matrix for the mesh
 				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
@@ -1395,29 +1425,35 @@ private:
 			}).name("load_model");
 
 			auto loadTextureTask = taskFlow.emplace([&]() {
-				size_t t = 0;
 				for (auto& object : objects) {
-					t++;
-					for (size_t i = 0; i < object.materials.size(); i++) {
-						//create the texture image for each texture (for each material)
-						//also create mipmaps for each texture
-						if (object.materials[i].baseColor.found) {
-							createTexturedImage(object.materials[i].baseColor, true);
-							createTextureImgView(object.materials[i].baseColor, true);
-							createTS(object.materials[i].baseColor, true);
-						}
+					//create the texture image for each texture (for each material)
+					//also create mipmaps for each texture
+					if (object.material.baseColor.found) {
+						createTexturedImage(object.material.baseColor, true);
+						createTextureImgView(object.material.baseColor, true);
+						createTS(object.material.baseColor, true);
+					}
 
-						if (object.materials[i].normalMap.found) {
-							createTexturedImage(object.materials[i].normalMap, false, "norm");
-							createTextureImgView(object.materials[i].normalMap, false, "norm");
-							createTS(object.materials[i].normalMap, false, "norm");
-						}
+					if (object.material.normalMap.found) {
+						createTexturedImage(object.material.normalMap, false, "norm");
+						createTextureImgView(object.material.normalMap, false, "norm");
+						createTS(object.material.normalMap, false, "norm");
+					}
 
-						if (object.materials[i].metallicRoughness.found) {
-							createTexturedImage(object.materials[i].metallicRoughness, false, "metallic");
-							createTextureImgView(object.materials[i].metallicRoughness, false, "metallic");
-							createTS(object.materials[i].metallicRoughness, false, "metallic");
-						}
+					if (object.material.metallicRoughness.found) {
+						createTexturedImage(object.material.metallicRoughness, false, "metallic");
+						createTextureImgView(object.material.metallicRoughness, false, "metallic");
+						createTS(object.material.metallicRoughness, false, "metallic");
+					}
+					if (object.material.emissiveMap.found) {
+						createTexturedImage(object.material.emissiveMap, false, "emissive");
+						createTextureImgView(object.material.emissiveMap, false, "emissive");
+						createTS(object.material.emissiveMap, false, "emissive");
+					}
+					if (object.material.occlusionMap.found) {
+						createTexturedImage(object.material.occlusionMap, false, "occlusion");
+						createTextureImgView(object.material.occlusionMap, false, "occlusion");
+						createTS(object.material.occlusionMap, false, "occlusion");
 					}
 				}
 				}).name("load_texture");
@@ -1862,13 +1898,10 @@ private:
 		allTextures.reserve(totalTextureCount);
 		size_t t = 0;
 		for (const model& obj : objects) {
-			t++;
-			for (const Materials& materials : obj.materials) {
-				// directly construct textures in-place
-				allTextures.emplace_back(materials.baseColor);
-				allTextures.emplace_back(materials.metallicRoughness);
-				allTextures.emplace_back(materials.normalMap);
-			}
+			// directly construct textures in-place
+			allTextures.emplace_back(obj.material.baseColor);
+			allTextures.emplace_back(obj.material.metallicRoughness);
+			allTextures.emplace_back(obj.material.normalMap);
 		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
@@ -1883,17 +1916,11 @@ private:
 		return allMaps;
 	}
 	std::vector<Materials> getAllMaterials() {
-		size_t totalMaterials = 0;
-		for (const auto& obj : objects) {
-			totalMaterials += obj.materials.size();
-		}
+		size_t totalMaterials = objects.size();
 		allMaterials.reserve(totalMaterials);
 		size_t t = 0;
 		for (const auto& obj : objects) {
-			for (auto& mat : obj.materials) {
-				t += 1;
-				allMaterials.push_back(mat);
-			}
+			allMaterials.push_back(obj.material);
 		}
 		std::cout << "Finished loading material array" << std::endl;
 		return allMaterials;
@@ -2090,7 +2117,7 @@ private:
 		descs.sets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			totalTextureCount += object.materials.size() * 3;  // each material has 3 textures
+			totalTextureCount += 3;  // each material has 3 textures
 		}
 		if (initial) {
 			getAllTextures();
@@ -2155,6 +2182,14 @@ private:
 		}
 		else if (type == "metallic") {
 			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		else if (type == "emissive") {
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		else if (type == "occlusion") {
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "cube") {
@@ -2390,15 +2425,9 @@ private:
 			imageInf.extent.depth = 1;
 			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
-
-			if (type == "norm") {
-				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			}
+			imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
-			}
-			if (type == "metallic") {
-				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			}
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3295,20 +3324,14 @@ private:
 
 		size_t objSize = objects.size();
 		size_t verticesSize = m.vertices.size();
-		size_t materialsSize = m.materials.size();
-		size_t allMaterialsSize = allMaterials.size();
-
-		//uint32_t texInd = -1;
 
 		// get the texture indicies
-		allMaterials.reserve(allMaterialsSize + materialsSize);
-		allTextures.reserve(allMaterialsSize + 3 * materialsSize);
-		for (auto& material : m.materials) {
-			allMaterials.emplace_back(material);
-			allTextures.emplace_back(material.baseColor);
-			allTextures.emplace_back(material.metallicRoughness);
-			allTextures.emplace_back(material.normalMap);
-		}
+		allMaterials.reserve(objSize);
+		allTextures.reserve(objSize * 3);
+		allMaterials.emplace_back(m.material);
+		allTextures.emplace_back(m.material.baseColor);
+		allTextures.emplace_back(m.material.metallicRoughness);
+		allTextures.emplace_back(m.material.normalMap);
 
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
