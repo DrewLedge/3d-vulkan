@@ -225,7 +225,7 @@ void main() {
     // final color calculation
     //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
-    outColor = vec4(accumulated, color.a);
+    outColor = vec4(occlusion, color.a);
 
 }
 

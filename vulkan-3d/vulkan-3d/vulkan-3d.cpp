@@ -247,7 +247,9 @@ private:
 		dml::vec4 rotation;  // rotation of the model in quaternions
 		dml::vec3 scale;     // scale of the model
 		float modelMatrix[16];
-		uint16_t textureCount; // number of textures in the model
+
+		size_t textureCount; // number of textures in the model
+		size_t texIndex; // where in the texture array the textures of the model start
 
 		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
@@ -348,10 +350,7 @@ private:
 		uint32_t indexOffset;
 		uint32_t indexCount;
 	};
-	struct meshIndicies { // used so that texind, and modind are global
-		uint32_t texInd = 0; // which texture belongs to which material
-		uint32_t modInd = 0; // which material/textures to which mesh/model
-	};
+
 	struct sBox { // skybox struct
 		Texture tex;
 		VkPipelineLayout pipelineLayout;
@@ -475,17 +474,16 @@ private:
 
 	// scene data and objects
 	std::vector<bufData> bufferData;
-	meshIndicies sceneInd;
 	std::vector<model> objects;
 	modelMatSSBO objMatData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
 	std::vector<light> lights;
 	shadowMapProportionsObject shadowProps;
+	uint32_t modelIndex; // index of where vertecies are loaded to
 
 	// textures and materials
 	std::vector<Texture> allTextures;
-	std::vector<Materials> allMaterials;
 	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
 	unsigned char* imageData;
@@ -1058,7 +1056,7 @@ private:
 		// get the matricies for object positioning
 		dml::mat4 translationMatrix = dml::translate(m.position);
 		dml::mat4 rotationMatrix = dml::rotateQ(m.rotation);
-		dml::mat4 scaleMatrix = dml::scale(m.scale * 0.03); // 0.03 scales it down to a reasonable size
+		dml::mat4 scaleMatrix = dml::scale(m.scale * 0.03f); // 0.03 scales it down to a reasonable size
 
 		// walk up the node hierarchy to accumulate transformations
 		while (currentNodeIndex != -1) {
@@ -1126,8 +1124,7 @@ private:
 	void loadScene(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
-		uint32_t meshInd = 0;
-
+		uint32_t meshInd = 0; // index of the mesh in the model
 
 		tinygltf::Model gltfModel;
 		tinygltf::TinyGLTF loader;
@@ -1319,7 +1316,7 @@ private:
 							vertex.tangent = tangents[index];
 
 						}
-						vertex.matIndex = sceneInd.modInd;  // set the material index
+						vertex.matIndex = modelIndex;  // set the material index
 
 						if (uniqueVertices.count(vertex) == 0) {
 							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -1341,7 +1338,7 @@ private:
 							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a base color texture" << std::endl;
+							std::cerr << "WARNING: Texture from path " << path << " doesn't have a base color texture" << std::endl;
 						}
 
 						// metallic-roughness Texture
@@ -1354,7 +1351,7 @@ private:
 							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a metallic-roughness texture" << std::endl;
+							std::cerr << "WARNING: Texture from path " << path << " doesn't have a metallic-roughness texture" << std::endl;
 						}
 
 						// normal map
@@ -1367,7 +1364,7 @@ private:
 							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have a normal map" << std::endl;
+							std::cerr << "WARNING: Texture from path " << path << " doesn't have a normal map" << std::endl;
 
 						}
 
@@ -1381,7 +1378,7 @@ private:
 							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path " << path << " doesn't have an emissive map" << std::endl;
+							std::cerr << "WARNING: Texture from path " << path << " doesn't have an emissive map" << std::endl;
 						}
 
 						// occlusion map
@@ -1394,10 +1391,9 @@ private:
 							newObject.textureCount++;
 						}
 						else {
-							std::cerr << "WARNING: Texture " << sceneInd.texInd << " from path" << path << " doesn't have a occlusion texture" << std::endl;
+							std::cerr << "WARNING: Texture from path " << path << " doesn't have a occlusion texture" << std::endl;
 						}
 
-						sceneInd.texInd += 1;
 						newObject.material = texture;
 					}
 
@@ -1423,7 +1419,7 @@ private:
 				objects.push_back(newObject);
 				modelMtx.unlock();
 
-				sceneInd.modInd++;
+				modelIndex++;
 				meshInd++;
 			}
 			std::cout << "Finished loading vertecies" << std::endl;
@@ -1904,7 +1900,7 @@ private:
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
 		for (const model& obj : objects) {
-			meshTexStartInd.push_back(currentIndex);
+			meshTexStartInd.push_back(static_cast<int>(currentIndex));
 			if (obj.material.baseColor.found) {
 				allTextures.emplace_back(obj.material.baseColor);
 				currentIndex++;
@@ -1926,6 +1922,9 @@ private:
 				currentIndex++;
 			}
 		}
+		for (size_t i = 0; i < objects.size(); i++) {
+			objects[i].texIndex = i;
+		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
 	}
@@ -1937,16 +1936,6 @@ private:
 			allMaps.push_back(light.shadowMapData);
 		}
 		return allMaps;
-	}
-	std::vector<Materials> getAllMaterials() {
-		size_t totalMaterials = objects.size();
-		allMaterials.reserve(totalMaterials);
-		size_t t = 0;
-		for (const auto& obj : objects) {
-			allMaterials.push_back(obj.material);
-		}
-		std::cout << "Finished loading material array" << std::endl;
-		return allMaterials;
 	}
 
 
@@ -2140,11 +2129,12 @@ private:
 		descs.sets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			totalTextureCount += object.textureCount;
+			if (object.startObj) {
+				totalTextureCount += object.textureCount;
+			}
 		}
 		if (initial) {
 			getAllTextures();
-			getAllMaterials();
 			setupCamMatUBO(); //create the camera matrix UBO
 			setupLights();
 		}
@@ -3350,31 +3340,6 @@ private:
 		size_t objSize = objects.size();
 		size_t verticesSize = m.vertices.size();
 
-		// get the texture indicies
-		allMaterials.reserve(objSize);
-		allTextures.reserve(objSize * m.textureCount);
-
-		allMaterials.emplace_back(m.material);
-
-		size_t startIndex = allTextures.size();
-		meshTexStartInd.push_back(startIndex);
-
-		if (m.material.baseColor.found) {
-			allTextures.emplace_back(m.material.baseColor);
-		}
-		if (m.material.metallicRoughness.found) {
-			allTextures.emplace_back(m.material.metallicRoughness);
-		}
-		if (m.material.normalMap.found) {
-			allTextures.emplace_back(m.material.normalMap);
-		}
-		if (m.material.emissiveMap.found) {
-			allTextures.emplace_back(m.material.emissiveMap);
-		}
-		if (m.material.occlusionMap.found) {
-			allTextures.emplace_back(m.material.occlusionMap);
-		}
-
 		for (size_t i = 0; i < verticesSize; i++) {
 			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
 		}
@@ -3392,10 +3357,6 @@ private:
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-
-		cleanupDS();
-		setupDescriptorSets(false);
-		createGraphicsPipeline();
 		recreateBuffers();
 	}
 	void recreateBuffers() {
@@ -3465,6 +3426,7 @@ private:
 				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
 				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
 				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
+				std::cout << textureExistence << " " << objects[i].textureCount << std::endl;
 
 				struct {
 					int notRender;
@@ -3476,7 +3438,7 @@ private:
 					pushConst.notRender = static_cast<int>(j);
 				}
 				pushConst.textureExist = textureExistence;
-				pushConst.texIndex = meshTexStartInd[j];
+				pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
