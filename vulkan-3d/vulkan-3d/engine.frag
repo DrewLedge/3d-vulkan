@@ -122,7 +122,7 @@ void main() {
     }
     vec4 metallicRoughness = vec4(1.0f);
     vec3 normal = vec3(1.0f);
-    vec3 emissive = vec3(1.0f);
+    vec3 emissive = vec3(0.0f);
     vec3 occlusion = vec3(1.0f);
 
     bool albedoExists = (bitfield & 1) != 0;
@@ -225,7 +225,7 @@ void main() {
     // final color calculation
     //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
-    outColor = vec4(occlusion, color.a);
+    outColor = vec4(accumulated + emissive, color.a);
 
 }
 

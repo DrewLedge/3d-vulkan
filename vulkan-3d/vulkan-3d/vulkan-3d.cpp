@@ -2202,7 +2202,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "occlusion") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
+			viewInf.format = VK_FORMAT_R8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "cube") {
@@ -2438,9 +2438,14 @@ private:
 			imageInf.extent.depth = 1;
 			imageInf.mipLevels = tex.mipLevels;
 			imageInf.arrayLayers = 1;
-			imageInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
+			}
+			else if (type == "occlusion") {
+				imageInf.format = VK_FORMAT_R8_UNORM;
+			}
+			else {
+				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM; // default
 			}
 			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
 			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3418,15 +3423,14 @@ private:
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-			int textureExistence = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
+				int textureExistence = 0;
 				// bitfield for which textures exist
 				textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
 				textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
 				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
 				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
 				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
-				std::cout << textureExistence << " " << objects[i].textureCount << std::endl;
 
 				struct {
 					int notRender;
