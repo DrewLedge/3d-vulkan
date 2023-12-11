@@ -123,7 +123,7 @@ void main() {
     vec4 metallicRoughness = vec4(1.0f);
     vec3 normal = vec3(1.0f);
     vec3 emissive = vec3(0.0f);
-    vec3 occlusion = vec3(1.0f);
+    float occlusion = 1.0f;
 
     bool albedoExists = (bitfield & 1) != 0;
     bool metallicRoughnessExists = (bitfield & 2) != 0;
@@ -154,7 +154,7 @@ void main() {
         nextTexture += 1;
     }
     if (occlusionExists) {
-		occlusion = texture(texSamplers[nextTexture], inTexCoord).rgb;
+		occlusion = texture(texSamplers[nextTexture], inTexCoord).r;
 	}
           
     
@@ -218,13 +218,15 @@ void main() {
 
             // cook-torrance specular lighting
             vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
-            accumulated += lightColor * brdf * intensity * shadowFactor;
+            accumulated += (lightColor * brdf * intensity) * shadowFactor;
+            
         }
     }
     
     // final color calculation
     //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
     //outColor = vec4(roughness,  metallic, 0.0, 1.0);
+    accumulated += accumulated * ambient;
     outColor = vec4(accumulated + emissive, color.a);
 
 }
