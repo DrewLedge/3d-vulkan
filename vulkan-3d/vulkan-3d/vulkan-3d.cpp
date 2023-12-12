@@ -3927,6 +3927,14 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
+		if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+			uint64_t vertCount = 0;
+			for (const auto& o : objects) {
+				vertCount += o.vertices.size();
+			}
+			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
+			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
+		}
 
 		// lock / unlock mouse
 		if (isEsc && !keyPO.escPressedLastFrame) {
