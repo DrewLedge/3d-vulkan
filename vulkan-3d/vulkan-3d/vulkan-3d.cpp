@@ -3768,7 +3768,7 @@ private:
 	}
 
 
-	void recreateObjectBuffers() { // re-record command buffers to reference the new buffers
+	void recordAllCommandBuffers() { // re-record command buffers to reference the new buffers
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 	}
@@ -3810,29 +3810,30 @@ private:
 	}
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
 		auto endTime = std::chrono::steady_clock::now();
-		auto elapsedTime = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - start).count();
 		frameCount++;
-		start = endTime;
 
+		// calculate FPS every 200 ms
 		auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - prev).count();
-		if (timeSincePrevious >= 100) {
-			fps = static_cast<uint32_t>(std::round(frameCount / (timeSincePrevious / 1000.0f)));
+		if (timeSincePrevious >= 200) {
+			fps = static_cast<uint32_t>(1000 * frameCount / timeSincePrevious);
 			frameCount = 0;
 			prev = endTime;
 		}
 	}
 
+
 	void mainLoop() {
 		uint8_t frameCount = 0;
+		uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
 		auto startTime = std::chrono::steady_clock::now();
 		auto previousTime = startTime;
 
 		while (!glfwWindowShouldClose(window)) {
 			glfwPollEvents();
 			drawFrame();
-			currentFrame = (currentFrame + 1) % swap.images.size();
+			currentFrame = (currentFrame + 1) % swapSize;
 			handleKeyboardInput(); // handle keyboard input
-			recreateObjectBuffers();
+			recordAllCommandBuffers();
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 		}
@@ -3927,6 +3928,7 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
 			realtimeLoad("models/gear2/Gear2.obj");
 		}
+
 		if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
 			uint64_t vertCount = 0;
 			for (const auto& o : objects) {
