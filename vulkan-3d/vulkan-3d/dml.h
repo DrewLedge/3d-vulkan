@@ -116,18 +116,6 @@ public:
 			return std::sqrt(x * x + y * y + z * z);
 		}
 
-		vec3 normalize() const {
-			float length = std::sqrt(x * x + y * y + z * z);
-
-			// check for zero length to avoid division by zero
-			if (length < std::numeric_limits<float>::epsilon()) {
-				return vec3(0.0f, 0.0f, 0.0f);
-			}
-
-			return vec3(x / length, y / length, z / length);
-		}
-
-
 	};
 	struct vec2 {
 		float x, y;
@@ -168,15 +156,6 @@ public:
 
 		vec2 xy() const { return vec2(x, y); }
 		vec3 xyz() const { return vec3(x, y, z); }
-
-		vec4 normalize() const {
-			float length = sqrt(x * x + y * y + z * z + w * w);
-			if (length == 0) {
-				return vec4(0.0f, 0.0f, 0.0f, 1.0f);
-			}
-
-			return vec4(x / length, y / length, z / length, w / length);
-		}
 
 		vec4 conjugate() const {
 			return vec4(-x, -y, -z, w);
@@ -277,7 +256,6 @@ public:
 			}
 		}
 
-
 		friend std::ostream& operator<<(std::ostream& os, const vec4& v) {
 			os << "( x:" << v.x << ", y:" << v.y << ", z:" << v.z << ", w:" << v.w << ")";
 			return os;
@@ -366,6 +344,66 @@ public:
 			return result;
 		}
 	};
+
+	struct plane {
+		vec3 normal;
+		float distance;
+
+		// plane from a normal and a point on the plane
+		plane(const vec3& point, const vec3& normalVec) : normal(normalize(normalVec)) {
+			distance = -dot(normal, point);
+		}
+
+		// distance from a point to the plane
+		float dist(const vec3& point) const {
+			return dot(normal, point) + distance;
+		}
+	};
+
+	struct boundingBox {
+		vec3 min;
+		vec3 max;
+
+		// check if the box intersects with the plane
+		bool intersects(const plane& plane) const {
+			// positive vertex selection for plane normal
+			vec3 pVertex = min;
+			if (plane.normal.x >= 0) pVertex.x = max.x;
+			if (plane.normal.y >= 0) pVertex.y = max.y;
+			if (plane.normal.z >= 0) pVertex.z = max.z;
+
+			// negative vertex selection for plane normal
+			vec3 nVertex = max;
+			if (plane.normal.x >= 0) nVertex.x = min.x;
+			if (plane.normal.y >= 0) nVertex.y = min.y;
+			if (plane.normal.z >= 0) nVertex.z = min.z;
+
+			// if the pvertex is outside then the aabb is fully outside the plane
+			if (plane.dist(pVertex) < 0) return false;
+
+			return true;
+		}
+	};
+
+	struct frustum {
+		plane planes[6];
+
+		void update(const mat4& vp) {
+		}
+
+		// test if a bounding box intersects the frustum
+		bool intersects(const boundingBox& box) const {
+			for (const auto& plane : planes) {
+				if (!box.intersects(plane)) {
+					return false; // bounding box is outside the frustum
+				}
+			}
+			return true;
+		}
+	};
+
+
+
 	// ------------------ VECTOR3 FORMULAS ------------------ //
 	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
 		// convert pitch and yaw from degrees to radians
@@ -426,6 +464,16 @@ public:
 	static float dot(const vec3& a, const vec3& b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	}
+	static vec3 normalize(const vec3& v) {
+		float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+
+		// check for zero length to avoid division by zero
+		if (length < std::numeric_limits<float>::epsilon()) {
+			return vec3(0.0f, 0.0f, 0.0f);
+		}
+
+		return vec3(v.x / length, v.y / length, v.z / length);
+	}
 
 	// ------------------ VECTOR4 FORMULAS ------------------ //
 	static vec4 targetToQ(const vec3& position, const vec3& target) {
@@ -444,7 +492,7 @@ public:
 	}
 
 	static vec4 angleAxis(float angle, const vec3& axis) {
-		vec3 normAxis = axis.normalize();
+		vec3 normAxis = normalize(axis);
 
 		// compute the sin and cos of half the angle
 		float half = angle * 0.5f;
@@ -453,6 +501,15 @@ public:
 
 		// create the quaternion
 		return vec4(normAxis.x * sinHalf, normAxis.y * sinHalf, normAxis.z * sinHalf, cosHalf);
+	}
+
+	static vec4 normalize(const vec4& v) {
+		float length = sqrt(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+		if (length == 0) {
+			return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+		}
+
+		return vec4(v.x / length, v.y / length, v.z / length, v.w / length);
 	}
 
 	// ------------------ MATRIX4 FORMULAS ------------------ // 
@@ -669,7 +726,7 @@ public:
 		vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
 		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
 		vec4 orientation = yRot * xRot;
-		orientation = orientation.normalize();
+		orientation = normalize(orientation);
 		mat4 rotation = rotateQ(orientation).transpose();
 
 		mat4 translation;
@@ -685,9 +742,9 @@ public:
 	}
 
 	static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
-		vec3 f = (target - eye).normalize(); // forward vector
-		vec3 r = cross(f, inputUpVector).normalize(); // right vector
-		vec3 u = cross(r, f).normalize(); // up vector
+		vec3 f = normalize((target - eye)); // forward vector
+		vec3 r = normalize(cross(f, inputUpVector)); // right vector
+		vec3 u = normalize(cross(r, f)); // up vector
 		mat4 result;
 
 		result.m[0][0] = r.x;

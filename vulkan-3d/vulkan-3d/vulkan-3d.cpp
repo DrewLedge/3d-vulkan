@@ -1269,8 +1269,7 @@ private:
 
 					}
 					for (dml::vec4& tangent : tangents) {
-						// normalize tangent.xyz
-						dml::vec3 normalizedTangent = tangent.xyz().normalize();
+						dml::vec3 normalizedTangent = dml::normalize(tangent.xyz());
 						tangent.x = normalizedTangent.x;
 						tangent.y = normalizedTangent.y;
 						tangent.z = normalizedTangent.z;
