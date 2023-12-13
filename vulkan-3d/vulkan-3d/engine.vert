@@ -35,10 +35,10 @@ layout(set = 0, binding = 0) buffer matBufferObject {
     matrixUBO matrixSSBO[MAX_MODELS];
 } matSSBO;
 
-layout(set = 4, binding = 5) buffer camBufferObject {
+layout(set = 4, binding = 5) uniform camBufferObject {
     mat4 view;
     mat4 proj;
-} camSSBO;
+} camUBO;
 
 layout(push_constant) uniform PC {
     int notRender;
@@ -56,8 +56,8 @@ void main() {
     uint texIndex = pc.texInd;
     bitfield = pc.textureExist;
 
-    mat4 proj = camSSBO.proj;
-    mat4 view = camSSBO.view;
+    mat4 proj = camUBO.proj;
+    mat4 view = camUBO.view;
     mat4 model = matSSBO.matrixSSBO[modelIndex].model;
 
     vec3 worldCamPos = vec3(inverse(view)[3]);

@@ -584,7 +584,7 @@ private:
 		instanceInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
 		instanceInfo.pEngineName = "No Engine";
 		instanceInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-		instanceInfo.apiVersion = VK_API_VERSION_1_0;
+		instanceInfo.apiVersion = VK_API_VERSION_1_3;
 
 		uint32_t glfwExtensionCount = 0;
 		const char** glfwExtensions;
@@ -1573,6 +1573,7 @@ private:
 		}
 		vkBindImageMemory(device, image, imageMemory, 0);
 	}
+
 	VkImageView createDepthView(VkImage image, VkFormat format) {
 		VkImageViewCreateInfo viewInfo{};
 		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -1634,7 +1635,7 @@ private:
 		return shaderModule;
 	}
 
-	void setupModelMatUBO() { // ubo containing the model matricies for each object
+	void setupModelMatUBO() { // ssbo containing the model matricies for each object
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(modelMatSSBO);
@@ -1670,7 +1671,7 @@ private:
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = sizeof(camUBO);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
 
 		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &cam.buffer) != VK_SUCCESS) {
@@ -2005,14 +2006,14 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ssbo
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -2117,7 +2118,7 @@ private:
 		descriptorWrites[5].dstSet = descs.sets[5];
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
-		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
+		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=ubo
 		descriptorWrites[5].descriptorCount = 1;
 		descriptorWrites[5].pBufferInfo = &camMatBufferInfo;
 
@@ -3365,7 +3366,6 @@ private:
 		recreateBuffers();
 	}
 	void recreateBuffers() {
-		vkDeviceWaitIdle(device);  // wait for all frames to finish
 		vkDestroyBuffer(device, vertBuffer, nullptr);
 		vkFreeMemory(device, vertBufferMem, nullptr);
 		vkDestroyBuffer(device, indBuffer, nullptr);
@@ -3433,9 +3433,9 @@ private:
 				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
 
 				struct {
-					int notRender;
-					int textureExist;
-					int texIndex;
+					int notRender; // which index of the objects to not render in the main shader
+					int textureExist; // bitfield of which textures exist
+					int texIndex; // starting index of the textures in the texture array
 				} pushConst;
 
 				if (objects[j].player) {
@@ -3665,6 +3665,7 @@ private:
 		recordCommandBuffers();
 		initializeMouseInput(true);
 	}
+
 	void cleanupSwapChain() { //this needs heavy modification lol
 		for (auto framebuffer : swap.framebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
@@ -3676,17 +3677,6 @@ private:
 			vkDestroyImageView(device, imageView, nullptr);
 		}
 		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
-	}
-
-	void submitShadowCommandBuffers() { // submit the shadow command buffers to the queue
-		VkSubmitInfo submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
-		submitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
-		if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, nullptr) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit shadow command buffers!");
-		}
-		vkQueueWaitIdle(graphicsQueue);
 	}
 
 
@@ -3711,37 +3701,31 @@ private:
 		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
 
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
-		VkSubmitInfo submitInfo{};
+		VkSubmitInfo submitInfos[2] = {};
 
 		// shadow pass submission
-		VkSubmitInfo shadowSubmitInfo{};
-		shadowSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		shadowSubmitInfo.waitSemaphoreCount = 1;
-		shadowSubmitInfo.pWaitSemaphores = waitSemaphores;
-		shadowSubmitInfo.pWaitDstStageMask = waitStages;
-		shadowSubmitInfo.commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
-		shadowSubmitInfo.pCommandBuffers = shadowMapCommandBuffers.data();
-		shadowSubmitInfo.signalSemaphoreCount = 1;
-		shadowSubmitInfo.pSignalSemaphores = shadowSignalSemaphores;
-
-		if (vkQueueSubmit(graphicsQueue, 1, &shadowSubmitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit shadow command buffer!");
-		}
-
+		submitInfos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[0].waitSemaphoreCount = 1;
+		submitInfos[0].pWaitSemaphores = waitSemaphores;
+		submitInfos[0].pWaitDstStageMask = waitStages;
+		submitInfos[0].commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
+		submitInfos[0].pCommandBuffers = shadowMapCommandBuffers.data();
+		submitInfos[0].signalSemaphoreCount = 1;
+		submitInfos[0].pSignalSemaphores = shadowSignalSemaphores;
 
 		// main scene pass submission
-		VkSubmitInfo mainSubmitInfo{};
-		mainSubmitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		mainSubmitInfo.waitSemaphoreCount = 1;
-		mainSubmitInfo.pWaitSemaphores = shadowSignalSemaphores;
-		mainSubmitInfo.pWaitDstStageMask = waitStages;
-		mainSubmitInfo.commandBufferCount = 1;
-		mainSubmitInfo.pCommandBuffers = &commandBuffers[imageIndex];
-		mainSubmitInfo.signalSemaphoreCount = 1;
-		mainSubmitInfo.pSignalSemaphores = renderFinishedSemaphores;
+		submitInfos[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[1].waitSemaphoreCount = 1;
+		submitInfos[1].pWaitSemaphores = shadowSignalSemaphores;
+		submitInfos[1].pWaitDstStageMask = waitStages;
+		submitInfos[1].commandBufferCount = 1;
+		submitInfos[1].pCommandBuffers = &commandBuffers[imageIndex];
+		submitInfos[1].signalSemaphoreCount = 1;
+		submitInfos[1].pSignalSemaphores = renderFinishedSemaphores;
 
-		if (vkQueueSubmit(graphicsQueue, 1, &mainSubmitInfo, inFlightFences[currentFrame]) != VK_SUCCESS) {
-			throw std::runtime_error("failed to submit main draw command buffer!");
+		// submit both command buffers in a single call
+		if (vkQueueSubmit(graphicsQueue, 2, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
+			throw std::runtime_error("failed to submit command buffers!");
 		}
 
 		// present the image
@@ -3763,8 +3747,6 @@ private:
 		else if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to present swap chain image! " + resultStr(result));
 		}
-
-		vkQueueWaitIdle(presentQueue); //wait for the queue to be idle before continuing
 	}
 
 
@@ -3829,9 +3811,9 @@ private:
 		auto previousTime = startTime;
 
 		while (!glfwWindowShouldClose(window)) {
+			currentFrame = (currentFrame + 1) % swapSize;
 			glfwPollEvents();
 			drawFrame();
-			currentFrame = (currentFrame + 1) % swapSize;
 			handleKeyboardInput(); // handle keyboard input
 			recordAllCommandBuffers();
 			updateUBO(); // update ubo matrices and populate the buffer
@@ -3934,8 +3916,10 @@ private:
 			for (const auto& o : objects) {
 				vertCount += o.vertices.size();
 			}
+			std::cout << "-------------------------------------------------" << std::endl;
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
 			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
+			std::cout << "Score: " << (vertCount / fps) / 1000 << std::endl;
 		}
 
 		// lock / unlock mouse
