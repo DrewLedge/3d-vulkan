@@ -346,15 +346,16 @@ public:
 	};
 
 	struct planeObject {
-		vec3 normal;
-		float distance;
+		vec3 normal; // normal vector of the plane
+		float distance; // distance from the origin to the plane along the normal vector
 
 		planeObject() : normal(vec3(0.0f, 0.0f, 0.0f)), distance(0.0f) {}
 
 		// distance from a point to the plane
 		float dist(const vec3& point) const {
-			return dot(normal, point) + distance;
+			return dot(normal, point) - distance;
 		}
+
 	};
 
 	struct boundingBox {
@@ -379,25 +380,12 @@ public:
 
 		// check if the box intersects with the plane
 		bool intersects(const planeObject& plane) const {
-			// positive vertex selection for plane normal
-			vec3 pVertex = min;
-			if (plane.normal.x >= 0) pVertex.x = max.x;
-			if (plane.normal.y >= 0) pVertex.y = max.y;
-			if (plane.normal.z >= 0) pVertex.z = max.z;
+			// compute the projection interval radius of this box onto the plane normal
+			float r = max.x * std::abs(plane.normal.x) + max.y * std::abs(plane.normal.y) + max.z * std::abs(plane.normal.z);
 
-			// negative vertex selection for plane normal
-			vec3 nVertex = max;
-			if (plane.normal.x >= 0) nVertex.x = min.x;
-			if (plane.normal.y >= 0) nVertex.y = min.y;
-			if (plane.normal.z >= 0) nVertex.z = min.z;
-
-			// if the pvertex is outside then the AABB is fully outside the plane
-			if (plane.dist(pVertex) < 0) return false;
-
-			// if the negative vertex is inside then the AABB is not fully outside the plane
-			if (plane.dist(nVertex) >= 0) return true;
-
-			return true;
+			// compute the distance of the box center from the plane
+			float d = plane.dist((min + max) * 0.5f);
+			return std::abs(d) <= r;
 		}
 
 		void getWorldSpace(const mat4& modelMatrix) {
@@ -418,11 +406,16 @@ public:
 			}
 
 			// recompute the AABB from the transformed corners
-			min = corners[0];
-			max = corners[0];
-			for (int j = 1; j < 8; j++) {
-				min = minV(min, corners[j]);
-				max = maxV(max, corners[j]);
+			min.x = min.y = min.z = std::numeric_limits<float>::max();
+			max.x = max.y = max.z = std::numeric_limits<float>::lowest();
+			for (int j = 0; j < 8; j++) {
+				min.x = std::min(min.x, corners[j].x);
+				min.y = std::min(min.y, corners[j].y);
+				min.z = std::min(min.z, corners[j].z);
+
+				max.x = std::max(max.x, corners[j].x);
+				max.y = std::max(max.y, corners[j].y);
+				max.z = std::max(max.z, corners[j].z);
 			}
 		}
 	};
@@ -479,9 +472,7 @@ public:
 
 			// normalize the plane normals
 			for (int i = 0; i < 6; i++) {
-				float length = planes[i].normal.length();
-				planes[i].normal /= length;
-				planes[i].distance /= length;
+				planes[i].normal = normalize(planes[i].normal);
 			}
 
 		}
@@ -498,21 +489,6 @@ public:
 	};
 
 	// ------------------ VECTOR3 FORMULAS ------------------ //
-	static vec3 minV(const vec3& a, const vec3& b) {
-		return vec3(
-			std::min(a.x, b.x),
-			std::min(a.y, b.y),
-			std::min(a.z, b.z)
-		);
-	}
-	static vec3 maxV(const vec3& a, const vec3& b) {
-		return vec3(
-			std::max(a.x, b.x),
-			std::max(a.y, b.y),
-			std::max(a.z, b.z)
-		);
-	}
-
 	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
 		// convert pitch and yaw from degrees to radians
 		float pitch = rotation.x * (PI / 180.0f); // x rot

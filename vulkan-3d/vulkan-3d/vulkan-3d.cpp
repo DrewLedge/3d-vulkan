@@ -3432,35 +3432,36 @@ private:
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+			size_t culled = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				int textureExistence = 0;
-				// bitfield for which textures exist
-				textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
-				textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
-				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
-				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
-				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
-
-				struct {
-					int notRender; // which index of the objects to not render in the main shader
-					int textureExist; // bitfield of which textures exist
-					int texIndex; // starting index of the textures in the texture array
-				} pushConst;
-
-				if (objects[j].player) {
-					pushConst.notRender = static_cast<int>(j);
-				}
-				pushConst.textureExist = textureExistence;
-				pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
-				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				if (sceneFrustum.intersects(objects[j].box)) {
+					int textureExistence = 0;
+					// bitfield for which textures exist
+					textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
+					textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
+					textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
+					textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
+					textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
+
+					struct {
+						int notRender; // which index of the objects to not render in the main shader
+						int textureExist; // bitfield of which textures exist
+						int texIndex; // starting index of the textures in the texture array
+					} pushConst;
+
+					if (objects[j].player) {
+						pushConst.notRender = static_cast<int>(j);
+					}
+					pushConst.textureExist = textureExistence;
+					pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
+					vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 					vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 				}
 				else {
-					std::cout << "---------------------------" << std::endl;
-					std::cout << "object " << j << " culled" << std::endl;
+					culled++;
 				}
 			}
+			std::cout << culled << " / " << objects.size() << " objects that are culled" << std::endl;
 
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
