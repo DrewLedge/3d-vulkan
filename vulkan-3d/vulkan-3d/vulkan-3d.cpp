@@ -256,6 +256,8 @@ private:
 
 		bool player = false; // if the object is treated as a player model or not
 
+		dml::boundingBox box; // bounding box of the model
+
 
 		// default constructor:
 		model()
@@ -481,6 +483,7 @@ private:
 	std::vector<light> lights;
 	shadowMapProportionsObject shadowProps;
 	uint32_t modelIndex; // index of where vertecies are loaded to
+	dml::frustum sceneFrustum;
 
 	// textures and materials
 	std::vector<Texture> allTextures;
@@ -540,7 +543,7 @@ private:
 		std::cout << " ----------------" << std::endl;
 	}
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
-		loadScene(scale, pos, rotation, path);
+		loadModel(scale, pos, rotation, path);
 	}
 	void createLight(dml::vec3 pos, dml::vec3 color, float intensity, dml::vec3 t) {
 		light l;
@@ -1121,7 +1124,7 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
-	void loadScene(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
+	void loadModel(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
 		tf::Executor executor;
 		tf::Taskflow taskFlow;
 		uint32_t meshInd = 0; // index of the mesh in the model
@@ -1294,6 +1297,7 @@ private:
 
 						Vertex vertex;
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
+						newObject.box.update(vertex.pos);
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
 						if (colorFound) {
@@ -1411,6 +1415,7 @@ private:
 
 				// calculate the model matrix for the mesh
 				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
+				newObject.box.getWorldSpace(meshModelMatrix); // update the bounding box
 				convertMatrix(meshModelMatrix, newObject.modelMatrix);
 
 				// add newObject to global objects list
@@ -1759,10 +1764,10 @@ private:
 		std::cout << "---------------------------------" << std::endl;
 	}
 
-
 	void calcCameraMats() {
 		convertMatrix(cam.getViewMatrix(), cam.viewMatrix);
 		convertMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
+		sceneFrustum.update(unflattenMatrix(cam.viewMatrix), unflattenMatrix(cam.projectionMatrix));
 	}
 
 	void calcShadowMats(light& l) {
@@ -1812,12 +1817,16 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
+			dml::mat4 modelMatrix = unflattenMatrix(objects[i].modelMatrix);
+
 			if (objects[i].player) {
+				objects[i].box.getWorldSpace(modelMatrix);
+
 				float updatedModel[16];
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i].scale);
-				dml::mat4 model = (t * r * s) * unflattenMatrix(objects[i].modelMatrix);
+				dml::mat4 model = (t * r * s) * modelMatrix;
 				convertMatrix(model, updatedModel);
 				memcpy(objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
 			}
@@ -3351,6 +3360,7 @@ private:
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
+		m.box.getWorldSpace(model);
 		convertMatrix(model, m.modelMatrix);
 
 		objects.push_back(std::move(m));
@@ -3443,7 +3453,13 @@ private:
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
+				if (sceneFrustum.intersects(objects[j].box)) {
+					vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
+				}
+				else {
+					std::cout << "---------------------------" << std::endl;
+					std::cout << "object " << j << " culled" << std::endl;
+				}
 			}
 
 			// prepare for next frame in ImGui:

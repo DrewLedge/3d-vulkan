@@ -345,14 +345,11 @@ public:
 		}
 	};
 
-	struct plane {
+	struct planeObject {
 		vec3 normal;
 		float distance;
 
-		// plane from a normal and a point on the plane
-		plane(const vec3& point, const vec3& normalVec) : normal(normalize(normalVec)) {
-			distance = -dot(normal, point);
-		}
+		planeObject() : normal(vec3(0.0f, 0.0f, 0.0f)), distance(0.0f) {}
 
 		// distance from a point to the plane
 		float dist(const vec3& point) const {
@@ -364,8 +361,24 @@ public:
 		vec3 min;
 		vec3 max;
 
+		boundingBox() {
+			min.x = min.y = min.z = std::numeric_limits<float>::max();
+			max.x = max.y = max.z = std::numeric_limits<float>::lowest();
+		}
+
+		// update the bounding box with a new point
+		void update(const vec3& p) {
+			min.x = std::min(min.x, p.x);
+			min.y = std::min(min.y, p.y);
+			min.z = std::min(min.z, p.z);
+
+			max.x = std::max(max.x, p.x);
+			max.y = std::max(max.y, p.y);
+			max.z = std::max(max.z, p.z);
+		}
+
 		// check if the box intersects with the plane
-		bool intersects(const plane& plane) const {
+		bool intersects(const planeObject& plane) const {
 			// positive vertex selection for plane normal
 			vec3 pVertex = min;
 			if (plane.normal.x >= 0) pVertex.x = max.x;
@@ -378,17 +391,99 @@ public:
 			if (plane.normal.y >= 0) nVertex.y = min.y;
 			if (plane.normal.z >= 0) nVertex.z = min.z;
 
-			// if the pvertex is outside then the aabb is fully outside the plane
+			// if the pvertex is outside then the AABB is fully outside the plane
 			if (plane.dist(pVertex) < 0) return false;
 
+			// if the negative vertex is inside then the AABB is not fully outside the plane
+			if (plane.dist(nVertex) >= 0) return true;
+
 			return true;
+		}
+
+		void getWorldSpace(const mat4& modelMatrix) {
+			// array to hold the corners of the AABB
+			vec3 corners[8];
+			corners[0] = min;
+			corners[1] = vec3(max.x, min.y, min.z);
+			corners[2] = vec3(min.x, max.y, min.z);
+			corners[3] = vec3(min.x, min.y, max.z);
+			corners[4] = vec3(max.x, max.y, min.z);
+			corners[5] = vec3(min.x, max.y, max.z);
+			corners[6] = vec3(max.x, min.y, max.z);
+			corners[7] = max;
+
+			// transform all corners
+			for (int j = 0; j < 8; ++j) {
+				corners[j] = modelMatrix * corners[j];
+			}
+
+			// recompute the AABB from the transformed corners
+			min = corners[0];
+			max = corners[0];
+			for (int j = 1; j < 8; j++) {
+				min = minV(min, corners[j]);
+				max = maxV(max, corners[j]);
+			}
 		}
 	};
 
 	struct frustum {
-		plane planes[6];
+		planeObject planes[6];
 
-		void update(const mat4& vp) {
+		// default constructor
+		frustum() {
+			for (int i = 0; i < 6; ++i) {
+				planes[i] = planeObject();
+			}
+		}
+
+		void update(const mat4& view, const mat4& proj) {
+			// help from: https://www.gamedevs.org/uploads/fast-extraction-viewing-frustum-planes-from-world-view-projection-matrix.pdf
+			mat4 mat = proj * view;
+
+			// right plane
+			planes[0].normal.x = mat.m[0][3] - mat.m[0][0];
+			planes[0].normal.y = mat.m[1][3] - mat.m[1][0];
+			planes[0].normal.z = mat.m[2][3] - mat.m[2][0];
+			planes[0].distance = mat.m[3][3] - mat.m[3][0];
+
+			// left plane
+			planes[1].normal.x = mat.m[0][3] + mat.m[0][0];
+			planes[1].normal.y = mat.m[1][3] + mat.m[1][0];
+			planes[1].normal.z = mat.m[2][3] + mat.m[2][0];
+			planes[1].distance = mat.m[3][3] + mat.m[3][0];
+
+			// bottom plane
+			planes[2].normal.x = mat.m[0][3] + mat.m[0][1];
+			planes[2].normal.y = mat.m[1][3] + mat.m[1][1];
+			planes[2].normal.z = mat.m[2][3] + mat.m[2][1];
+			planes[2].distance = mat.m[3][3] + mat.m[3][1];
+
+			// top plane
+			planes[3].normal.x = mat.m[0][3] - mat.m[0][1];
+			planes[3].normal.y = mat.m[1][3] - mat.m[1][1];
+			planes[3].normal.z = mat.m[2][3] - mat.m[2][1];
+			planes[3].distance = mat.m[3][3] - mat.m[3][1];
+
+			// far plane
+			planes[4].normal.x = mat.m[0][3] - mat.m[0][2];
+			planes[4].normal.y = mat.m[1][3] - mat.m[1][2];
+			planes[4].normal.z = mat.m[2][3] - mat.m[2][2];
+			planes[4].distance = mat.m[3][3] - mat.m[3][2];
+
+			// near plane
+			planes[5].normal.x = mat.m[0][3] + mat.m[0][2];
+			planes[5].normal.y = mat.m[1][3] + mat.m[1][2];
+			planes[5].normal.z = mat.m[2][3] + mat.m[2][2];
+			planes[5].distance = mat.m[3][3] + mat.m[3][2];
+
+			// normalize the plane normals
+			for (int i = 0; i < 6; i++) {
+				float length = planes[i].normal.length();
+				planes[i].normal /= length;
+				planes[i].distance /= length;
+			}
+
 		}
 
 		// test if a bounding box intersects the frustum
@@ -402,9 +497,22 @@ public:
 		}
 	};
 
-
-
 	// ------------------ VECTOR3 FORMULAS ------------------ //
+	static vec3 minV(const vec3& a, const vec3& b) {
+		return vec3(
+			std::min(a.x, b.x),
+			std::min(a.y, b.y),
+			std::min(a.z, b.z)
+		);
+	}
+	static vec3 maxV(const vec3& a, const vec3& b) {
+		return vec3(
+			std::max(a.x, b.x),
+			std::max(a.y, b.y),
+			std::max(a.z, b.z)
+		);
+	}
+
 	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
 		// convert pitch and yaw from degrees to radians
 		float pitch = rotation.x * (PI / 180.0f); // x rot
@@ -596,7 +704,7 @@ public:
 		return result;
 	}
 	static mat4 rotateQ(const vec4 q) { // quaternian rotation (column major)
-		// formula from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
+		// help from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
 		mat4 result;
 
 		float w = q.w;
@@ -685,7 +793,7 @@ public:
 	}
 
 	static mat4 inverseMatrix(mat4 m) {
-		//formula from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
+		// help from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
 		mat4 cofactor;
 		float det = 0.0f;
 
