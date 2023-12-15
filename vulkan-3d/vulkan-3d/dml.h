@@ -403,26 +403,20 @@ public:
 		}
 
 
-		void getWorldSpace(const mat4& modelMatrix) {
+		void getWorldSpace(const mat4& model) {
 			// array to hold the corners of the AABB
-			vec3 corners[8];
-			corners[0] = min;
-			corners[1] = vec3(max.x, min.y, min.z);
-			corners[2] = vec3(min.x, max.y, min.z);
-			corners[3] = vec3(min.x, min.y, max.z);
-			corners[4] = vec3(max.x, max.y, min.z);
-			corners[5] = vec3(min.x, max.y, max.z);
-			corners[6] = vec3(max.x, min.y, max.z);
-			corners[7] = max;
-
-			// transform all corners
-			for (int j = 0; j < 8; ++j) {
-				corners[j] = modelMatrix * corners[j];
-			}
+			vec4 corners[8];
+			corners[0] = model * vec4(min.x, min.y, min.z, 1.0f);
+			corners[1] = model * vec4(min.x, min.y, max.z, 1.0f);
+			corners[2] = model * vec4(min.x, max.y, min.z, 1.0f);
+			corners[3] = model * vec4(min.x, max.y, max.z, 1.0f);
+			corners[4] = model * vec4(max.x, min.y, min.z, 1.0f);
+			corners[5] = model * vec4(max.x, min.y, max.z, 1.0f);
+			corners[6] = model * vec4(max.x, max.y, min.z, 1.0f);
+			corners[7] = model * vec4(max.x, max.y, max.z, 1.0f);
 
 			// recompute the AABB from the transformed corners
-			min.x = min.y = min.z = std::numeric_limits<float>::max();
-			max.x = max.y = max.z = std::numeric_limits<float>::lowest();
+			min = max = vec3(corners[0].x, corners[0].y, corners[0].z);
 			for (int j = 0; j < 8; j++) {
 				min.x = std::min(min.x, corners[j].x);
 				min.y = std::min(min.y, corners[j].y);
@@ -433,6 +427,7 @@ public:
 				max.z = std::max(max.z, corners[j].z);
 			}
 		}
+
 	};
 
 	struct frustum {
