@@ -351,9 +351,14 @@ public:
 
 		planeObject() : normal(vec3(0.0f, 0.0f, 0.0f)), distance(0.0f) {}
 
-		// distance from a point to the plane
-		float dist(const vec3& point) const {
-			return dot(normal, point) - distance;
+		void normalizePlane() {
+			float length = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+			if (length == 0) {
+				return;
+			}
+
+			normal /= length;
+			distance /= length;
 		}
 
 	};
@@ -378,15 +383,21 @@ public:
 			max.z = std::max(max.z, p.z);
 		}
 
-		// check if the box intersects with the plane
+		// check if the AABB intersects with the plane
 		bool intersects(const planeObject& plane) const {
-			// compute the projection interval radius of this box onto the plane normal
-			float r = max.x * std::abs(plane.normal.x) + max.y * std::abs(plane.normal.y) + max.z * std::abs(plane.normal.z);
+			vec3 center = (min + max) * 0.5f; // center of the AABB
+			vec3 extent = (max - min) * 0.5f; // extent in each dimension from the center
+
+			// compute the projection interval radius of the box extent onto the plane normal
+			float r = extent.x * std::abs(plane.normal.x) +
+				extent.y * std::abs(plane.normal.y) +
+				extent.z * std::abs(plane.normal.z);
 
 			// compute the distance of the box center from the plane
-			float d = plane.dist((min + max) * 0.5f);
+			float d = dot(plane.normal, center) - plane.distance;
 			return std::abs(d) <= r;
 		}
+
 
 		void getWorldSpace(const mat4& modelMatrix) {
 			// array to hold the corners of the AABB
@@ -421,69 +432,52 @@ public:
 	};
 
 	struct frustum {
-		planeObject planes[6];
+		planeObject top;
+		planeObject bottom;
+		planeObject left;
+		planeObject right;
+		planeObject nearPlane;
+		planeObject farplane;
 
-		// default constructor
-		frustum() {
-			for (int i = 0; i < 6; ++i) {
-				planes[i] = planeObject();
-			}
+
+		void extractPlane(planeObject& plane, const mat4& mat, int row, bool positive) {
+			int sign = positive ? 1 : -1;
+			plane.normal.x = sign * (mat.m[3][0] + mat.m[row][0]);
+			plane.normal.y = sign * (mat.m[3][1] + mat.m[row][1]);
+			plane.normal.z = sign * (mat.m[3][2] + mat.m[row][2]);
+			plane.distance = sign * (mat.m[3][3] + mat.m[row][3]);
 		}
+
 
 		void update(const mat4& view, const mat4& proj) {
 			// help from: https://www.gamedevs.org/uploads/fast-extraction-viewing-frustum-planes-from-world-view-projection-matrix.pdf
 			mat4 mat = proj * view;
 
-			// right plane
-			planes[0].normal.x = mat.m[0][3] - mat.m[0][0];
-			planes[0].normal.y = mat.m[1][3] - mat.m[1][0];
-			planes[0].normal.z = mat.m[2][3] - mat.m[2][0];
-			planes[0].distance = mat.m[3][3] - mat.m[3][0];
+			extractPlane(right, mat, 0, true);
+			extractPlane(left, mat, 0, false);
+			extractPlane(top, mat, 1, true);
+			extractPlane(bottom, mat, 1, false);
+			extractPlane(farplane, mat, 2, true);
+			extractPlane(nearPlane, mat, 2, false);
 
-			// left plane
-			planes[1].normal.x = mat.m[0][3] + mat.m[0][0];
-			planes[1].normal.y = mat.m[1][3] + mat.m[1][0];
-			planes[1].normal.z = mat.m[2][3] + mat.m[2][0];
-			planes[1].distance = mat.m[3][3] + mat.m[3][0];
-
-			// bottom plane
-			planes[2].normal.x = mat.m[0][3] + mat.m[0][1];
-			planes[2].normal.y = mat.m[1][3] + mat.m[1][1];
-			planes[2].normal.z = mat.m[2][3] + mat.m[2][1];
-			planes[2].distance = mat.m[3][3] + mat.m[3][1];
-
-			// top plane
-			planes[3].normal.x = mat.m[0][3] - mat.m[0][1];
-			planes[3].normal.y = mat.m[1][3] - mat.m[1][1];
-			planes[3].normal.z = mat.m[2][3] - mat.m[2][1];
-			planes[3].distance = mat.m[3][3] - mat.m[3][1];
-
-			// far plane
-			planes[4].normal.x = mat.m[0][3] - mat.m[0][2];
-			planes[4].normal.y = mat.m[1][3] - mat.m[1][2];
-			planes[4].normal.z = mat.m[2][3] - mat.m[2][2];
-			planes[4].distance = mat.m[3][3] - mat.m[3][2];
-
-			// near plane
-			planes[5].normal.x = mat.m[0][3] + mat.m[0][2];
-			planes[5].normal.y = mat.m[1][3] + mat.m[1][2];
-			planes[5].normal.z = mat.m[2][3] + mat.m[2][2];
-			planes[5].distance = mat.m[3][3] + mat.m[3][2];
-
-			// normalize the plane normals
-			for (int i = 0; i < 6; i++) {
-				planes[i].normal = normalize(planes[i].normal);
-			}
-
+			// normalize the plane normals and distances
+			top.normalizePlane();
+			bottom.normalizePlane();
+			left.normalizePlane();
+			right.normalizePlane();
+			nearPlane.normalizePlane();
+			farplane.normalizePlane();
 		}
+
 
 		// test if a bounding box intersects the frustum
 		bool intersects(const boundingBox& box) const {
-			for (const auto& plane : planes) {
-				if (!box.intersects(plane)) {
-					return false; // bounding box is outside the frustum
-				}
-			}
+			if (!box.intersects(top)) return false;
+			if (!box.intersects(bottom)) return false;
+			if (!box.intersects(left)) return false;
+			if (!box.intersects(right)) return false;
+			if (!box.intersects(nearPlane)) return false;
+			if (!box.intersects(farplane)) return false;
 			return true;
 		}
 	};

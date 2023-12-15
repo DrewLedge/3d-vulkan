@@ -3370,8 +3370,15 @@ private:
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
-		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+
+		int objSize = objects.size();
+		dml::vec3 testSize = { 0.15f, 0.15f, 0.15f };
+		for (int i = 0; i < objSize; i++) {
+			cloneObject(objects[i].box.min, 4, testSize, { 0, 0, 0, 1 });
+			cloneObject(objects[i].box.max, 4, testSize, { 0, 0, 0, 1 });
+		}
+
+
 		recreateBuffers();
 	}
 	void recreateBuffers() {
@@ -3461,7 +3468,7 @@ private:
 					culled++;
 				}
 			}
-			std::cout << culled << " / " << objects.size() << " objects that are culled" << std::endl;
+			//std::cout << culled << " / " << objects.size() << " objects that are culled" << std::endl;
 
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
