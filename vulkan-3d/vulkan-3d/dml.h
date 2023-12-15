@@ -334,6 +334,14 @@ public:
 			return vec3(x, y, z);
 		}
 
+		friend vec4 operator *(const mat4& mat, const vec4& vec) {
+			float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3] * vec.w;
+			float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3] * vec.w;
+			float z = mat.m[2][0] * vec.x + mat.m[2][1] * vec.y + mat.m[2][2] * vec.z + mat.m[2][3] * vec.w;
+			float w = mat.m[3][0] * vec.x + mat.m[3][1] * vec.y + mat.m[3][2] * vec.z + mat.m[3][3] * vec.w;
+			return vec4(x, y, z, w);
+		}
+
 		mat4 transpose() const {
 			mat4 result;
 			for (int i = 0; i < 4; ++i) {
@@ -352,11 +360,7 @@ public:
 		planeObject() : normal(vec3(0.0f, 0.0f, 0.0f)), distance(0.0f) {}
 
 		void normalizePlane() {
-			float length = sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
-			if (length == 0) {
-				return;
-			}
-
+			float length = normal.length();
 			normal /= length;
 			distance /= length;
 		}
@@ -432,33 +436,31 @@ public:
 	};
 
 	struct frustum {
-		planeObject top;
-		planeObject bottom;
-		planeObject left;
-		planeObject right;
-		planeObject nearPlane;
-		planeObject farplane;
-
-
-		void extractPlane(planeObject& plane, const mat4& mat, int row, bool positive) {
-			int sign = positive ? 1 : -1;
-			plane.normal.x = sign * (mat.m[3][0] + mat.m[row][0]);
-			plane.normal.y = sign * (mat.m[3][1] + mat.m[row][1]);
-			plane.normal.z = sign * (mat.m[3][2] + mat.m[row][2]);
-			plane.distance = sign * (mat.m[3][3] + mat.m[row][3]);
-		}
-
+		planeObject top, bottom, left, right, nearPlane, farplane;
 
 		void update(const mat4& view, const mat4& proj) {
 			// help from: https://www.gamedevs.org/uploads/fast-extraction-viewing-frustum-planes-from-world-view-projection-matrix.pdf
+
 			mat4 mat = proj * view;
 
-			extractPlane(right, mat, 0, true);
-			extractPlane(left, mat, 0, false);
-			extractPlane(top, mat, 1, true);
-			extractPlane(bottom, mat, 1, false);
-			extractPlane(farplane, mat, 2, true);
-			extractPlane(nearPlane, mat, 2, false);
+			// calculate the frustum planes from the vp matrix
+			right.normal = vec3(mat.m[0][3] - mat.m[0][0], mat.m[1][3] - mat.m[1][0], mat.m[2][3] - mat.m[2][0]);
+			right.distance = mat.m[3][3] - mat.m[3][0];
+
+			left.normal = vec3(mat.m[0][3] + mat.m[0][0], mat.m[1][3] + mat.m[1][0], mat.m[2][3] + mat.m[2][0]);
+			left.distance = mat.m[3][3] + mat.m[3][0];
+
+			top.normal = vec3(mat.m[0][3] - mat.m[0][1], mat.m[1][3] - mat.m[1][1], mat.m[2][3] - mat.m[2][1]);
+			top.distance = mat.m[3][3] - mat.m[3][1];
+
+			bottom.normal = vec3(mat.m[0][3] + mat.m[0][1], mat.m[1][3] + mat.m[1][1], mat.m[2][3] + mat.m[2][1]);
+			bottom.distance = mat.m[3][3] + mat.m[3][1];
+
+			nearPlane.normal = vec3(mat.m[0][3] + mat.m[0][2], mat.m[1][3] + mat.m[1][2], mat.m[2][3] + mat.m[2][2]);
+			nearPlane.distance = mat.m[3][3] + mat.m[3][2];
+
+			farplane.normal = vec3(mat.m[0][3] - mat.m[0][2], mat.m[1][3] - mat.m[1][2], mat.m[2][3] - mat.m[2][2]);
+			farplane.distance = mat.m[3][3] - mat.m[3][2];
 
 			// normalize the plane normals and distances
 			top.normalizePlane();
@@ -472,13 +474,8 @@ public:
 
 		// test if a bounding box intersects the frustum
 		bool intersects(const boundingBox& box) const {
-			if (!box.intersects(top)) return false;
-			if (!box.intersects(bottom)) return false;
-			if (!box.intersects(left)) return false;
-			if (!box.intersects(right)) return false;
-			if (!box.intersects(nearPlane)) return false;
-			if (!box.intersects(farplane)) return false;
-			return true;
+			return box.intersects(top) && box.intersects(bottom) && box.intersects(left) &&
+				box.intersects(right) && box.intersects(nearPlane) && box.intersects(farplane);
 		}
 	};
 
