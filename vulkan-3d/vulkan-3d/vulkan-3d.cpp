@@ -256,9 +256,6 @@ private:
 
 		bool player = false; // if the object is treated as a player model or not
 
-		dml::boundingBox box; // bounding box of the model
-
-
 		// default constructor:
 		model()
 			: material(),
@@ -483,7 +480,6 @@ private:
 	std::vector<light> lights;
 	shadowMapProportionsObject shadowProps;
 	uint32_t modelIndex; // index of where vertecies are loaded to
-	dml::frustum sceneFrustum;
 
 	// textures and materials
 	std::vector<Texture> allTextures;
@@ -1297,7 +1293,6 @@ private:
 
 						Vertex vertex;
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
-						newObject.box.update(vertex.pos);
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
 						if (colorFound) {
@@ -1415,7 +1410,6 @@ private:
 
 				// calculate the model matrix for the mesh
 				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
-				newObject.box.getWorldSpace(meshModelMatrix); // update the bounding box
 				convertMatrix(meshModelMatrix, newObject.modelMatrix);
 
 				// add newObject to global objects list
@@ -1767,7 +1761,6 @@ private:
 	void calcCameraMats() {
 		convertMatrix(cam.getViewMatrix(), cam.viewMatrix);
 		convertMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
-		sceneFrustum.update(unflattenMatrix(cam.viewMatrix), unflattenMatrix(cam.projectionMatrix));
 	}
 
 	void calcShadowMats(light& l) {
@@ -1820,8 +1813,6 @@ private:
 			dml::mat4 modelMatrix = unflattenMatrix(objects[i].modelMatrix);
 
 			if (objects[i].player) {
-				objects[i].box.getWorldSpace(modelMatrix);
-
 				float updatedModel[16];
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
@@ -3360,7 +3351,6 @@ private:
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
-		m.box.getWorldSpace(model);
 		convertMatrix(model, m.modelMatrix);
 
 		objects.push_back(std::move(m));
@@ -3371,13 +3361,8 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
 
-		int objSize = objects.size();
-		dml::vec3 testSize = { 0.15f, 0.15f, 0.15f };
-		for (int i = 0; i < objSize; i++) {
-			cloneObject(objects[i].box.min, 4, testSize, { 0, 0, 0, 1 });
-			cloneObject(objects[i].box.max, 4, testSize, { 0, 0, 0, 1 });
-		}
-
+		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateBuffers();
 	}
@@ -3441,35 +3426,28 @@ private:
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 			size_t culled = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				if (sceneFrustum.intersects(objects[j].box)) {
-					int textureExistence = 0;
-					// bitfield for which textures exist
-					textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
-					textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
-					textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
-					textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
-					textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
+				int textureExistence = 0;
+				// bitfield for which textures exist
+				textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
+				textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
+				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
+				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
+				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
 
-					struct {
-						int notRender; // which index of the objects to not render in the main shader
-						int textureExist; // bitfield of which textures exist
-						int texIndex; // starting index of the textures in the texture array
-					} pushConst;
+				struct {
+					int notRender; // which index of the objects to not render in the main shader
+					int textureExist; // bitfield of which textures exist
+					int texIndex; // starting index of the textures in the texture array
+				} pushConst;
 
-					if (objects[j].player) {
-						pushConst.notRender = static_cast<int>(j);
-					}
-					pushConst.textureExist = textureExistence;
-					pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
-					vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-					vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
+				if (objects[j].player) {
+					pushConst.notRender = static_cast<int>(j);
 				}
-				else {
-					culled++;
-				}
+				pushConst.textureExist = textureExistence;
+				pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
+				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
-			//std::cout << culled << " / " << objects.size() << " objects that are culled" << std::endl;
-
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
