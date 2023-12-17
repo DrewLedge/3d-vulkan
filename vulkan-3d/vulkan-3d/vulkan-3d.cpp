@@ -1410,7 +1410,7 @@ private:
 
 				// calculate the model matrix for the mesh
 				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
-				convertMatrix(meshModelMatrix, newObject.modelMatrix);
+				flattenMatrix(meshModelMatrix, newObject.modelMatrix);
 
 				// add newObject to global objects list
 				modelMtx.lock();
@@ -1759,8 +1759,8 @@ private:
 	}
 
 	void calcCameraMats() {
-		convertMatrix(cam.getViewMatrix(), cam.viewMatrix);
-		convertMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
+		flattenMatrix(cam.getViewMatrix(), cam.viewMatrix);
+		flattenMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
 	}
 
 	void calcShadowMats(light& l) {
@@ -1781,8 +1781,8 @@ private:
 			printMatrix(projMatrix);*/
 
 			//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
-		convertMatrix(viewMatrix, l.view);
-		convertMatrix(projMatrix, l.proj);
+		flattenMatrix(viewMatrix, l.view);
+		flattenMatrix(projMatrix, l.proj);
 	}
 
 	void updateUBO() {
@@ -1818,7 +1818,7 @@ private:
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i].scale);
 				dml::mat4 model = (t * r * s) * modelMatrix;
-				convertMatrix(model, updatedModel);
+				flattenMatrix(model, updatedModel);
 				memcpy(objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
 			}
 			else {
@@ -1843,7 +1843,7 @@ private:
 		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
-	void convertMatrix(const dml::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
+	void flattenMatrix(const dml::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
 		size_t index = 0;
 		for (size_t column = 0; column < 4; column++) {
 			for (size_t row = 0; row < 4; row++) {
@@ -3351,7 +3351,7 @@ private:
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
-		convertMatrix(model, m.modelMatrix);
+		flattenMatrix(model, m.modelMatrix);
 
 		objects.push_back(std::move(m));
 
@@ -3387,17 +3387,17 @@ private:
 		VkDescriptorSet skyboxDescriptorSets[] = { descs.sets[4], descs.sets[5] };
 		VkDescriptorSet descriptorSetsForScene[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[3], descs.sets[5] };
 		VkDeviceSize offsets[] = { 0 };
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
-			vkResetCommandBuffer(commandBuffers[i], 0);
-
-			VkCommandBufferBeginInfo beginInfo{};
-			beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-			beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-			beginInfo.pInheritanceInfo = nullptr;
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
+
 			vkCmdSetViewport(commandBuffers[i], 0, 1, &vp); // set the viewport to already existing viewport state from the pipeline
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3511,7 +3511,6 @@ private:
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < lights.size(); i++) {
 			vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-			vkResetCommandBuffer(shadowMapCommandBuffers[i], 0);
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -3805,6 +3804,7 @@ private:
 	}
 
 
+
 	void mainLoop() {
 		uint8_t frameCount = 0;
 		uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
@@ -3842,8 +3842,6 @@ private:
 		// set the mouse callback
 		glfwSetCursorPosCallback(window, mouseCallback);
 	}
-
-
 
 	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
 		static bool mouseFirst = true;
@@ -3943,6 +3941,7 @@ private:
 		commandPool = createCommandPool();
 		initializeMouseInput(true);
 		loadUniqueObjects();
+		scatterObjects(300, 2.0f);
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
@@ -3959,16 +3958,7 @@ private:
 		recordShadowCommandBuffers();
 		createCommandBuffer();
 		recordCommandBuffers(); //record and submit the command buffers
-		//debugModelMatricies();
 		std::cout << "Vulkan initialized successfully!" << std::endl;
-	}
-	void debugModelMatricies() {
-		for (model& m : objects) {
-			std::cout << "model matrix: " << std::endl;
-			printFlatMatrix(m.modelMatrix);
-			std::cout << "--------------------------" << std::endl;
-			std::cout << "--------------------------" << std::endl;
-		}
 	}
 
 	void scatterObjects(int count, float radius) {
