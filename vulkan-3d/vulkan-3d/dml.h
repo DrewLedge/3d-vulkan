@@ -263,25 +263,33 @@ public:
 
 	};
 	struct mat4 {
-		float m[4][4];
+		union {
+			struct {
+				float m[4][4];
+			};
+			float flat[16];
+		};
+
 		mat4() {
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					m[i][j] = (i == j) ? 1.0f : 0.0f;
+					m[j][i] = (i == j) ? 1.0f : 0.0f;
 				}
 			}
 		}
+
 		mat4(const mat4& other) {
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					m[i][j] = other.m[i][j];
+					m[j][i] = other.m[j][i];
 				}
 			}
 		}
+
 		mat4(float zero) {
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					m[i][j] = 0.0f;
+					m[j][i] = 0.0f;
 				}
 			}
 		}
@@ -290,7 +298,7 @@ public:
 			bool equal = true;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					equal = equal && std::abs(m[i][j] - other.m[i][j]) < epsilon;
+					equal = equal && std::abs(m[j][i] - other.m[j][i]) < epsilon;
 				}
 			}
 			return equal;
@@ -299,9 +307,9 @@ public:
 			mat4 result;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					result.m[i][j] = 0;
+					result.m[j][i] = 0;
 					for (int k = 0; k < 4; k++) {
-						result.m[i][j] += m[i][k] * other.m[k][j];
+						result.m[j][i] += m[k][i] * other.m[j][k];
 					}
 				}
 			}
@@ -311,9 +319,9 @@ public:
 			mat4 temp;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					temp.m[i][j] = 0;
+					temp.m[j][i] = 0;
 					for (int k = 0; k < 4; k++) {
-						temp.m[i][j] += m[i][k] * other.m[k][j];
+						temp.m[j][i] += m[k][i] * other.m[j][k];
 					}
 				}
 			}
@@ -322,10 +330,10 @@ public:
 		}
 
 		friend vec3 operator *(const mat4& mat, const vec3& vec) {
-			float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3];
-			float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3];
-			float z = mat.m[2][0] * vec.x + mat.m[2][1] * vec.y + mat.m[2][2] * vec.z + mat.m[2][3];
-			float w = mat.m[3][0] * vec.x + mat.m[3][1] * vec.y + mat.m[3][2] * vec.z + mat.m[3][3];
+			float x = mat.m[0][0] * vec.x + mat.m[1][0] * vec.y + mat.m[2][0] * vec.z + mat.m[3][0];
+			float y = mat.m[0][1] * vec.x + mat.m[1][1] * vec.y + mat.m[2][1] * vec.z + mat.m[3][1];
+			float z = mat.m[0][2] * vec.x + mat.m[1][2] * vec.y + mat.m[2][2] * vec.z + mat.m[3][2];
+			float w = mat.m[0][3] * vec.x + mat.m[1][3] * vec.y + mat.m[2][3] * vec.z + mat.m[3][3];
 			if (w != 1.0f && w != 0.0f) {
 				x /= w;
 				y /= w;
@@ -335,10 +343,10 @@ public:
 		}
 
 		friend vec4 operator *(const mat4& mat, const vec4& vec) {
-			float x = mat.m[0][0] * vec.x + mat.m[0][1] * vec.y + mat.m[0][2] * vec.z + mat.m[0][3] * vec.w;
-			float y = mat.m[1][0] * vec.x + mat.m[1][1] * vec.y + mat.m[1][2] * vec.z + mat.m[1][3] * vec.w;
-			float z = mat.m[2][0] * vec.x + mat.m[2][1] * vec.y + mat.m[2][2] * vec.z + mat.m[2][3] * vec.w;
-			float w = mat.m[3][0] * vec.x + mat.m[3][1] * vec.y + mat.m[3][2] * vec.z + mat.m[3][3] * vec.w;
+			float x = mat.m[0][0] * vec.x + mat.m[1][0] * vec.y + mat.m[2][0] * vec.z + mat.m[3][0] * vec.w;
+			float y = mat.m[0][1] * vec.x + mat.m[1][1] * vec.y + mat.m[2][1] * vec.z + mat.m[3][1] * vec.w;
+			float z = mat.m[0][2] * vec.x + mat.m[1][2] * vec.y + mat.m[2][2] * vec.z + mat.m[3][2] * vec.w;
+			float w = mat.m[0][3] * vec.x + mat.m[1][3] * vec.y + mat.m[2][3] * vec.z + mat.m[3][3] * vec.w;
 			return vec4(x, y, z, w);
 		}
 
@@ -346,7 +354,7 @@ public:
 			mat4 result;
 			for (int i = 0; i < 4; ++i) {
 				for (int j = 0; j < 4; ++j) {
-					result.m[j][i] = m[i][j];
+					result.m[i][j] = m[j][i];
 				}
 			}
 			return result;
@@ -504,9 +512,9 @@ public:
 
 	static mat4 translate(const vec3 t) {
 		mat4 result;
-		result.m[0][3] = t.x;
-		result.m[1][3] = t.y;
-		result.m[2][3] = t.z;
+		result.m[3][0] = t.x;
+		result.m[3][1] = t.y;
+		result.m[3][2] = t.z;
 		return result;
 	}
 	static mat4 scale(const vec3 s) {
@@ -525,26 +533,27 @@ public:
 
 		mat4 rotX;
 		rotX.m[1][1] = cosf(radX);
-		rotX.m[1][2] = -sinf(radX);
-		rotX.m[2][1] = sinf(radX);
+		rotX.m[2][1] = -sinf(radX);
+		rotX.m[1][2] = sinf(radX);
 		rotX.m[2][2] = cosf(radX);
 
 		mat4 rotY;
 		rotY.m[0][0] = cosf(radY);
-		rotY.m[0][2] = sinf(radY);
-		rotY.m[2][0] = -sinf(radY);
+		rotY.m[2][0] = sinf(radY);
+		rotY.m[0][2] = -sinf(radY);
 		rotY.m[2][2] = cosf(radY);
 
 		mat4 rotZ;
 		rotZ.m[0][0] = cosf(radZ);
-		rotZ.m[0][1] = -sinf(radZ);
-		rotZ.m[1][0] = sinf(radZ);
+		rotZ.m[1][0] = -sinf(radZ);
+		rotZ.m[0][1] = sinf(radZ);
 		rotZ.m[1][1] = cosf(radZ);
 
 		result = rotZ * rotY * rotX;
 		return result;
 	}
-	static mat4 rotateQ(const vec4 q) { // quaternian rotation (column major)
+
+	static mat4 rotateQ(const vec4 q) { // quaternian rotation
 		// help from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
 		mat4 result;
 
@@ -585,8 +594,8 @@ public:
 		result.m[0][0] = 1.0f / (aspect * tanHalf);
 		result.m[1][1] = -1.0f / tanHalf;
 		result.m[2][2] = farPlane / (farPlane - nearPlane);
-		result.m[2][3] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
-		result.m[3][2] = 1.0f;
+		result.m[3][2] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
+		result.m[2][3] = 1.0f;
 		result.m[3][3] = 0.0f;
 
 		return result;
@@ -604,16 +613,11 @@ public:
 		proj.m[0][0] = x;
 		proj.m[1][1] = y;
 		proj.m[2][2] = a;
-		proj.m[2][3] = b;
-		proj.m[3][2] = -1.0f;
+		proj.m[3][2] = b;
+		proj.m[2][3] = -1.0f;
 		return proj;
 
 	}
-
-	static mat4 modelMatrix(vec3 trans, vec3 rot, vec3 s) {
-		return scale(s) * rotate(rot) * translate(trans);;
-	}
-
 
 	static float submatrixDet(mat4 m, int excludeRow, int excludeCol) {
 		float det, sub[3][3];
@@ -623,7 +627,7 @@ public:
 			y = 0;
 			for (int j = 0; j < 4; j++) {
 				if (j == excludeCol) continue; // skip the excluded column
-				sub[x][y] = m.m[j][i];
+				sub[x][y] = m.m[i][j];
 				y++;
 			}
 			x++;
@@ -640,7 +644,7 @@ public:
 
 		// calculate determinant
 		for (int i = 0; i < 4; i++) {
-			det += ((i % 2 == 0 ? 1 : -1) * m.m[i][0] * submatrixDet(m, 0, i));
+			det += ((i % 2 == 0 ? 1 : -1) * m.m[0][i] * submatrixDet(m, 0, i));
 		}
 
 		if (det == 0.0f) { // if matrix is not invertible, return original matrix
@@ -654,7 +658,7 @@ public:
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
 				int sign = ((i + j) % 2 == 0) ? 1 : -1;
-				cofactor.m[j][i] = sign * submatrixDet(m, i, j);
+				cofactor.m[i][j] = sign * submatrixDet(m, i, j);
 			}
 		}
 
@@ -662,7 +666,7 @@ public:
 		mat4 inverse;
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
-				inverse.m[i][j] = invDet * cofactor.m[i][j];
+				inverse.m[j][i] = invDet * cofactor.m[j][i];
 			}
 		}
 
@@ -670,13 +674,11 @@ public:
 	}
 
 	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
-		mat4 result;
-
 		vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
 		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
 		vec4 orientation = yRot * xRot;
 		orientation = normalize(orientation);
-		mat4 rotation = rotateQ(orientation).transpose();
+		mat4 rotation = rotateQ(orientation);
 
 		mat4 translation;
 		translation = translate(position * -1);
@@ -684,9 +686,10 @@ public:
 	}
 
 
+
 	static vec3 getCamWorldPos(const mat4& viewMat) {
 		mat4 invView = inverseMatrix(viewMat);
-		vec3 cameraWorldPosition(invView.m[3][0], invView.m[3][1], invView.m[3][2]);
+		vec3 cameraWorldPosition(invView.m[0][3], invView.m[1][3], invView.m[2][3]);
 		return cameraWorldPosition;
 	}
 
@@ -713,7 +716,7 @@ public:
 		result.m[3][2] = dot(f, eye);
 
 		result.m[3][3] = 1.0f;
-		return result.transpose();
+		return result;
 	}
 
 	static mat4 gltfToMat4(const std::vector<double>& vec) {
@@ -722,7 +725,7 @@ public:
 
 		for (int col = 0; col < 4; ++col) {
 			for (int row = 0; row < 4; ++row) {
-				result.m[row][col] = static_cast<float>(vec[index]);
+				result.m[col][row] = static_cast<float>(vec[index]);
 				++index;
 			}
 		}

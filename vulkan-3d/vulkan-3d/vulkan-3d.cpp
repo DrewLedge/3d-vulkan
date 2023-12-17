@@ -41,8 +41,8 @@ struct camData {
 	float upAngle;
 	float rightAngle;
 
-	float projectionMatrix[16];
-	float viewMatrix[16];
+	dml::mat4 projectionMatrix;
+	dml::mat4 viewMatrix;
 
 	// buffers for the camera matrix ubo
 	VkBuffer buffer;
@@ -68,7 +68,7 @@ struct camData {
 		dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(0, 1, 0));
 		dml::vec4 q = yRot * xRot;
 
-		return dml::rotateQ(q); // convert the quaternion to a rotation matrix
+		return dml::rotateQ(q).transpose(); // convert the quaternion to a rotation matrix
 	}
 
 	dml::vec3 getLookPoint() const {
@@ -246,7 +246,7 @@ private:
 		dml::vec3 position;  // position of the model
 		dml::vec4 rotation;  // rotation of the model in quaternions
 		dml::vec3 scale;     // scale of the model
-		float modelMatrix[16];
+		dml::mat4 modelMatrix;
 
 		size_t textureCount; // number of textures in the model
 		size_t texIndex; // where in the texture array the textures of the model start
@@ -267,10 +267,9 @@ private:
 			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
 			isLoaded(false),
 			startObj(true),
-			textureCount(0)
-		{
-			std::fill(std::begin(modelMatrix), std::end(modelMatrix), 0.0f); // initialize modelmatrix
-		}
+			textureCount(0),
+			modelMatrix()
+		{}
 	};
 	struct shadowMapDataObject {
 		VkImage image;
@@ -295,8 +294,8 @@ private:
 		dml::vec3 col;
 		dml::vec3 target;
 		float baseIntensity;
-		float proj[16];
-		float view[16];
+		dml::mat4 proj;
+		dml::mat4 view;
 		float innerConeAngle; // in degrees
 		float outerConeAngle; // in degrees
 		float constantAttenuation;
@@ -305,8 +304,8 @@ private:
 		shadowMapDataObject shadowMapData;
 	};
 	struct lightMatrixUBO {
-		float view[16];
-		float proj[16];
+		dml::mat4 view;
+		dml::mat4 proj;
 	};
 
 	struct lightCords {
@@ -328,14 +327,14 @@ private:
 
 
 	struct modelMat {
-		float model[16];
+		dml::mat4 model;
 	};
 	struct modelMatSSBO {
 		modelMat objectMatrixData[MAX_MODELS];
 	};
 	struct camUBO {
-		float view[16];
-		float proj[16];
+		dml::mat4 view;
+		dml::mat4 proj;
 	};
 
 	struct shadowMapProportionsObject {
@@ -567,7 +566,10 @@ private:
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 1.0f, 0.0f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
@@ -1409,8 +1411,7 @@ private:
 				newObject.rotation = rot;
 
 				// calculate the model matrix for the mesh
-				dml::mat4 meshModelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
-				flattenMatrix(meshModelMatrix, newObject.modelMatrix);
+				newObject.modelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
 
 				// add newObject to global objects list
 				modelMtx.lock();
@@ -1726,15 +1727,6 @@ private:
 		vkUnmapMemory(device, lightBufferMem);
 	}
 
-	void printMatrix(const dml::mat4& matrix) { // prints the matrix in transposed order
-		for (int j = 0; j < 4; j++) {
-			for (int i = 0; i < 4; i++) {
-				std::cout << std::fixed << std::setw(10) << std::setprecision(2) << matrix.m[i][j] << " ";
-			}
-			std::cout << std::endl; // end of row / column
-		}
-		std::cout << "---------------------------------" << std::endl;
-	}
 
 	void printVec3(const dml::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
@@ -1743,24 +1735,9 @@ private:
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << ", " << vector.w << "}" << std::endl;
 	}
 
-	float getMatrixElement(const float* matrix, int col, int row) {
-		return matrix[col * 4 + row];
-	}
-
-	void printFlatMatrix(const float* matrix) {
-		for (int row = 0; row < 4; ++row) {  // uuter loop over rows
-			for (int col = 0; col < 4; ++col) {  // inner loop over columns
-				float element = getMatrixElement(matrix, col, row);
-				std::cout << std::fixed << std::setw(10) << std::setprecision(4) << element << " ";
-			}
-			std::cout << std::endl;
-		}
-		std::cout << "---------------------------------" << std::endl;
-	}
-
 	void calcCameraMats() {
-		flattenMatrix(cam.getViewMatrix(), cam.viewMatrix);
-		flattenMatrix(dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f), cam.projectionMatrix);
+		cam.viewMatrix = cam.getViewMatrix();
+		cam.projectionMatrix = dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f);
 	}
 
 	void calcShadowMats(light& l) {
@@ -1773,24 +1750,16 @@ private:
 			throw std::runtime_error("Light position and target are the same!");
 		}
 
-		dml::mat4 viewMatrix = dml::lookAt(l.pos, l.target, up);
-		dml::mat4 projMatrix = dml::spotPerspective(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
-		/*	std::cout << "View matrix with paramiters of: pos: " << l.pos << " target: " << l.target << std::endl;
-			printMatrix(viewMatrix);
-			std::cout << "Projection matrix with paramiters of: angle: " << l.outerConeAngle << " aspect ratio: " << aspectRatio << " near plane: " << nearPlane << " far plane: " << farPlane << std::endl;
-			printMatrix(projMatrix);*/
-
-			//convertMatrix converts a forms::mat4 into a flat matrix and is stored in the second parameter
-		flattenMatrix(viewMatrix, l.view);
-		flattenMatrix(projMatrix, l.proj);
+		l.view = dml::lookAt(l.pos, l.target, up);
+		l.proj = dml::spotPerspective(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
 	}
 
 	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			calcShadowMats(lights[i]);
-			memcpy(lightData.lightsMatricies[i].proj, lights[i].proj, sizeof(lights[i].proj));
-			memcpy(lightData.lightsMatricies[i].view, lights[i].view, sizeof(lights[i].view));
+			memcpy(&lightData.lightsMatricies[i].proj, &lights[i].proj, sizeof(lights[i].proj));
+			memcpy(&lightData.lightsMatricies[i].view, &lights[i].view, sizeof(lights[i].view));
 			copyLightToLightCords(lights[i], lightData.lightCords[i]);
 		}
 		void* lData;
@@ -1800,8 +1769,8 @@ private:
 
 		// calc matricies for camera
 		calcCameraMats();
-		memcpy(camMatData.view, cam.viewMatrix, sizeof(cam.viewMatrix));
-		memcpy(camMatData.proj, cam.projectionMatrix, sizeof(cam.projectionMatrix));
+		memcpy(&camMatData.view, &cam.viewMatrix, sizeof(cam.viewMatrix));
+		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
 
 		void* cData;
 		vkMapMemory(device, cam.bufferMem, 0, sizeof(camMatData), 0, &cData);
@@ -1810,19 +1779,17 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			dml::mat4 modelMatrix = unflattenMatrix(objects[i].modelMatrix);
-
 			if (objects[i].player) {
-				float updatedModel[16];
+				dml::mat4 updatedModel;
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i].scale);
-				dml::mat4 model = (t * r * s) * modelMatrix;
-				flattenMatrix(model, updatedModel);
-				memcpy(objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
+				dml::mat4 model = (t * r * s) * objects[i].modelMatrix;
+				updatedModel = model;
+				memcpy(&objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
 			}
 			else {
-				memcpy(objMatData.objectMatrixData[i].model, objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+				memcpy(&objMatData.objectMatrixData[i].model, &objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
 			}
 		}
 		void* matrixData;
@@ -1843,27 +1810,6 @@ private:
 		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
-	void flattenMatrix(const dml::mat4& source, float destination[16]) { //converts a 4x4 matrix to a flat array for vulkan
-		size_t index = 0;
-		for (size_t column = 0; column < 4; column++) {
-			for (size_t row = 0; row < 4; row++) {
-				destination[index] = source.m[row][column];
-				index++;
-			}
-		}
-	}
-
-	dml::mat4 unflattenMatrix(const float source[16]) { //converts a flat array to a 4x4 matrix
-		dml::mat4 destination;
-		size_t index = 0;
-		for (size_t column = 0; column < 4; column++) {
-			for (size_t row = 0; row < 4; row++) {
-				destination.m[row][column] = source[index];
-				index++;
-			}
-		}
-		return destination;
-	}
 	void guiDSLayout() { //descriptor set layout for imgui
 		VkDescriptorSetLayoutBinding imguiBinding{};
 		imguiBinding.binding = 0;
@@ -3350,16 +3296,14 @@ private:
 		}
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
-		dml::mat4 model = newModel * unflattenMatrix(m.modelMatrix);
-		flattenMatrix(model, m.modelMatrix);
-
+		m.modelMatrix = newModel * m.modelMatrix;
 		objects.push_back(std::move(m));
 
 	}
 
 	void realtimeLoad(std::string p) {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		dml::vec3 pos = dml::getCamWorldPos(unflattenMatrix(cam.viewMatrix));
+		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
@@ -3941,7 +3885,7 @@ private:
 		commandPool = createCommandPool();
 		initializeMouseInput(true);
 		loadUniqueObjects();
-		scatterObjects(300, 2.0f);
+		//scatterObjects(300, 2.0f);
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
