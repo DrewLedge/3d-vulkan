@@ -79,7 +79,7 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="dml.h">
+    <ClInclude Include="dml.hpp">
       <Filter>Source Files</Filter>
     </ClInclude>
     <ClInclude Include="stb_image.h">
@@ -99,6 +99,9 @@
     </ClInclude>
     <ClInclude Include="ext\imgui\imgui_internal.h">
       <Filter>Header Files\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="dvl.hpp">
+      <Filter>Source Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

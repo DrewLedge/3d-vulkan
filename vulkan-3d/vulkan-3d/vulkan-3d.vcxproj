@@ -150,12 +150,13 @@
     <None Include="sky.vert" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="dvl.hpp" />
     <ClInclude Include="ext\imgui\imconfig.h" />
     <ClInclude Include="ext\imgui\imgui.h" />
     <ClInclude Include="ext\imgui\imgui_impl_glfw.h" />
     <ClInclude Include="ext\imgui\imgui_impl_vulkan.h" />
     <ClInclude Include="ext\imgui\imgui_internal.h" />
-    <ClInclude Include="dml.h" />
+    <ClInclude Include="dml.hpp" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
