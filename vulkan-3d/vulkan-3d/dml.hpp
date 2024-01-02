@@ -147,6 +147,9 @@ public:
 		vec2 crossProd(const vec2& other) const {
 			return vec2(x * other.y, y * other.x);
 		}
+		float length() const {
+			return std::sqrt(x * x + y * y);
+		}
 	};
 	struct vec4 {
 		float x, y, z, w;

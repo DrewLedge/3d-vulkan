@@ -3,8 +3,10 @@
 
 #pragma once
 #include "dml.hpp"
+#include <queue>
 #ifndef DVL_H
 #define DVL_H
+
 class dvl {
 public:
 	struct Vertex {
@@ -131,6 +133,31 @@ public:
 			tangent.y = normalizedTangent.y;
 			tangent.z = normalizedTangent.z;
 		}
+	}
+
+	struct Edge {
+		uint32_t v1, v2; // vertex indices
+		float error; // error metric for this edge
+
+		bool operator>(const Edge& other) const {
+			return error > other.error;
+		}
+	};
+
+	static void simplifyMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, float percent) {
+		if (percent == 0 || percent > 100) {
+			throw std::invalid_argument("Percent must be between 1 and 100!!!");
+		}
+		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> edgeQueue;
+		std::unordered_map<uint64_t, float> edgeErrors;
+	}
+private:
+	static uint64_t encodeEdgeKey(uint32_t v1, uint32_t v2) { // encodes two vertex indices into a single 64-bit integer
+		return static_cast<uint64_t>(v1) << 32 | v2;
+	}
+
+	static std::pair<uint32_t, uint32_t> decodeEdgeKey(uint64_t key) { // decodes a 64-bit integer into two vertex indices
+		return { static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key & 0xFFFFFFFF) };
 	}
 };
 

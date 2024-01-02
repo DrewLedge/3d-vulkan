@@ -1286,6 +1286,7 @@ private:
 				}
 				newObject.vertices = tempVertices;
 				newObject.indices = tempIndices;
+				dvl::simplifyMesh(newObject.vertices, newObject.indices, 80);
 
 				// set the newObject as loaded
 				newObject.isLoaded = true;
@@ -1476,8 +1477,6 @@ private:
 		return imageView;
 	}
 
-
-
 	void createImageViews() { //create the image views for the swap chain images
 		swap.imageViews.resize(swap.images.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swap.images.size(); i++) {
@@ -1581,8 +1580,6 @@ private:
 		vkUnmapMemory(device, cam.bufferMem);
 	}
 
-
-
 	void setupLights() {
 		VkBufferCreateInfo bufferCreateInfo = {};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1614,6 +1611,7 @@ private:
 	void printVec3(const dml::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
 	}
+
 	void printVec4(const dml::vec4& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << ", " << vector.w << "}" << std::endl;
 	}
@@ -1709,6 +1707,7 @@ private:
 			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
 		}
 	}
+
 	void guiDSPool() { // descriptor pool for imgui
 		VkDescriptorPoolSize poolSize{};
 		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1725,6 +1724,7 @@ private:
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
+
 	std::vector<Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
@@ -1767,7 +1767,6 @@ private:
 		return allMaps;
 	}
 
-
 	VkDescriptorSetLayout createDSLayout(uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags) {
 		VkDescriptorSetLayoutBinding binding{};
 		binding.binding = bindingIndex;
@@ -1799,7 +1798,6 @@ private:
 
 		return descriptorSetLayout;
 	}
-
 
 	VkDescriptorPool createDSPool(VkDescriptorType type, uint32_t descriptorCount) {
 		VkDescriptorPoolSize poolSize{};
@@ -1952,7 +1950,6 @@ private:
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
-
 
 	void setupDescriptorSets(bool initial = true) {
 		descs.sets.clear();
@@ -3295,6 +3292,43 @@ private:
 			}
 		}
 	}
+
+	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always); //set the position of the window
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always); //set the size of the window
+
+		if (backgroundColor.x != -1) {
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, backgroundColor);
+		}
+
+		ImGui::Begin("TextWindow", nullptr,
+			ImGuiWindowFlags_NoTitleBar |
+			ImGuiWindowFlags_NoResize |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoScrollbar |
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoInputs |
+			ImGuiWindowFlags_NoBringToFrontOnFocus);
+		if (font != nullptr) { //if font exists, use it. otherwise, use the default font
+			ImGui::PushFont(font);
+		}
+		if (font != nullptr) {
+			ImGui::PopFont();
+		}
+		float font_size = ImGui::GetFontSize();
+		float text_width = ImGui::CalcTextSize(text).x;
+		float window_width = ImGui::GetWindowSize().x;
+		float centered_start_position = (window_width - text_width) / 2.0f;
+
+		ImGui::SetCursorPosX(centered_start_position); // center the text around the x position cords
+		ImGui::TextUnformatted(text); // dont format the text
+
+		if (backgroundColor.x != -1) {
+			ImGui::PopStyleColor();  // revert background color change
+		}
+		ImGui::End();
+	}
+
 	void createFB(VkFramebuffer& frameBuf, VkImageView IV, uint32_t width, uint32_t height) {
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -3582,41 +3616,6 @@ private:
 		recordCommandBuffers();
 	}
 
-	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
-		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always); //set the position of the window
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always); //set the size of the window
-
-		if (backgroundColor.x != -1) {
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, backgroundColor);
-		}
-
-		ImGui::Begin("TextWindow", nullptr,
-			ImGuiWindowFlags_NoTitleBar |
-			ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoMove |
-			ImGuiWindowFlags_NoScrollbar |
-			ImGuiWindowFlags_NoSavedSettings |
-			ImGuiWindowFlags_NoInputs |
-			ImGuiWindowFlags_NoBringToFrontOnFocus);
-		if (font != nullptr) { //if font exists, use it. otherwise, use the default font
-			ImGui::PushFont(font);
-		}
-		if (font != nullptr) {
-			ImGui::PopFont();
-		}
-		float font_size = ImGui::GetFontSize();
-		float text_width = ImGui::CalcTextSize(text).x;
-		float window_width = ImGui::GetWindowSize().x;
-		float centered_start_position = (window_width - text_width) / 2.0f;
-
-		ImGui::SetCursorPosX(centered_start_position); // center the text around the x position cords
-		ImGui::TextUnformatted(text); // dont format the text
-
-		if (backgroundColor.x != -1) {
-			ImGui::PopStyleColor();  // revert background color change
-		}
-		ImGui::End();
-	}
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
 		auto endTime = std::chrono::steady_clock::now();
 		frameCount++;
@@ -3629,8 +3628,6 @@ private:
 			prev = endTime;
 		}
 	}
-
-
 
 	void mainLoop() {
 		uint8_t frameCount = 0;
@@ -3791,7 +3788,7 @@ private:
 	void scatterObjects(int count, float radius) {
 		for (int i = 0; i < count; i++) {
 			// generate random angles (rads)
-			float theta = (float(rand()) / float(RAND_MAX)) * 2.0f * 3.14159f;
+			float theta = (float(rand()) / float(RAND_MAX)) * 2.0f * PI;
 			float phi = acos(2.0f * (float(rand()) / float(RAND_MAX)) - 1.0f);
 
 			// convert to cartesian coordinates
@@ -3870,8 +3867,7 @@ private:
 	// 19. lighting (done)
 	// 20. shadows (done)
 	// 22. skybox (done)
-	// 23. cleanup codebase
-	// 24. omnidirectional lighting using cubemaps
+	// 23. cleanup codebase (done)
 };
 int main() {
 	Engine app;
