@@ -148,8 +148,6 @@ public:
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
-		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> edgeQueue;
-		std::unordered_map<uint64_t, float> edgeErrors;
 	}
 private:
 	static uint64_t encodeEdgeKey(uint32_t v1, uint32_t v2) { // encodes two vertex indices into a single 64-bit integer
@@ -159,6 +157,36 @@ private:
 	static std::pair<uint32_t, uint32_t> decodeEdgeKey(uint64_t key) { // decodes a 64-bit integer into two vertex indices
 		return { static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key & 0xFFFFFFFF) };
 	}
+
+	dml::mat4 calcFaceQuadric(const Vertex& v1, const Vertex& v2, const Vertex& v3) {
+		dml::vec3 normal = dml::cross(v2.pos - v1.pos, v3.pos - v1.pos);
+		normal = dml::normalize(normal);
+		float d = -dml::dot(normal, v1.pos);
+
+		dml::vec4 plane(normal, d);
+		dml::mat4 quadric = dml::outerProduct(plane, plane);
+
+		return quadric;
+	}
+
+	std::vector<dml::mat4> calcVertQuadrics(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+		std::vector<dml::mat4> quadrics(vertices.size(), dml::mat4(0.0f));
+
+		for (size_t i = 0; i < indices.size(); i += 3) {
+			dml::mat4 faceQuadric = calcFaceQuadric(vertices[indices[i]], vertices[indices[i + 1]], vertices[indices[i + 2]]);
+			quadrics[indices[i]] += faceQuadric;
+			quadrics[indices[i + 1]] += faceQuadric;
+			quadrics[indices[i + 2]] += faceQuadric;
+		}
+
+		return quadrics;
+	}
+
+	float calcVertError(const dml::mat4& quadric, const dml::vec3& pos) {
+		dml::vec4 pos4(pos, 1.0f);
+		return dml::dot(quadric * pos4, pos4);
+	}
+
 };
 
 #endif

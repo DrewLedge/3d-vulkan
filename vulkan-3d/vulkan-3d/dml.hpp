@@ -156,6 +156,7 @@ public:
 
 		vec4() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
 		vec4(float x, float y, float z, float w) : x(x), y(y), z(z), w(w) {}
+		vec4(const vec3& v, float w) : x(v.x), y(v.y), z(v.z), w(w) {}
 
 		vec2 xy() const { return vec2(x, y); }
 		vec3 xyz() const { return vec3(x, y, z); }
@@ -353,6 +354,25 @@ public:
 			return vec4(x, y, z, w);
 		}
 
+		mat4 operator +(const mat4& other) const {
+			mat4 result;
+			for (int i = 0; i < 4; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					result.m[i][j] = m[i][j] + other.m[i][j];
+				}
+			}
+			return result;
+		}
+
+		mat4& operator +=(const mat4& other) {
+			for (int i = 0; i < 4; ++i) {
+				for (int j = 0; j < 4; ++j) {
+					m[i][j] += other.m[i][j];
+				}
+			}
+			return *this;
+		}
+
 		mat4 transpose() const {
 			mat4 result;
 			for (int i = 0; i < 4; ++i) {
@@ -424,6 +444,10 @@ public:
 	static float dot(const vec3& a, const vec3& b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	}
+	static float dot(const vec4& a, const vec4& b) {
+		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+	}
+
 	static vec3 normalize(const vec3& v) {
 		float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
 
@@ -473,6 +497,17 @@ public:
 	}
 
 	// ------------------ MATRIX4 FORMULAS ------------------ // 
+	static mat4 outerProduct(const vec4& a, const vec4& b) {
+		mat4 result;
+		for (int i = 0; i < 4; i++) {
+			result.m[i][0] = a[i] * b.x;
+			result.m[i][1] = a[i] * b.y;
+			result.m[i][2] = a[i] * b.z;
+			result.m[i][3] = a[i] * b.w;
+		}
+		return result;
+	}
+
 	static vec4 quatCast(const mat4& mat) {
 		float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
 		vec4 quaternion;
