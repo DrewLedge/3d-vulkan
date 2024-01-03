@@ -150,6 +150,9 @@ public:
 		float length() const {
 			return std::sqrt(x * x + y * y);
 		}
+		vec2 operator/(float scalar) const {
+			return vec2(x / scalar, y / scalar);
+		}
 	};
 	struct vec4 {
 		float x, y, z, w;

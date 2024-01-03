@@ -86,6 +86,14 @@ public:
 		}
 	};
 
+	struct PairHash {
+		size_t operator()(const std::pair<uint32_t, uint32_t>& pair) const {
+			auto hash1 = std::hash<uint32_t>{}(pair.first);
+			auto hash2 = std::hash<uint32_t>{}(pair.second);
+			return hash1 ^ (hash2 << 1); // combine the hashes
+		}
+	};
+
 	static void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents, const void* rawIndices, size_t size) {
 		for (size_t i = 0; i < size; i += 3) {
 			uint32_t i1 = static_cast<const uint32_t*>(rawIndices)[i];
@@ -144,14 +152,23 @@ public:
 		}
 	};
 
+	struct HalfEdge {
+		uint32_t vert; // vert at the end of the halfedge
+		uint32_t pair; // oppositely oriented adjacent halfedge 
+		uint32_t face; // face the halfedge borders
+		uint32_t next; // next halfedge around the face
+	};
+
 	static void simplifyMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, float percent) {
 		// help from: https://graphics.stanford.edu/courses/cs468-10-fall/LectureSlides/08_Simplification.pdf
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
 
+		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
+
 		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> queue;
-		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, indices);
+		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges);
 
 		size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
 		initQueue(queue, vertices, indices, quadrics);
@@ -162,8 +179,43 @@ public:
 		}
 	}
 private:
+	// convert the array of vertecies and indicies into a half edge data structure
+	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
+		std::vector<HalfEdge> halfEdges(indices.size());
 
-	static dml::mat4 calcFaceQuadric(const Vertex& v1, const Vertex& v2, const Vertex& v3) {
+		for (uint32_t i = 0; i < indices.size(); i += 3) {
+			for (uint32_t j = 0; j < 3; ++j) {
+				uint32_t currentIndex = i + j;
+				uint32_t nextIndex = i + (j + 1) % 3;
+
+				uint32_t vert1 = indices[currentIndex];
+				uint32_t vert2 = indices[nextIndex];
+
+				halfEdges[currentIndex].vert = vert2;
+				halfEdges[currentIndex].face = currentIndex / 3;
+				halfEdges[currentIndex].next = nextIndex;
+
+				auto edgePair = std::make_pair(vert1, vert2);
+				edgeMap[edgePair] = currentIndex;
+
+				auto it = edgeMap.find(std::make_pair(vert2, vert1));
+				if (it != edgeMap.end()) {
+					uint32_t twinIndex = it->second;
+					halfEdges[currentIndex].pair = twinIndex;
+					halfEdges[twinIndex].pair = currentIndex;
+				}
+			}
+		}
+
+		return halfEdges;
+	}
+
+	static dml::mat4 calcFaceQuadric(const HalfEdge& h1, const HalfEdge& h2, const HalfEdge& h3, const std::vector<Vertex>& vertices) {
+		const Vertex& v1 = vertices[h1.vert];
+		const Vertex& v2 = vertices[h2.vert];
+		const Vertex& v3 = vertices[h3.vert];
+
 		dml::vec3 normal = dml::cross(v2.pos - v1.pos, v3.pos - v1.pos);
 		normal = dml::normalize(normal);
 		float d = -dml::dot(normal, v1.pos);
@@ -174,14 +226,14 @@ private:
 		return quadric;
 	}
 
-	static std::vector<dml::mat4> calcVertQuadrics(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+	static std::vector<dml::mat4> calcVertQuadrics(const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges) {
 		std::vector<dml::mat4> quadrics(vertices.size(), dml::mat4(0.0f));
 
-		for (size_t i = 0; i < indices.size(); i += 3) {
-			dml::mat4 faceQuadric = calcFaceQuadric(vertices[indices[i]], vertices[indices[i + 1]], vertices[indices[i + 2]]);
-			quadrics[indices[i]] += faceQuadric;
-			quadrics[indices[i + 1]] += faceQuadric;
-			quadrics[indices[i + 2]] += faceQuadric;
+		for (size_t i = 0; i < halfEdges.size(); i += 3) {
+			dml::mat4 faceQuadric = calcFaceQuadric(halfEdges[i], halfEdges[i + 1], halfEdges[i + 2], vertices);
+			quadrics[halfEdges[i].vert] += faceQuadric;
+			quadrics[halfEdges[i + 1].vert] += faceQuadric;
+			quadrics[halfEdges[i + 2].vert] += faceQuadric;
 		}
 
 		return quadrics;
@@ -210,6 +262,15 @@ private:
 				}
 			}
 		}
+	}
+
+	static void updateVertAttributes(Vertex& vertex, const Vertex& other) {
+		vertex.tex = (vertex.tex + other.tex) / 2.0f;
+		vertex.col = (vertex.col + other.col) / 2.0f;
+		vertex.normal = (vertex.normal + other.normal) / 2.0f;
+		vertex.alpha = (vertex.alpha + other.alpha) / 2.0f;
+		vertex.tangent = (vertex.tangent + other.tangent) / 2.0f;
+
 	}
 
 };
