@@ -1286,7 +1286,6 @@ private:
 				}
 				newObject.vertices = tempVertices;
 				newObject.indices = tempIndices;
-				dvl::simplifyMesh(newObject.vertices, newObject.indices, 80);
 
 				// set the newObject as loaded
 				newObject.isLoaded = true;
@@ -3765,6 +3764,7 @@ private:
 		commandPool = createCommandPool();
 		initializeMouseInput(true);
 		loadUniqueObjects();
+		dvl::simplifyMesh(objects[2].vertices, objects[2].indices, 50);
 		//scatterObjects(300, 2.0f);
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();

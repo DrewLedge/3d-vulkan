@@ -145,20 +145,25 @@ public:
 	};
 
 	static void simplifyMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, float percent) {
+		// help from: https://graphics.stanford.edu/courses/cs468-10-fall/LectureSlides/08_Simplification.pdf
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
+
+		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> queue;
+		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, indices);
+
+		size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
+		initQueue(queue, vertices, indices, quadrics);
+		while (vertices.size() > targetVertices) {
+			Edge bestEdge = findBestEC(queue);
+			//collapseEdge(vertices, indices, bestEdge, queue, quadrics);
+			std::cout << vertices.size() << " / " << targetVertices << std::endl;
+		}
 	}
 private:
-	static uint64_t encodeEdgeKey(uint32_t v1, uint32_t v2) { // encodes two vertex indices into a single 64-bit integer
-		return static_cast<uint64_t>(v1) << 32 | v2;
-	}
 
-	static std::pair<uint32_t, uint32_t> decodeEdgeKey(uint64_t key) { // decodes a 64-bit integer into two vertex indices
-		return { static_cast<uint32_t>(key >> 32), static_cast<uint32_t>(key & 0xFFFFFFFF) };
-	}
-
-	dml::mat4 calcFaceQuadric(const Vertex& v1, const Vertex& v2, const Vertex& v3) {
+	static dml::mat4 calcFaceQuadric(const Vertex& v1, const Vertex& v2, const Vertex& v3) {
 		dml::vec3 normal = dml::cross(v2.pos - v1.pos, v3.pos - v1.pos);
 		normal = dml::normalize(normal);
 		float d = -dml::dot(normal, v1.pos);
@@ -169,7 +174,7 @@ private:
 		return quadric;
 	}
 
-	std::vector<dml::mat4> calcVertQuadrics(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+	static std::vector<dml::mat4> calcVertQuadrics(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::vector<dml::mat4> quadrics(vertices.size(), dml::mat4(0.0f));
 
 		for (size_t i = 0; i < indices.size(); i += 3) {
@@ -182,9 +187,29 @@ private:
 		return quadrics;
 	}
 
-	float calcVertError(const dml::mat4& quadric, const dml::vec3& pos) {
+	static float calcVertError(const dml::mat4& quadric, const dml::vec3& pos) {
 		dml::vec4 pos4(pos, 1.0f);
 		return dml::dot(quadric * pos4, pos4);
+	}
+
+	static Edge findBestEC(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q) { // find the best edge to collapse
+		Edge bestEdge = q.top();
+		q.pop();
+		return bestEdge;
+	}
+
+	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<dml::mat4>& quadrics) {
+		for (size_t i = 0; i < indices.size(); i += 3) {
+			for (size_t j = i; j < i + 3; ++j) {
+				for (size_t k = j + 1; k < i + 3; ++k) {
+					Edge e;
+					e.v1 = indices[j];
+					e.v2 = indices[k];
+					e.error = calcVertError(quadrics[e.v1], vertices[e.v1].pos) + calcVertError(quadrics[e.v2], vertices[e.v2].pos);
+					q.push(e);
+				}
+			}
+		}
 	}
 
 };
