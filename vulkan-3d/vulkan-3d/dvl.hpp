@@ -4,6 +4,8 @@
 #pragma once
 #include "dml.hpp"
 #include <queue>
+#include <unordered_map>
+#include <unordered_set>
 #ifndef DVL_H
 #define DVL_H
 
@@ -164,22 +166,22 @@ public:
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
+		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> queue;
 
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
-
-		std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>> queue;
-		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges);
+		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
+		initQueue(queue, vertices, halfEdges, quadrics);
 
 		size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
-		initQueue(queue, vertices, indices, quadrics);
-		while (vertices.size() > targetVertices) {
+		while (halfEdges.size() / 2 > targetVertices) {
 			Edge bestEdge = findBestEC(queue);
 			//collapseEdge(vertices, indices, bestEdge, queue, quadrics);
-			std::cout << vertices.size() << " / " << targetVertices << std::endl;
+			//std::cout << vertices.size() << " / " << targetVertices << std::endl;
 		}
+		/// TODO: convert the half edges back into vertices and indices
 	}
 private:
-	// convert the array of vertecies and indicies into a half edge data structure
+	// convert the array of vertices and indicies into a half edge data structure
 	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
 		std::vector<HalfEdge> halfEdges(indices.size());
@@ -250,17 +252,28 @@ private:
 		return bestEdge;
 	}
 
-	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices, const std::vector<dml::mat4>& quadrics) {
-		for (size_t i = 0; i < indices.size(); i += 3) {
-			for (size_t j = i; j < i + 3; ++j) {
-				for (size_t k = j + 1; k < i + 3; ++k) {
-					Edge e;
-					e.v1 = indices[j];
-					e.v2 = indices[k];
-					e.error = calcVertError(quadrics[e.v1], vertices[e.v1].pos) + calcVertError(quadrics[e.v2], vertices[e.v2].pos);
-					q.push(e);
-				}
-			}
+	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics) {
+		std::unordered_set<std::pair<uint32_t, uint32_t>, PairHash> c;
+
+		for (const auto& halfEdge : halfEdges) {
+			uint32_t v1 = halfEdge.vert;
+			uint32_t v2 = halfEdges[halfEdge.pair].vert;
+
+			// ensure each edge is only processed once
+			if (v1 > v2) std::swap(v1, v2);
+			if (c.find(std::make_pair(v1, v2)) != c.end()) continue;
+			c.insert(std::make_pair(v1, v2));
+
+			Edge e;
+			e.v1 = v1;
+			e.v2 = v2;
+
+			// compute the edge collapse error
+			dml::mat4 combinedQuadric = quadrics[v1] + quadrics[v2];
+			dml::vec3 midPoint = (vertices[v1].pos + vertices[v2].pos) / 2.0f;
+			e.error = calcVertError(combinedQuadric, midPoint);
+
+			q.push(e);
 		}
 	}
 
