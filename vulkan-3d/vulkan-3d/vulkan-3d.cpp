@@ -1293,6 +1293,8 @@ private:
 				newObject.position = pos;
 				newObject.rotation = rot;
 
+				dvl::simplifyMesh(newObject.vertices, newObject.indices, 50);
+
 				// calculate the model matrix for the mesh
 				newObject.modelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
 
@@ -3764,7 +3766,6 @@ private:
 		commandPool = createCommandPool();
 		initializeMouseInput(true);
 		loadUniqueObjects();
-		dvl::simplifyMesh(objects[2].vertices, objects[2].indices, 50);
 		//scatterObjects(300, 2.0f);
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();

@@ -172,13 +172,14 @@ public:
 		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
 		initQueue(queue, vertices, halfEdges, quadrics);
 
-		size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
-		while (halfEdges.size() / 2 > targetVertices) {
-			Edge bestEdge = findBestEC(queue);
-			//collapseEdge(vertices, indices, bestEdge, queue, quadrics);
-			//std::cout << vertices.size() << " / " << targetVertices << std::endl;
-		}
-		/// TODO: convert the half edges back into vertices and indices
+		//size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
+		//while (halfEdges.size() / 2 > targetVertices) {
+		//	Edge bestEdge = findBestEC(queue);
+		//	//collapseEdge(vertices, indices, bestEdge, queue, quadrics);
+		//	//std::cout << vertices.size() << " / " << targetVertices << std::endl;
+		//}
+		std::vector<Vertex> originalVertices = vertices;
+		undoHalfEdges(halfEdges, vertices, indices, originalVertices);
 	}
 private:
 	// convert the array of vertices and indicies into a half edge data structure
@@ -196,7 +197,7 @@ private:
 
 				halfEdges[currentIndex].vert = vert2;
 				halfEdges[currentIndex].face = currentIndex / 3;
-				halfEdges[currentIndex].next = nextIndex;
+				halfEdges[currentIndex].next = (currentIndex % 3 == 2) ? (currentIndex - 2) : (currentIndex + 1);
 
 				auto edgePair = std::make_pair(vert1, vert2);
 				edgeMap[edgePair] = currentIndex;
@@ -212,6 +213,34 @@ private:
 
 		return halfEdges;
 	}
+
+	// function to convert a halfedge back into vertices and indices
+	static void undoHalfEdges(const std::vector<HalfEdge>& halfEdges, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices,
+		const std::vector<Vertex>& ov) {
+		vertices.clear();
+		indices.clear();
+
+		std::unordered_set<uint32_t> processedFaces;
+		std::unordered_map<uint32_t, uint32_t> vertexMap;
+
+		for (const HalfEdge& h : halfEdges) {
+			if (processedFaces.find(h.face) != processedFaces.end()) continue;
+			processedFaces.insert(h.face);
+
+			uint32_t ind = &h - &halfEdges[0]; // current index of the halfedge
+			for (int i = 0; i < 3; ++i) {
+				uint32_t vertIndex = halfEdges[ind].vert;
+				if (vertexMap.find(vertIndex) == vertexMap.end()) {
+					// add vertex if it hasnt been added before
+					vertexMap[vertIndex] = vertices.size();
+					vertices.push_back(ov[vertIndex]);
+				}
+				indices.push_back(vertexMap[vertIndex]);
+				ind = halfEdges[ind].next;
+			}
+		}
+	}
+
 
 	static dml::mat4 calcFaceQuadric(const HalfEdge& h1, const HalfEdge& h2, const HalfEdge& h3, const std::vector<Vertex>& vertices) {
 		const Vertex& v1 = vertices[h1.vert];
