@@ -148,9 +148,14 @@ public:
 	struct Edge {
 		uint32_t v1, v2; // vertex indices
 		float error; // error metric for this edge
+		bool valid = true;
 
 		bool operator>(const Edge& other) const {
 			return error > other.error;
+		}
+
+		bool isValid() const {
+			return valid;
 		}
 	};
 
@@ -170,18 +175,146 @@ public:
 
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
 		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
-		initQueue(queue, vertices, halfEdges, quadrics);
 
-		//size_t targetVertices = static_cast<size_t>(vertices.size() * (percent / 100));
-		//while (halfEdges.size() / 2 > targetVertices) {
-		//	Edge bestEdge = findBestEC(queue);
-		//	//collapseEdge(vertices, indices, bestEdge, queue, quadrics);
-		//	//std::cout << vertices.size() << " / " << targetVertices << std::endl;
-		//}
+		initQueue(queue, vertices, halfEdges, quadrics);
+		uint32_t targetHalfEdges = static_cast<uint32_t>(indices.size() * (percent / 100.0f));
+
+		int i = 0;
+		while (halfEdges.size() > targetHalfEdges) {
+			if (i >= 151) {
+				std::cout << "Reached max iterations" << std::endl;
+			}
+			auto start = std::chrono::high_resolution_clock::now();
+			Edge bestEdge = findBestEC(queue);
+			collapseEdge(queue, halfEdges, quadrics, bestEdge, vertices);
+			auto stop = std::chrono::high_resolution_clock::now();
+			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+
+			std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
+				<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
+				<< ". queue size: " << queue.size() << std::endl;
+			i++;
+		}
+
 		std::vector<Vertex> originalVertices = vertices;
 		undoHalfEdges(halfEdges, vertices, indices, originalVertices);
 	}
 private:
+	static void collapseEdge(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& queue,
+		std::vector<HalfEdge>& halfEdges, std::vector<dml::mat4>& quadrics, Edge& bestEdge, std::vector<Vertex>& verts) {
+		uint32_t v1 = bestEdge.v1;
+		uint32_t v2 = bestEdge.v2;
+
+		updateVertAttributes(verts[v1], verts[v2]);
+
+		// get the new pos for the vertex
+		verts[v1].pos = (verts[v1].pos + verts[v2].pos) / 2.0f;
+
+		// update quadrics for the affected vertices
+		quadrics[v1] = quadrics[v1] + quadrics[v2];
+
+		// for each halfedge around v2, update the vertex to v1
+		std::vector<HalfEdge> v2connectedHE = getConnectedHalfEdges(v2, halfEdges);
+		for (auto& h : v2connectedHE) {
+			h.vert = v1;
+		}
+
+		// directly update halfedges
+		for (auto& h : halfEdges) {
+			if (h.vert == v2) h.vert = v1;
+			if (h.pair == v2) h.pair = v1;
+			if (h.next == v2) h.next = v1;
+
+		}
+
+		// remove redundant halfedges
+		halfEdges.erase(
+			std::remove_if(halfEdges.begin(), halfEdges.end(),
+				[&](const HalfEdge& h) { return h.vert == h.next || h.vert == v2; }),
+			halfEdges.end());
+
+		// update remaining half-edge indices
+		for (auto& h : halfEdges) {
+			if (h.vert > v2) --h.vert;
+			if (h.pair > v2) --h.pair;
+			if (h.next > v2) --h.next;
+		}
+
+		// remove v2 and its quadric
+		if (v2 < verts.size() - 1) {
+			std::swap(verts[v2], verts.back());
+			std::swap(quadrics[v2], quadrics.back());
+		}
+		verts.pop_back();
+		quadrics.pop_back();
+
+		// find all vertices connected to the updated vertex
+		std::unordered_set<uint32_t> affectedVertices;
+		std::vector<HalfEdge> v1connectedHE = getConnectedHalfEdges(v1, halfEdges);
+		for (const auto& he : v1connectedHE) {
+			affectedVertices.insert(halfEdges[he.pair].vert);
+		}
+
+		// for each affected vertex, update the edge in the queue if it exists
+		// this is broken
+		for (uint32_t v : affectedVertices) {
+			if (v != v1) {
+				Edge e;
+				e.v1 = std::min(v, v1);
+				e.v2 = std::max(v, v1);
+
+				// compute the edge collapse error for the updated edge
+				dml::mat4 combinedQuadric = quadrics[e.v1] + quadrics[e.v2];
+				dml::vec3 midPoint = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
+				e.error = calcVertError(combinedQuadric, midPoint);
+
+				// update the edge in the queue
+				queue.push(e);
+			}
+		}
+	}
+
+	static Edge findBestEC(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q) { // find the best edge to collapse
+		Edge bestEdge = q.top();
+		q.pop();
+		return bestEdge;
+	}
+
+	// get the halfedges connected to a vertex
+	static std::vector<HalfEdge> getConnectedHalfEdges(uint32_t vertex, const std::vector<HalfEdge>& halfEdges) {
+		std::vector<HalfEdge> connectedHalfEdges;
+		std::unordered_set<uint32_t> visited;
+
+		// find a starting halfedge connected to the vertex
+		uint32_t start = std::numeric_limits<uint32_t>::max();
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			if (halfEdges[i].vert == vertex) {
+				start = i;
+				break;
+			}
+		}
+
+		// if no starting halfedge was found return an empty vector
+		if (start == std::numeric_limits<uint32_t>::max()) {
+			std::cerr << "No starting halfedge found for vertex " << vertex << std::endl;
+			return connectedHalfEdges;
+		}
+
+		uint32_t current = start;
+		do {
+			connectedHalfEdges.push_back(halfEdges[current]);
+
+			uint32_t nextIndex = halfEdges[current].next;
+			uint32_t pairIndex = halfEdges[nextIndex].pair;
+
+			if (visited.find(current) != visited.end()) break;
+			visited.insert(pairIndex);
+			current = pairIndex;
+		} while (current != start && visited.find(current) == visited.end());
+
+		return connectedHalfEdges;
+	}
+
 	// convert the array of vertices and indicies into a half edge data structure
 	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
@@ -214,7 +347,7 @@ private:
 		return halfEdges;
 	}
 
-	// function to convert a halfedge back into vertices and indices
+	// function to convert the halfedges back into vertices and indices
 	static void undoHalfEdges(const std::vector<HalfEdge>& halfEdges, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices,
 		const std::vector<Vertex>& ov) {
 		vertices.clear();
@@ -273,12 +406,6 @@ private:
 	static float calcVertError(const dml::mat4& quadric, const dml::vec3& pos) {
 		dml::vec4 pos4(pos, 1.0f);
 		return dml::dot(quadric * pos4, pos4);
-	}
-
-	static Edge findBestEC(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q) { // find the best edge to collapse
-		Edge bestEdge = q.top();
-		q.pop();
-		return bestEdge;
 	}
 
 	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics) {
