@@ -154,18 +154,26 @@ public:
 		}
 
 		bool operator==(const Edge& other) const {
-			return (v1 == other.v1 && v2 == other.v2);
+			return (v1 == other.v1 && v2 == other.v2) || (v1 == other.v2 && v2 == other.v1);
 		}
 	};
+
+	struct EdgeInfo {
+		double error;
+		bool valid;
+	};
+
+
 
 	struct EdgeHash {
 		size_t operator()(const Edge& e) const {
-			auto hash1 = std::hash<uint32_t>{}(e.v1);
-			auto hash2 = std::hash<uint32_t>{}(e.v2);
+			auto min = std::min(e.v1, e.v2);
+			auto max = std::max(e.v1, e.v2);
+			auto hash1 = std::hash<uint32_t>{}(min);
+			auto hash2 = std::hash<uint32_t>{}(max);
 			return hash1 ^ (hash2 << 1); // combine the hashes
 		}
 	};
-
 
 	struct HalfEdge {
 		uint32_t vert; // vert at the end of the halfedge
@@ -183,25 +191,25 @@ public:
 
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
 		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
-		std::unordered_set<Edge, EdgeHash> invalidEdges;
+		std::unordered_map<Edge, EdgeInfo, EdgeHash> edgeMap;
 
-		initQueue(queue, vertices, halfEdges, quadrics);
+		initQueue(queue, vertices, halfEdges, quadrics, edgeMap);
 		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
 
 		int i = 0;
 		while (vertices.size() > targetVerts) {
-			if (i >= 5720) {
-				std::cout << "Breakpoint" << std::endl;
+			if (i >= 64) {
+				std::cout << "Breakpoint at: " << i << std::endl;
 			}
 			auto start = std::chrono::high_resolution_clock::now();
-			Edge bestEdge = findBestEC(queue, invalidEdges);
-			collapseEdge(queue, invalidEdges, halfEdges, quadrics, bestEdge, vertices);
+			Edge bestEdge = findBestEC(queue, edgeMap);
+			collapseEdge(queue, edgeMap, halfEdges, quadrics, bestEdge, vertices);
 			auto stop = std::chrono::high_resolution_clock::now();
 			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
 
 			std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
 				<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
-				<< "/" << targetVerts << ". queue size: " << queue.size() << std::endl;
+				<< "/" << targetVerts << ". queue size: " << queue.size() << " " << edgeMap.size() << std::endl;
 			i++;
 		}
 
@@ -210,7 +218,7 @@ public:
 	}
 private:
 	static void collapseEdge(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& queue,
-		std::unordered_set<Edge, EdgeHash>& invalidEdges, std::vector<HalfEdge>& halfEdges, std::vector<dml::mat4>& quadrics,
+		std::unordered_map<Edge, EdgeInfo, EdgeHash>& edgeMap, std::vector<HalfEdge>& halfEdges, std::vector<dml::mat4>& quadrics,
 		Edge& bestEdge, std::vector<Vertex>& verts) {
 		uint32_t v1 = bestEdge.v1;
 		uint32_t v2 = bestEdge.v2;
@@ -223,8 +231,7 @@ private:
 		// update quadrics for the affected vertices
 		quadrics[v1] = quadrics[v1] + quadrics[v2];
 
-		markInvalidEdges(invalidEdges, v1, halfEdges);
-		markInvalidEdges(invalidEdges, v2, halfEdges);
+		markInvalidEdges(edgeMap, v2, halfEdges);
 
 		// for each halfedge around v2, update the vertex to v1
 		std::vector<uint32_t> v2ind = getConnectedHalfEdgeIndices(v2, halfEdges);
@@ -263,7 +270,7 @@ private:
 
 		// find all vertices connected to the updated vertex
 		std::unordered_set<uint32_t> affectedVertices;
-		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v2, halfEdges);
+		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v1, halfEdges);
 		for (uint32_t index : v1ind) {
 			HalfEdge& h = halfEdges[index];
 			affectedVertices.insert(halfEdges[h.pair].vert);
@@ -277,41 +284,56 @@ private:
 				e.v1 = std::min(v, v1);
 				e.v2 = std::max(v, v1);
 
-				invalidEdges.insert(e); // mark the edge as invalid
-
 				// compute the edge collapse error for the updated edge
 				dml::mat4 combinedQuadric = quadrics[e.v1] + quadrics[e.v2];
 				dml::vec3 midPoint = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
 				e.error = calcVertError(combinedQuadric, midPoint);
 
 				// update the edge in the queue
-				queue.push(e);
+				auto it = edgeMap.find(e);
+				if (it != edgeMap.end()) { // if the edge already exists in the queue, update it
+					it->second.error = e.error;
+					it->second.valid = true;
+				}
+				else {
+					edgeMap[e] = { e.error, true };
+				}
 			}
 		}
 	}
 
 	// find the best edge to collapse and remove invalid edges from the queue
 	static Edge findBestEC(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q,
-		std::unordered_set<Edge, EdgeHash>& invalidEdges) {
-		Edge bestEdge = q.top();
-		while (invalidEdges.find(bestEdge) != invalidEdges.end()) {
+		std::unordered_map<Edge, EdgeInfo, EdgeHash>& edgeMap) {
+		while (!q.empty()) {
+			Edge bestEdge = q.top();
 			q.pop();
-			bestEdge = q.top();
+			auto it = edgeMap.find(bestEdge);
+			if (it != edgeMap.end() && it->second.valid) { // if the edge is in the edgemap and is valid, return it
+				std::cout << "edges error is: " << bestEdge.error << std::endl;
+				return bestEdge;
+			}
 		}
-		return bestEdge;
+		throw std::runtime_error("No valid edges left in the queue!");
 	}
 
 
 
-	static void markInvalidEdges(std::unordered_set<Edge, EdgeHash>& invalidEdges, uint32_t vertex, std::vector<HalfEdge>& halfEdges) {
+	static void markInvalidEdges(std::unordered_map<Edge, EdgeInfo, EdgeHash>& edgeMap, const uint32_t& vertex, std::vector<HalfEdge>& halfEdges) {
 		std::vector<uint32_t> ind = getConnectedHalfEdgeIndices(vertex, halfEdges);
 		for (uint32_t index : ind) {
 			HalfEdge& h = halfEdges[index];
+
+			uint32_t v = halfEdges[h.next].vert;
 			Edge e{ std::min(h.vert, vertex), std::max(h.vert, vertex) };
-			e.error = std::numeric_limits<float>::max();
-			invalidEdges.insert(e);
+
+			auto it = edgeMap.find(e);
+			if (it != edgeMap.end()) {
+				it->second.valid = false;
+			}
 		}
 	}
+
 
 	// get the indices of halfedges connected to a vertex
 	static std::vector<uint32_t> getConnectedHalfEdgeIndices(uint32_t vertex, const std::vector<HalfEdge>& halfEdges) {
@@ -335,15 +357,22 @@ private:
 
 		uint32_t current = start;
 		do {
+			// if this halfedge was already visited, break out of the loop
+			if (visited.find(current) != visited.end()) break;
+
+			// add the current halfedge to the list of connected halfedges
 			connectedHalfEdgeInd.push_back(current);
 
-			uint32_t nextIndex = halfEdges[current].next;
-			uint32_t pairIndex = halfEdges[nextIndex].pair;
+			// mark the current halfedge as visited
+			visited.insert(current);
 
-			if (visited.find(current) != visited.end()) break;
-			visited.insert(pairIndex);
+			// move to the pair of the next halfedge
+			uint32_t nextIndex = halfEdges[current].next;
+
+			uint32_t pairIndex = halfEdges[nextIndex].pair;
 			current = pairIndex;
-		} while (current != start && visited.find(current) == visited.end());
+
+		} while (current != start);
 
 		return connectedHalfEdgeInd;
 	}
@@ -442,7 +471,10 @@ private:
 		return dml::dot(quadric * pos4, pos4);
 	}
 
-	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics) {
+	static void initQueue(std::priority_queue<Edge, std::vector<Edge>, std::greater<Edge>>& q, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics,
+		std::unordered_map<Edge, EdgeInfo, EdgeHash>& edgeMap) {
+
+		// temporary set to ensure each edge is only processed once
 		std::unordered_set<std::pair<uint32_t, uint32_t>, PairHash> c;
 
 		for (const auto& halfEdge : halfEdges) {
@@ -464,6 +496,7 @@ private:
 			e.error = calcVertError(combinedQuadric, midPoint);
 
 			q.push(e);
+			edgeMap[e] = { e.error, true };
 		}
 	}
 
