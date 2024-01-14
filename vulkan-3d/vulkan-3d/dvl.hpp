@@ -170,7 +170,6 @@ public:
 	struct HalfEdge {
 		uint32_t vert; // vert at the end of the halfedge
 		uint32_t pair; // oppositely oriented adjacent halfedge 
-		uint32_t face; // face the halfedge borders
 		uint32_t next; // next halfedge around the face
 	};
 
@@ -188,7 +187,7 @@ public:
 
 		int i = 0;
 		while (vertices.size() > targetVerts) {
-			if (i >= 64) {
+			if (i >= 41) {
 				std::cout << "Breakpoint at: " << i << std::endl;
 			}
 			auto start = std::chrono::high_resolution_clock::now();
@@ -225,8 +224,16 @@ private:
 			dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
 			dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
 			e.error = calcVertError(combinedQ, mp);
-			edgeSet.erase(e); // remove the old edge
 
+			auto it = edgeSet.find(e);
+			if (it != edgeSet.end()) {
+				std::cout << "Found edge in set" << std::endl;
+			}
+			else {
+				std::cout << "Did not find edge in set" << std::endl;
+			}
+
+			edgeSet.erase(e); // remove the old edge
 		}
 
 		updateVertAttributes(verts[v1], verts[v2]);
@@ -272,6 +279,10 @@ private:
 		verts.pop_back();
 		quadrics.pop_back();
 
+		bool right = isOrderCorrect(halfEdges);
+		if (right) std::cout << "Order is correct!" << std::endl;
+		else std::cout << "Order is incorrect!" << std::endl;
+
 		// update all edges connected to bestEdge and add them to the set
 		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v1, halfEdges);
 		for (uint32_t index : v1ind) {
@@ -291,8 +302,32 @@ private:
 				edgeSet.insert(e);
 			}
 		}
-
 	}
+
+	static bool isOrderCorrect(const std::vector<HalfEdge>& halfEdges) {
+		if (halfEdges.empty()) return true;
+
+		// check if halfedges exceed bounds
+		for (size_t i = 0; i < halfEdges.size(); ++i) {
+			const HalfEdge& he = halfEdges[i];
+			if (he.next >= halfEdges.size() || he.pair >= halfEdges.size()) {
+				return false;
+			}
+		}
+
+		// check if halfedges form a loop
+		for (const auto& he : halfEdges) {
+			const HalfEdge& nextHE = halfEdges[he.next];
+			const HalfEdge& pairHE = halfEdges[he.pair];
+
+			if (he.vert == nextHE.vert || he.vert == pairHE.vert) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+
 
 	// find the best edge to collapse and remove invalid edges from the set
 	static Edge findBestEC(std::set<Edge, EdgeComp>& edgeSet) {
@@ -349,7 +384,6 @@ private:
 		return connectedHalfEdgeInd;
 	}
 
-
 	// convert the array of vertices and indicies into a half edge data structure
 	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
@@ -364,7 +398,6 @@ private:
 				uint32_t vert2 = indices[nextIndex];
 
 				halfEdges[currentIndex].vert = vert2;
-				halfEdges[currentIndex].face = currentIndex / 3;
 				halfEdges[currentIndex].next = (currentIndex % 3 == 2) ? (currentIndex - 2) : (currentIndex + 1);
 
 				auto edgePair = std::make_pair(vert1, vert2);
@@ -388,13 +421,9 @@ private:
 		vertices.clear();
 		indices.clear();
 
-		std::unordered_set<uint32_t> processedFaces;
 		std::unordered_map<uint32_t, uint32_t> vertexMap;
 
 		for (const HalfEdge& h : halfEdges) {
-			if (processedFaces.find(h.face) != processedFaces.end()) continue;
-			processedFaces.insert(h.face);
-
 			uint32_t ind = &h - &halfEdges[0]; // current index of the halfedge
 			for (int i = 0; i < 3; ++i) {
 				uint32_t vertIndex = halfEdges[ind].vert;
