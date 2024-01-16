@@ -160,12 +160,11 @@ public:
 
 	struct EdgeComp { //comparator for the set of edges
 		bool operator()(const Edge& a, const Edge& b) const {
-			if (a.error != b.error) return a.error < b.error;
 			if (a.v1 != b.v1) return a.v1 < b.v1;
-			return a.v2 < b.v2;
+			if (a.v2 != b.v2) return a.v2 < b.v2;
+			return a.error < b.error;
 		}
 	};
-
 
 	struct HalfEdge {
 		uint32_t vert; // vert at the end of the halfedge
@@ -211,30 +210,34 @@ private:
 		uint32_t v1 = bestEdge.v1;
 		uint32_t v2 = bestEdge.v2;
 
+		auto deleteSet = [&](uint32_t vertex) {
+			std::vector<uint32_t> indexes = getConnectedHalfEdgeIndices(vertex, halfEdges);
+			for (uint32_t index : indexes) {
+				HalfEdge& h = halfEdges[index];
+
+				Edge e;
+				e.v1 = h.vert;
+				e.v2 = halfEdges[h.pair].vert;
+
+				dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
+				dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
+				e.error = calcVertError(combinedQ, mp);
+
+				auto it = edgeSet.find(e);
+				if (it != edgeSet.end()) {
+					std::cout << "Found edge in set" << std::endl;
+					edgeSet.erase(it);
+				}
+				else {
+					std::cout << "Did not find edge in set" << std::endl;
+				}
+			}
+			};
+
 		// delete all the edges from the set that will be affected by the collapse
 		// this is so the edges can be updated and reinserted later
-		std::vector<uint32_t> v1indOld = getConnectedHalfEdgeIndices(v1, halfEdges);
-		for (uint32_t index : v1indOld) {
-			HalfEdge& h = halfEdges[index];
-
-			Edge e;
-			e.v1 = h.vert;
-			e.v2 = halfEdges[h.pair].vert;
-
-			dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
-			dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
-			e.error = calcVertError(combinedQ, mp);
-
-			auto it = edgeSet.find(e);
-			if (it != edgeSet.end()) {
-				std::cout << "Found edge in set" << std::endl;
-			}
-			else {
-				std::cout << "Did not find edge in set" << std::endl;
-			}
-
-			edgeSet.erase(e); // remove the old edge
-		}
+		deleteSet(v1);
+		deleteSet(v2);
 
 		updateVertAttributes(verts[v1], verts[v2]);
 
@@ -283,7 +286,7 @@ private:
 		if (right) std::cout << "Order is correct!" << std::endl;
 		else std::cout << "Order is incorrect!" << std::endl;
 
-		// update all edges connected to bestEdge and add them to the set
+		// update all edges connected to v1 and add them to the set
 		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v1, halfEdges);
 		for (uint32_t index : v1ind) {
 			HalfEdge& h = halfEdges[index];
@@ -326,8 +329,6 @@ private:
 		}
 		return true;
 	}
-
-
 
 	// find the best edge to collapse and remove invalid edges from the set
 	static Edge findBestEC(std::set<Edge, EdgeComp>& edgeSet) {
@@ -505,7 +506,6 @@ private:
 		vertex.normal = (vertex.normal + other.normal) / 2.0f;
 		vertex.alpha = (vertex.alpha + other.alpha) / 2.0f;
 		vertex.tangent = (vertex.tangent + other.tangent) / 2.0f;
-
 	}
 
 };
