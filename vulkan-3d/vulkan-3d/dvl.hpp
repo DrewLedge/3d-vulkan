@@ -88,14 +88,6 @@ public:
 		}
 	};
 
-	struct PairHash {
-		size_t operator()(const std::pair<uint32_t, uint32_t>& pair) const {
-			auto hash1 = std::hash<uint32_t>{}(pair.first);
-			auto hash2 = std::hash<uint32_t>{}(pair.second);
-			return hash1 ^ (hash2 << 1); // combine the hashes
-		}
-	};
-
 	static void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents, const void* rawIndices, size_t size) {
 		for (size_t i = 0; i < size; i += 3) {
 			uint32_t i1 = static_cast<const uint32_t*>(rawIndices)[i];
@@ -145,6 +137,14 @@ public:
 		}
 	}
 
+	struct PairHash {
+		size_t operator()(const std::pair<uint32_t, uint32_t>& pair) const {
+			auto hash1 = std::hash<uint32_t>{}(pair.first);
+			auto hash2 = std::hash<uint32_t>{}(pair.second);
+			return hash1 ^ (hash2 << 1); // combine the hashes
+		}
+	};
+
 	struct Edge {
 		uint32_t v1, v2; // vertex indices
 		float error; // error metric for this edge
@@ -159,10 +159,13 @@ public:
 	};
 
 	struct EdgeComp { //comparator for the set of edges
+		static constexpr double EPSILON = 1e-6;
+
 		bool operator()(const Edge& a, const Edge& b) const {
 			if (a.v1 != b.v1) return a.v1 < b.v1;
 			if (a.v2 != b.v2) return a.v2 < b.v2;
-			return a.error < b.error;
+
+			return (a.error < b.error - EPSILON);
 		}
 	};
 
@@ -219,18 +222,23 @@ private:
 				e.v1 = h.vert;
 				e.v2 = halfEdges[h.pair].vert;
 
+				// skip the edge that is being collapsed
+				// this is because it has already been removed from the set
+				if (e == bestEdge) continue;
+
 				dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
 				dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
 				e.error = calcVertError(combinedQ, mp);
 
+
 				auto it = edgeSet.find(e);
 				if (it != edgeSet.end()) {
 					std::cout << "Found edge in set" << std::endl;
-					edgeSet.erase(it);
 				}
 				else {
 					std::cout << "Did not find edge in set" << std::endl;
 				}
+				edgeSet.erase(e);
 			}
 			};
 
@@ -251,7 +259,13 @@ private:
 		std::vector<uint32_t> v2ind = getConnectedHalfEdgeIndices(v2, halfEdges);
 		for (uint32_t index : v2ind) {
 			HalfEdge& h = halfEdges[index];
-			h.vert = v1;
+			if (halfEdges[h.pair].vert == v1) {
+				halfEdges[h.pair].pair = halfEdges[h.next].pair;
+				halfEdges[halfEdges[h.next].pair].pair = h.pair;
+			}
+			else {
+				h.vert = v1;
+			}
 		}
 
 		// remove redundant halfedges
@@ -267,7 +281,7 @@ private:
 			if (h.next > v2) --h.next;
 		}
 
-		uint32_t swappedVertInd = verts.size() - 1;
+		uint32_t swappedVertInd = static_cast<uint32_t>(verts.size() - 1);
 		if (v2 != swappedVertInd) {
 			std::swap(verts[v2], verts[swappedVertInd]);
 			std::swap(quadrics[v2], quadrics[swappedVertInd]);
@@ -295,15 +309,14 @@ private:
 			e.v1 = h.vert;
 			e.v2 = halfEdges[h.pair].vert;
 
+			// dont add the edge that was just collapsed
+			if (e == bestEdge) continue;
+
 			dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
 			dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
 			e.error = calcVertError(combinedQ, mp);
 
-			// if the edge isn't already in the set, add it
-			auto it = edgeSet.find(e);
-			if (it == edgeSet.end()) {
-				edgeSet.insert(e);
-			}
+			edgeSet.insert(e);
 		}
 	}
 
@@ -430,7 +443,7 @@ private:
 				uint32_t vertIndex = halfEdges[ind].vert;
 				if (vertexMap.find(vertIndex) == vertexMap.end()) {
 					// add vertex if it hasnt been added before
-					vertexMap[vertIndex] = vertices.size();
+					vertexMap[vertIndex] = static_cast<uint32_t>(vertices.size());
 					vertices.push_back(ov[vertIndex]);
 				}
 				indices.push_back(vertexMap[vertIndex]);
