@@ -88,11 +88,14 @@ public:
 		}
 	};
 
-	static void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents, const void* rawIndices, size_t size) {
+	template <typename IndexType>
+	static void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents,
+		const void* rawIndices, size_t size) {
+
 		for (size_t i = 0; i < size; i += 3) {
-			uint32_t i1 = static_cast<const uint32_t*>(rawIndices)[i];
-			uint32_t i2 = static_cast<const uint32_t*>(rawIndices)[i + 1];
-			uint32_t i3 = static_cast<const uint32_t*>(rawIndices)[i + 2];
+			IndexType i1 = static_cast<const IndexType*>(rawIndices)[i];
+			IndexType i2 = static_cast<const IndexType*>(rawIndices)[i + 1];
+			IndexType i3 = static_cast<const IndexType*>(rawIndices)[i + 2];
 
 			dml::vec3 pos1 = { positionData[3 * i1], positionData[3 * i1 + 1], positionData[3 * i1 + 2] };
 			dml::vec3 pos2 = { positionData[3 * i2], positionData[3 * i2 + 1], positionData[3 * i2 + 2] };
@@ -180,6 +183,11 @@ public:
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
+		if (!isManifold(vertices, indices)) {
+			std::cerr << "Mesh is not manifold!!" << std::endl;
+			return;
+		}
+
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
 		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
 		std::set<Edge, EdgeComp> edgeSet;
@@ -396,6 +404,48 @@ private:
 		} while (current != start);
 
 		return connectedHalfEdgeInd;
+	}
+
+	static bool isManifold(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
+		std::unordered_map<uint32_t, std::vector<uint32_t>> vertMap;
+		std::unordered_map<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>, PairHash> edgeMap;
+
+		// populate vertMap and edgeMap
+		for (uint32_t i = 0; i < indices.size(); i += 3) {
+			for (uint32_t j = 0; j < 3; ++j) {
+				uint32_t currentIndex = i + j;
+				uint32_t nextIndex = (currentIndex % 3 == 2) ? i : currentIndex + 1;
+
+				uint32_t v1 = indices[currentIndex];
+				uint32_t v2 = indices[nextIndex];
+
+				vertMap[v1].push_back(currentIndex / 3);
+				vertMap[v2].push_back(currentIndex / 3);
+
+				auto edgePair = std::make_pair(std::min(v1, v2), std::max(v1, v2));
+				edgeMap[edgePair].push_back(currentIndex / 3);
+			}
+		}
+
+		// check if an edge is shared by more than two faces
+		for (const auto& pair : edgeMap) {
+			if (pair.second.size() != 2) {
+				if (pair.second.size() == 1) continue; // allow for boundary edges
+				std::cerr << "Edge (" << pair.first.first << ", " << pair.first.second << ") shared by more than two or zero faces!" << std::endl;
+				return false;
+			}
+		}
+
+		// check if a vertex belongs to less than three faces
+		for (const auto& pair : vertMap) {
+			if (pair.second.size() < 3) {
+				std::cerr << "Vertex " << pair.first << " belongs to less than three faces!!" << std::endl;
+				return false;
+			}
+		}
+
+		std::cout << "Mesh is manifold!" << std::endl;
+		return true;
 	}
 
 	// convert the array of vertices and indicies into a half edge data structure

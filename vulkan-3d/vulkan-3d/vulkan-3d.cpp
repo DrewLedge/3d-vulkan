@@ -488,7 +488,7 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/t.glb", { 13.2f, 13.2f, 13.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
 		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
 		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
@@ -678,11 +678,13 @@ private:
 		file.close();
 		return buffer;
 	}
+
 	void createSurface() {
 		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create window surface!");
 		}
 	}
+
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
@@ -694,6 +696,7 @@ private:
 			return presentFamily.has_value();
 		}
 	};
+
 	std::string resultStr(VkResult result) {
 		switch (result) {
 		case VK_SUCCESS: return "VK_SUCCESS";
@@ -1006,7 +1009,6 @@ private:
 		return modelMatrix;
 	}
 
-
 	void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
 		for (int i = 0; i < depth; ++i) { // indent based on depth
 			std::cout << "  ";
@@ -1033,7 +1035,6 @@ private:
 			}
 		}
 	}
-
 
 	void loadSkybox(std::string path) {
 		skybox.tex.path = path;
@@ -1144,7 +1145,7 @@ private:
 					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
 
 					// tangents
-					std::vector<dml::vec4> tangents(indexAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+					std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
 
 					const float* tangentData = nullptr;
 					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
@@ -1153,9 +1154,24 @@ private:
 						tangentData = getAccessorData(gltfModel, primitive.attributes, "TANGENT");
 					}
 					else {
-						std::cout << "calculating tangents" << std::endl;
+						std::cout << "Calculating tangents..." << std::endl;
 						tangentFound = false;
-						dvl::calculateTangents(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+
+						switch (indexAccessor.componentType) {
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+							dvl::calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+							break;
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+							dvl::calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+							break;
+						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+							dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+							break;
+						default:
+							std::cerr << "WARNING: Unsupported index type: " << indexAccessor.componentType << std::endl;
+							break;
+						}
+
 						dvl::normalizeTangents(tangents);
 					}
 
@@ -1275,6 +1291,10 @@ private:
 						}
 						else {
 							std::cerr << "WARNING: Texture from path " << path << " doesn't have a occlusion texture" << std::endl;
+						}
+						if (!texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found) {
+							std::cerr << "WARNING: Model isnt PBR!!" << std::endl;
+							return;
 						}
 
 						newObject.material = texture;
