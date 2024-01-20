@@ -414,7 +414,7 @@ private:
 		for (uint32_t i = 0; i < indices.size(); i += 3) {
 			for (uint32_t j = 0; j < 3; ++j) {
 				uint32_t currentIndex = i + j;
-				uint32_t nextIndex = (currentIndex % 3 == 2) ? i : currentIndex + 1;
+				uint32_t nextIndex = i + (j + 1) % 3;
 
 				uint32_t v1 = indices[currentIndex];
 				uint32_t v2 = indices[nextIndex];
@@ -444,7 +444,6 @@ private:
 			}
 		}
 
-		std::cout << "Mesh is manifold!" << std::endl;
 		return true;
 	}
 
@@ -458,16 +457,16 @@ private:
 				uint32_t currentIndex = i + j;
 				uint32_t nextIndex = i + (j + 1) % 3;
 
-				uint32_t vert1 = indices[currentIndex];
-				uint32_t vert2 = indices[nextIndex];
+				uint32_t v1 = indices[currentIndex];
+				uint32_t v2 = indices[nextIndex];
 
-				halfEdges[currentIndex].vert = vert2;
+				halfEdges[currentIndex].vert = v2;
 				halfEdges[currentIndex].next = (currentIndex % 3 == 2) ? (currentIndex - 2) : (currentIndex + 1);
 
-				auto edgePair = std::make_pair(vert1, vert2);
+				auto edgePair = std::make_pair(std::min(v1, v2), std::max(v1, v2));
 				edgeMap[edgePair] = currentIndex;
 
-				auto it = edgeMap.find(std::make_pair(vert2, vert1));
+				auto it = edgeMap.find(std::make_pair(v2, v1));
 				if (it != edgeMap.end()) {
 					uint32_t twinIndex = it->second;
 					halfEdges[currentIndex].pair = twinIndex;
@@ -492,8 +491,7 @@ private:
 			for (int i = 0; i < 3; ++i) {
 				uint32_t vertIndex = halfEdges[ind].vert;
 				if (vertexMap.find(vertIndex) == vertexMap.end()) {
-					// add vertex if it hasnt been added before
-					vertexMap[vertIndex] = static_cast<uint32_t>(vertices.size());
+					vertexMap[vertIndex] = static_cast<uint32_t>(vertices.size()); // add vertex if it hasnt been added before
 					vertices.push_back(ov[vertIndex]);
 				}
 				indices.push_back(vertexMap[vertIndex]);
@@ -501,7 +499,6 @@ private:
 			}
 		}
 	}
-
 
 	static dml::mat4 calcFaceQuadric(const HalfEdge& h1, const HalfEdge& h2, const HalfEdge& h3, const std::vector<Vertex>& vertices) {
 		const Vertex& v1 = vertices[h1.vert];
