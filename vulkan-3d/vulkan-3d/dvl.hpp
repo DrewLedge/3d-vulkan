@@ -176,6 +176,7 @@ public:
 		uint32_t vert; // vert at the end of the halfedge
 		uint32_t pair; // oppositely oriented adjacent halfedge 
 		uint32_t next; // next halfedge around the face
+		bool boundary;
 	};
 
 	static void simplifyMesh(std::vector<Vertex>& vertices, std::vector<uint32_t>& indices, float percent) {
@@ -184,8 +185,14 @@ public:
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
 		if (!isManifold(vertices, indices)) {
+			std::cout << "--------------------" << std::endl;
 			std::cerr << "Mesh is not manifold!!" << std::endl;
-			return;
+			std::cout << "--------------------" << std::endl;
+		}
+		else {
+			std::cout << "--------------------" << std::endl;
+			std::cout << "Mesh is manifold!!" << std::endl;
+			std::cout << "--------------------" << std::endl;
 		}
 
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
@@ -195,22 +202,22 @@ public:
 		initSet(edgeSet, vertices, halfEdges, quadrics);
 		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
 
-		int i = 0;
-		while (vertices.size() > targetVerts) {
-			if (i >= 41) {
-				std::cout << "Breakpoint at: " << i << std::endl;
-			}
-			auto start = std::chrono::high_resolution_clock::now();
-			Edge bestEdge = findBestEC(edgeSet);
-			collapseEdge(edgeSet, halfEdges, quadrics, bestEdge, vertices);
-			auto stop = std::chrono::high_resolution_clock::now();
-			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+		/*	int i = 0;
+			while (vertices.size() > targetVerts) {
+				if (i >= 41) {
+					std::cout << "Breakpoint at: " << i << std::endl;
+				}
+				auto start = std::chrono::high_resolution_clock::now();
+				Edge bestEdge = findBestEC(edgeSet);
+				collapseEdge(edgeSet, halfEdges, quadrics, bestEdge, vertices);
+				auto stop = std::chrono::high_resolution_clock::now();
+				auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
 
-			std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
-				<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
-				<< "/" << targetVerts << ". set size: " << edgeSet.size() << std::endl;
-			i++;
-		}
+				std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
+					<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
+					<< "/" << targetVerts << ". set size: " << edgeSet.size() << std::endl;
+				i++;
+			}*/
 
 		std::vector<Vertex> originalVertices = vertices;
 		undoHalfEdges(halfEdges, vertices, indices, originalVertices);
@@ -406,6 +413,7 @@ private:
 		return connectedHalfEdgeInd;
 	}
 
+	// this needs work
 	static bool isManifold(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<uint32_t, std::vector<uint32_t>> vertMap;
 		std::unordered_map<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>, PairHash> edgeMap;
@@ -413,33 +421,29 @@ private:
 		// populate vertMap and edgeMap
 		for (uint32_t i = 0; i < indices.size(); i += 3) {
 			for (uint32_t j = 0; j < 3; ++j) {
-				uint32_t currentIndex = i + j;
-				uint32_t nextIndex = i + (j + 1) % 3;
+				uint32_t v1 = indices[i + j];
+				uint32_t v2 = indices[i + ((j + 1) % 3)];
 
-				uint32_t v1 = indices[currentIndex];
-				uint32_t v2 = indices[nextIndex];
+				auto edgePair = std::make_pair(v1, v2);
+				edgeMap[edgePair].push_back(i / 3); // face index
 
-				vertMap[v1].push_back(currentIndex / 3);
-				vertMap[v2].push_back(currentIndex / 3);
-
-				auto edgePair = std::make_pair(std::min(v1, v2), std::max(v1, v2));
-				edgeMap[edgePair].push_back(currentIndex / 3);
+				vertMap[v1].push_back(v2);
+				vertMap[v2].push_back(v1);
 			}
 		}
 
-		// check if an edge is shared by more than two faces
+		// check for edges shared by more than two faces
 		for (const auto& pair : edgeMap) {
-			if (pair.second.size() != 2) {
-				if (pair.second.size() == 1) continue; // allow for boundary edges
-				std::cerr << "Edge (" << pair.first.first << ", " << pair.first.second << ") shared by more than two or zero faces!" << std::endl;
+			if (pair.second.size() > 2) {
+				std::cerr << "Non manifold edge found: (" << pair.first.first << ", " << pair.first.second << ")!" << std::endl;
 				return false;
 			}
 		}
 
-		// check if a vertex belongs to less than three faces
-		for (const auto& pair : vertMap) {
-			if (pair.second.size() < 3) {
-				std::cerr << "Vertex " << pair.first << " belongs to less than three faces!!" << std::endl;
+		// check for isolated vertices
+		for (uint32_t i = 0; i < vertices.size(); ++i) {
+			if (vertMap.find(i) == vertMap.end()) {
+				std::cerr << "Isolated vertex found: " << i << "!" << std::endl;
 				return false;
 			}
 		}
@@ -450,20 +454,21 @@ private:
 	// convert the array of vertices and indicies into a half edge data structure
 	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
-		std::vector<HalfEdge> halfEdges(indices.size());
 
+		std::vector<HalfEdge> halfEdges(indices.size());
 		for (uint32_t i = 0; i < indices.size(); i += 3) {
 			for (uint32_t j = 0; j < 3; ++j) {
 				uint32_t currentIndex = i + j;
-				uint32_t nextIndex = i + (j + 1) % 3;
+				uint32_t nextIndex = i + ((j + 1) % 3);
 
 				uint32_t v1 = indices[currentIndex];
 				uint32_t v2 = indices[nextIndex];
 
 				halfEdges[currentIndex].vert = v2;
 				halfEdges[currentIndex].next = (currentIndex % 3 == 2) ? (currentIndex - 2) : (currentIndex + 1);
+				halfEdges[currentIndex].boundary = true;
 
-				auto edgePair = std::make_pair(std::min(v1, v2), std::max(v1, v2));
+				auto edgePair = std::make_pair(v1, v2);
 				edgeMap[edgePair] = currentIndex;
 
 				auto it = edgeMap.find(std::make_pair(v2, v1));
@@ -471,12 +476,22 @@ private:
 					uint32_t twinIndex = it->second;
 					halfEdges[currentIndex].pair = twinIndex;
 					halfEdges[twinIndex].pair = currentIndex;
+					halfEdges[currentIndex].boundary = false;
+					halfEdges[twinIndex].boundary = false;
 				}
 			}
 		}
+		uint32_t b = 0;
+		for (const auto& h : halfEdges) {
+			if (h.boundary) b++;
+		}
+		std::cout << "Boundary count: " << b << std::endl;
+		std::cout << "Percent: " << (b / static_cast<float>(halfEdges.size())) * 100.0f << "%" << std::endl;
 
 		return halfEdges;
 	}
+
+
 
 	// function to convert the halfedges back into vertices and indices
 	static void undoHalfEdges(const std::vector<HalfEdge>& halfEdges, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices,
