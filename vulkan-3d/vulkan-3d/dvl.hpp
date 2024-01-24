@@ -202,22 +202,22 @@ public:
 		initSet(edgeSet, vertices, halfEdges, quadrics);
 		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
 
-		/*	int i = 0;
-			while (vertices.size() > targetVerts) {
-				if (i >= 41) {
-					std::cout << "Breakpoint at: " << i << std::endl;
-				}
-				auto start = std::chrono::high_resolution_clock::now();
-				Edge bestEdge = findBestEC(edgeSet);
-				collapseEdge(edgeSet, halfEdges, quadrics, bestEdge, vertices);
-				auto stop = std::chrono::high_resolution_clock::now();
-				auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
+		int i = 0;
+		while (vertices.size() > targetVerts) {
+			if (i >= 18) {
+				std::cout << "Breakpoint at: " << i << std::endl;
+			}
+			auto start = std::chrono::high_resolution_clock::now();
+			Edge bestEdge = findBestEC(edgeSet);
+			collapseEdge(edgeSet, halfEdges, quadrics, bestEdge, vertices);
+			auto stop = std::chrono::high_resolution_clock::now();
+			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
 
-				std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
-					<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
-					<< "/" << targetVerts << ". set size: " << edgeSet.size() << std::endl;
-				i++;
-			}*/
+			std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
+				<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
+				<< "/" << targetVerts << ". set size: " << edgeSet.size() << std::endl;
+			i++;
+		}
 
 		std::vector<Vertex> originalVertices = vertices;
 		undoHalfEdges(halfEdges, vertices, indices, originalVertices);
@@ -228,11 +228,20 @@ private:
 		uint32_t v1 = bestEdge.v1;
 		uint32_t v2 = bestEdge.v2;
 
+		std::cout << "--------------" << std::endl;
+		bool right = isOrderCorrect(halfEdges);
+		if (right) {
+			std::cout << "Order is correct!" << std::endl;
+		}
+		else {
+			std::cout << "Order is incorrect!" << std::endl;
+		}
+		std::cout << "--------------" << std::endl;
+
 		auto deleteSet = [&](uint32_t vertex) {
 			std::vector<uint32_t> indexes = getConnectedHalfEdgeIndices(vertex, halfEdges);
 			for (uint32_t index : indexes) {
 				HalfEdge& h = halfEdges[index];
-
 				Edge e;
 				e.v1 = h.vert;
 				e.v2 = halfEdges[h.pair].vert;
@@ -244,7 +253,6 @@ private:
 				dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
 				dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
 				e.error = calcVertError(combinedQ, mp);
-
 
 				auto it = edgeSet.find(e);
 				if (it != edgeSet.end()) {
@@ -311,15 +319,10 @@ private:
 		verts.pop_back();
 		quadrics.pop_back();
 
-		bool right = isOrderCorrect(halfEdges);
-		if (right) std::cout << "Order is correct!" << std::endl;
-		else std::cout << "Order is incorrect!" << std::endl;
-
 		// update all edges connected to v1 and add them to the set
 		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v1, halfEdges);
 		for (uint32_t index : v1ind) {
 			HalfEdge& h = halfEdges[index];
-
 			Edge e;
 			e.v1 = h.vert;
 			e.v2 = halfEdges[h.pair].vert;
@@ -335,29 +338,6 @@ private:
 		}
 	}
 
-	static bool isOrderCorrect(const std::vector<HalfEdge>& halfEdges) {
-		if (halfEdges.empty()) return true;
-
-		// check if halfedges exceed bounds
-		for (size_t i = 0; i < halfEdges.size(); ++i) {
-			const HalfEdge& he = halfEdges[i];
-			if (he.next >= halfEdges.size() || he.pair >= halfEdges.size()) {
-				return false;
-			}
-		}
-
-		// check if halfedges form a loop
-		for (const auto& he : halfEdges) {
-			const HalfEdge& nextHE = halfEdges[he.next];
-			const HalfEdge& pairHE = halfEdges[he.pair];
-
-			if (he.vert == nextHE.vert || he.vert == pairHE.vert) {
-				return false;
-			}
-		}
-		return true;
-	}
-
 	// find the best edge to collapse and remove invalid edges from the set
 	static Edge findBestEC(std::set<Edge, EdgeComp>& edgeSet) {
 		if (edgeSet.empty()) {
@@ -369,6 +349,52 @@ private:
 		return bestEdge;
 
 	}
+
+	// check if the halfedges are in the correct order
+	static bool isOrderCorrect(const std::vector<HalfEdge>& halfEdges) {
+		if (halfEdges.empty()) return true;
+
+		// check if halfedges exceed bounds
+		for (size_t i = 0; i < halfEdges.size(); ++i) {
+			const HalfEdge& he = halfEdges[i];
+			if (!he.boundary) {
+				if (he.next >= halfEdges.size() || he.pair >= halfEdges.size()) {
+					std::cerr << "Halfedge index out of bounds!" << std::endl;
+					return false;
+				}
+			}
+			else {
+				if (he.next >= halfEdges.size()) {
+					std::cerr << "Boundary halfedge index out of bounds!" << std::endl;
+					return false;
+				}
+			}
+		}
+
+		// check if halfedges form a loop
+		for (const auto& he : halfEdges) {
+			if (!he.boundary) {
+				const HalfEdge& nextHE = halfEdges[he.next];
+				const HalfEdge& pairHE = halfEdges[he.pair];
+
+				if (he.vert == nextHE.vert || he.vert == pairHE.vert) {
+					std::cerr << "Halfedges form a loop!" << std::endl;
+					return false;
+				}
+			}
+			else {
+				// only check the next halfedge for boundary edges
+				const HalfEdge& nextHE = halfEdges[he.next];
+
+				if (he.vert == nextHE.vert) {
+					std::cerr << "Boundary halfedge form a loop!" << std::endl;
+					return false;
+				}
+			}
+		}
+		return true;
+	}
+
 
 	// get the indices of halfedges connected to a vertex
 	static std::vector<uint32_t> getConnectedHalfEdgeIndices(uint32_t vertex, const std::vector<HalfEdge>& halfEdges) {
@@ -487,6 +513,7 @@ private:
 		}
 		std::cout << "Boundary count: " << b << std::endl;
 		std::cout << "Percent: " << (b / static_cast<float>(halfEdges.size())) * 100.0f << "%" << std::endl;
+
 
 		return halfEdges;
 	}
