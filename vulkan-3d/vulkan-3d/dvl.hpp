@@ -152,12 +152,9 @@ public:
 		uint32_t v1, v2; // vertex indices
 		float error; // error metric for this edge
 
-		bool operator>(const Edge& other) const {
-			return error > other.error;
-		}
-
+		// operator for comparing edges - directed edges
 		bool operator==(const Edge& other) const {
-			return (v1 == other.v1 && v2 == other.v2) || (v1 == other.v2 && v2 == other.v1);
+			return v1 == other.v1 && v2 == other.v2;
 		}
 	};
 
@@ -184,16 +181,6 @@ public:
 		if (percent == 0 || percent > 100) {
 			throw std::invalid_argument("Percent must be between 1 and 100!!!");
 		}
-		if (!isManifold(vertices, indices)) {
-			std::cout << "--------------------" << std::endl;
-			std::cerr << "Mesh is not manifold!!" << std::endl;
-			std::cout << "--------------------" << std::endl;
-		}
-		else {
-			std::cout << "--------------------" << std::endl;
-			std::cout << "Mesh is manifold!!" << std::endl;
-			std::cout << "--------------------" << std::endl;
-		}
 
 		std::vector<HalfEdge> halfEdges = buildHalfEdges(vertices, indices);
 		std::vector<dml::mat4> quadrics = calcVertQuadrics(vertices, halfEdges); // initialize all quadrics (1 per vertex)
@@ -203,6 +190,10 @@ public:
 		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
 
 		int i = 0;
+		std::vector<uint32_t> inds = getConnectedHalfEdgeIndices(82, halfEdges);
+		for (uint32_t index : inds) {
+			std::cout << "Is boundary: " << halfEdges[index].boundary << " vert: " << halfEdges[index].vert << " next: " << halfEdges[index].next << " pair: " << halfEdges[index].pair << " size: " << halfEdges.size() << std::endl;
+		}
 		while (vertices.size() > targetVerts) {
 			if (i >= 18) {
 				std::cout << "Breakpoint at: " << i << std::endl;
@@ -398,8 +389,8 @@ private:
 
 	// get the indices of halfedges connected to a vertex
 	static std::vector<uint32_t> getConnectedHalfEdgeIndices(uint32_t vertex, const std::vector<HalfEdge>& halfEdges) {
-		std::vector<uint32_t> connectedHalfEdgeInd;
-		std::unordered_set<uint32_t> visited;
+		std::vector<uint32_t> connectedHalfedges; // index of the halfedges connected to the vertex
+		std::unordered_set<uint32_t> visited; // set of visited halfedges
 
 		// find a starting halfedge index connected to the vertex
 		uint32_t start = std::numeric_limits<uint32_t>::max();
@@ -413,7 +404,7 @@ private:
 		// if no starting halfedge index was found, return an empty vector
 		if (start == std::numeric_limits<uint32_t>::max()) {
 			std::cerr << "No starting halfedge found for vertex " << vertex << std::endl;
-			return connectedHalfEdgeInd;
+			return connectedHalfedges;
 		}
 
 		uint32_t current = start;
@@ -422,7 +413,7 @@ private:
 			if (visited.find(current) != visited.end()) break;
 
 			// add the current halfedge to the list of connected halfedges
-			connectedHalfEdgeInd.push_back(current);
+			connectedHalfedges.push_back(current);
 
 			// mark the current halfedge as visited
 			visited.insert(current);
@@ -430,51 +421,17 @@ private:
 			// move to the pair of the next halfedge
 			uint32_t nextIndex = halfEdges[current].next;
 
-			uint32_t pairIndex = halfEdges[nextIndex].pair;
-			//std::cout << "next: " << nextIndex << " pair: " << pairIndex << " size: " << halfEdges.size() << std::endl;
-			current = pairIndex;
+			if (halfEdges[nextIndex].boundary) {
+				current = halfEdges[halfEdges[current].pair].next;
+			}
+			else {
+
+				current = halfEdges[nextIndex].pair;
+			}
 
 		} while (current != start);
 
-		return connectedHalfEdgeInd;
-	}
-
-	// this needs work
-	static bool isManifold(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
-		std::unordered_map<uint32_t, std::vector<uint32_t>> vertMap;
-		std::unordered_map<std::pair<uint32_t, uint32_t>, std::vector<uint32_t>, PairHash> edgeMap;
-
-		// populate vertMap and edgeMap
-		for (uint32_t i = 0; i < indices.size(); i += 3) {
-			for (uint32_t j = 0; j < 3; ++j) {
-				uint32_t v1 = indices[i + j];
-				uint32_t v2 = indices[i + ((j + 1) % 3)];
-
-				auto edgePair = std::make_pair(v1, v2);
-				edgeMap[edgePair].push_back(i / 3); // face index
-
-				vertMap[v1].push_back(v2);
-				vertMap[v2].push_back(v1);
-			}
-		}
-
-		// check for edges shared by more than two faces
-		for (const auto& pair : edgeMap) {
-			if (pair.second.size() > 2) {
-				std::cerr << "Non manifold edge found: (" << pair.first.first << ", " << pair.first.second << ")!" << std::endl;
-				return false;
-			}
-		}
-
-		// check for isolated vertices
-		for (uint32_t i = 0; i < vertices.size(); ++i) {
-			if (vertMap.find(i) == vertMap.end()) {
-				std::cerr << "Isolated vertex found: " << i << "!" << std::endl;
-				return false;
-			}
-		}
-
-		return true;
+		return connectedHalfedges;
 	}
 
 	// convert the array of vertices and indicies into a half edge data structure
@@ -527,20 +484,34 @@ private:
 		indices.clear();
 
 		std::unordered_map<uint32_t, uint32_t> vertexMap;
+		std::unordered_set<uint32_t> processed;
 
-		for (const HalfEdge& h : halfEdges) {
-			uint32_t ind = &h - &halfEdges[0]; // current index of the halfedge
-			for (int i = 0; i < 3; ++i) {
-				uint32_t vertIndex = halfEdges[ind].vert;
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			if (processed.find(i) != processed.end()) {
+				continue;
+			}
+
+			uint32_t start = i;
+			uint32_t current = start;
+			do {
+				if (current >= halfEdges.size() || halfEdges[current].vert >= ov.size()) {
+					std::cerr << "halfEdges out of range!!!" << std::endl;
+					break;
+				}
+
+				uint32_t vertIndex = halfEdges[current].vert;
 				if (vertexMap.find(vertIndex) == vertexMap.end()) {
 					vertexMap[vertIndex] = static_cast<uint32_t>(vertices.size()); // add vertex if it hasnt been added before
 					vertices.push_back(ov[vertIndex]);
 				}
 				indices.push_back(vertexMap[vertIndex]);
-				ind = halfEdges[ind].next;
-			}
+				processed.insert(current);
+				current = halfEdges[current].next;
+
+			} while (current != start && processed.find(current) == processed.end());
 		}
 	}
+
 
 	static dml::mat4 calcFaceQuadric(const HalfEdge& h1, const HalfEdge& h2, const HalfEdge& h3, const std::vector<Vertex>& vertices) {
 		const Vertex& v1 = vertices[h1.vert];
@@ -580,9 +551,9 @@ private:
 		// temporary set to ensure each edge is only processed once
 		std::unordered_set<std::pair<uint32_t, uint32_t>, PairHash> c;
 
-		for (const auto& halfEdge : halfEdges) {
-			uint32_t v1 = halfEdge.vert;
-			uint32_t v2 = halfEdges[halfEdge.pair].vert;
+		for (const HalfEdge& h : halfEdges) {
+			uint32_t v1 = h.vert;
+			uint32_t v2 = halfEdges[h.pair].vert;
 
 			// ensure each edge is only processed once
 			if (v1 > v2) std::swap(v1, v2);
@@ -594,9 +565,14 @@ private:
 			e.v2 = v2;
 
 			// compute the edge collapse error
-			dml::mat4 combinedQuadric = quadrics[v1] + quadrics[v2];
-			dml::vec3 midPoint = (vertices[v1].pos + vertices[v2].pos) / 2.0f;
-			e.error = calcVertError(combinedQuadric, midPoint);
+			if (h.boundary) {
+				e.error = std::numeric_limits<float>::max();
+			}
+			else {
+				dml::mat4 combinedQuadric = quadrics[v1] + quadrics[v2];
+				dml::vec3 midPoint = (vertices[v1].pos + vertices[v2].pos) / 2.0f;
+				e.error = calcVertError(combinedQuadric, midPoint);
+			}
 
 			s.insert(e);
 		}
