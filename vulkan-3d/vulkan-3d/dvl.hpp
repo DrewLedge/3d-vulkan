@@ -189,13 +189,9 @@ public:
 		initSet(edgeSet, vertices, halfEdges, quadrics);
 		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
 
-		int i = 0;
-		std::vector<uint32_t> inds = getConnectedHalfEdgeIndices(82, halfEdges);
-		for (uint32_t index : inds) {
-			std::cout << "Is boundary: " << halfEdges[index].boundary << " vert: " << halfEdges[index].vert << " next: " << halfEdges[index].next << " pair: " << halfEdges[index].pair << " size: " << halfEdges.size() << std::endl;
-		}
+		uint32_t i = 0;
 		while (vertices.size() > targetVerts) {
-			if (i >= 18) {
+			if (i >= 238) {
 				std::cout << "Breakpoint at: " << i << std::endl;
 			}
 			auto start = std::chrono::high_resolution_clock::now();
@@ -229,39 +225,15 @@ private:
 		}
 		std::cout << "--------------" << std::endl;
 
-		auto deleteSet = [&](uint32_t vertex) {
-			std::vector<uint32_t> indexes = getConnectedHalfEdgeIndices(vertex, halfEdges);
-			for (uint32_t index : indexes) {
-				HalfEdge& h = halfEdges[index];
-				Edge e;
-				e.v1 = h.vert;
-				e.v2 = halfEdges[h.pair].vert;
-
-				// skip the edge that is being collapsed
-				// this is because it has already been removed from the set
-				if (e == bestEdge) continue;
-
-				dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
-				dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
-				e.error = calcVertError(combinedQ, mp);
-
-				auto it = edgeSet.find(e);
-				if (it != edgeSet.end()) {
-					std::cout << "Found edge in set" << std::endl;
-				}
-				else {
-					std::cout << "Did not find edge in set" << std::endl;
-				}
-				edgeSet.erase(e);
+		// remove edges connected to v1 or v2 from edgeset
+		for (auto it = edgeSet.begin(); it != edgeSet.end(); ) {
+			if (it->v1 == v1 || it->v1 == v2 || it->v2 == v1 || it->v2 == v2) {
+				it = edgeSet.erase(it);
 			}
-			};
-
-		// delete all the edges from the set that will be affected by the collapse
-		// this is so the edges can be updated and reinserted later
-		deleteSet(v1);
-		deleteSet(v2);
-
-		updateVertAttributes(verts[v1], verts[v2]);
+			else {
+				++it;
+			}
+		}
 
 		// get the new pos for the vertex
 		verts[v1].pos = (verts[v1].pos + verts[v2].pos) / 2.0f;
@@ -270,16 +242,11 @@ private:
 		quadrics[v1] = quadrics[v1] + quadrics[v2];
 
 		// for each halfedge around v2, update the vertex to v1
-		std::vector<uint32_t> v2ind = getConnectedHalfEdgeIndices(v2, halfEdges);
-		for (uint32_t index : v2ind) {
-			HalfEdge& h = halfEdges[index];
-			if (halfEdges[h.pair].vert == v1) {
-				halfEdges[h.pair].pair = halfEdges[h.next].pair;
-				halfEdges[halfEdges[h.next].pair].pair = h.pair;
-			}
-			else {
-				h.vert = v1;
-			}
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			HalfEdge& h = halfEdges[i];
+			if (h.next > v2) h.next--;
+			if (h.pair > v2) h.pair--;
+			if (h.vert == v2) h.vert = v1;
 		}
 
 		// remove redundant halfedges
@@ -288,45 +255,21 @@ private:
 				[&](const HalfEdge& h) { return h.vert == h.next || h.vert == v2; }),
 			halfEdges.end());
 
-		// update remaining half-edge indices
-		for (auto& h : halfEdges) {
-			if (h.vert > v2) --h.vert;
-			if (h.pair > v2) --h.pair;
-			if (h.next > v2) --h.next;
-		}
+		verts.erase(std::remove(verts.begin(), verts.end(), verts[v2]), verts.end());
+		quadrics.erase(std::remove(quadrics.begin(), quadrics.end(), quadrics[v2]), quadrics.end());
 
-		uint32_t swappedVertInd = static_cast<uint32_t>(verts.size() - 1);
-		if (v2 != swappedVertInd) {
-			std::swap(verts[v2], verts[swappedVertInd]);
-			std::swap(quadrics[v2], quadrics[swappedVertInd]);
-
-			// update half edges that referenced the swapped vertex
-			for (auto& h : halfEdges) {
-				if (h.vert == swappedVertInd) h.vert = v2;
-				if (h.pair == swappedVertInd) h.pair = v2;
-				if (h.next == swappedVertInd) h.next = v2;
+		// add newly formed edges to edgeSet
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			const HalfEdge& h = halfEdges[i];
+			if (h.vert == v1 && !h.boundary) {
+				Edge newEdge;
+				newEdge.v1 = v1;
+				newEdge.v2 = halfEdges[h.pair].vert;
+				newEdge.error = calcError(newEdge, quadrics, verts);
+				edgeSet.insert(newEdge);
 			}
 		}
-		verts.pop_back();
-		quadrics.pop_back();
-
-		// update all edges connected to v1 and add them to the set
-		std::vector<uint32_t> v1ind = getConnectedHalfEdgeIndices(v1, halfEdges);
-		for (uint32_t index : v1ind) {
-			HalfEdge& h = halfEdges[index];
-			Edge e;
-			e.v1 = h.vert;
-			e.v2 = halfEdges[h.pair].vert;
-
-			// dont add the edge that was just collapsed
-			if (e == bestEdge) continue;
-
-			dml::mat4 combinedQ = quadrics[e.v1] + quadrics[e.v2];
-			dml::vec3 mp = (verts[e.v1].pos + verts[e.v2].pos) / 2.0f;
-			e.error = calcVertError(combinedQ, mp);
-
-			edgeSet.insert(e);
-		}
+		/// TODO: make sure the edgeset remains sorted after an edge collapse
 	}
 
 	// find the best edge to collapse and remove invalid edges from the set
@@ -338,7 +281,6 @@ private:
 		std::cout << bestEdge.error << std::endl;
 		edgeSet.erase(edgeSet.begin());
 		return bestEdge;
-
 	}
 
 	// check if the halfedges are in the correct order
@@ -387,53 +329,6 @@ private:
 	}
 
 
-	// get the indices of halfedges connected to a vertex
-	static std::vector<uint32_t> getConnectedHalfEdgeIndices(uint32_t vertex, const std::vector<HalfEdge>& halfEdges) {
-		std::vector<uint32_t> connectedHalfedges; // index of the halfedges connected to the vertex
-		std::unordered_set<uint32_t> visited; // set of visited halfedges
-
-		// find a starting halfedge index connected to the vertex
-		uint32_t start = std::numeric_limits<uint32_t>::max();
-		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
-			if (halfEdges[i].vert == vertex) {
-				start = i;
-				break;
-			}
-		}
-
-		// if no starting halfedge index was found, return an empty vector
-		if (start == std::numeric_limits<uint32_t>::max()) {
-			std::cerr << "No starting halfedge found for vertex " << vertex << std::endl;
-			return connectedHalfedges;
-		}
-
-		uint32_t current = start;
-		do {
-			// if this halfedge was already visited, break out of the loop
-			if (visited.find(current) != visited.end()) break;
-
-			// add the current halfedge to the list of connected halfedges
-			connectedHalfedges.push_back(current);
-
-			// mark the current halfedge as visited
-			visited.insert(current);
-
-			// move to the pair of the next halfedge
-			uint32_t nextIndex = halfEdges[current].next;
-
-			if (halfEdges[nextIndex].boundary) {
-				current = halfEdges[halfEdges[current].pair].next;
-			}
-			else {
-
-				current = halfEdges[nextIndex].pair;
-			}
-
-		} while (current != start);
-
-		return connectedHalfedges;
-	}
-
 	// convert the array of vertices and indicies into a half edge data structure
 	static std::vector<HalfEdge> buildHalfEdges(const std::vector<Vertex>& vertices, const std::vector<uint32_t>& indices) {
 		std::unordered_map<std::pair<uint32_t, uint32_t>, uint32_t, PairHash> edgeMap;
@@ -474,8 +369,6 @@ private:
 
 		return halfEdges;
 	}
-
-
 
 	// function to convert the halfedges back into vertices and indices
 	static void undoHalfEdges(const std::vector<HalfEdge>& halfEdges, std::vector<Vertex>& vertices, std::vector<uint32_t>& indices,
@@ -541,9 +434,21 @@ private:
 		return quadrics;
 	}
 
-	static float calcVertError(const dml::mat4& quadric, const dml::vec3& pos) {
-		dml::vec4 pos4(pos, 1.0f);
-		return dml::dot(quadric * pos4, pos4);
+	static float calcError(const Edge& edge, const std::vector<dml::mat4>& quadrics, const std::vector<Vertex>& verts) {
+		const dml::mat4& q1 = quadrics[edge.v1];
+		const dml::mat4& q2 = quadrics[edge.v2];
+
+		// combine the quadrics
+		dml::mat4 q = q1 + q2;
+
+		// homogeneous representation of the edges vertices
+		dml::vec4 v1(verts[edge.v1].pos, 1.0f);
+		dml::vec4 v2(verts[edge.v2].pos, 1.0f);
+
+		// calc error for each vertex
+		float error = dml::dot(v1, q * v1) + dml::dot(v2, q * v2);
+
+		return error;
 	}
 
 	static void initSet(std::set<Edge, EdgeComp>& s, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics) {
@@ -569,9 +474,7 @@ private:
 				e.error = std::numeric_limits<float>::max();
 			}
 			else {
-				dml::mat4 combinedQuadric = quadrics[v1] + quadrics[v2];
-				dml::vec3 midPoint = (vertices[v1].pos + vertices[v2].pos) / 2.0f;
-				e.error = calcVertError(combinedQuadric, midPoint);
+				e.error = calcError(e, quadrics, vertices);
 			}
 
 			s.insert(e);
