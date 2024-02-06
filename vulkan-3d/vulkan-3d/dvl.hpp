@@ -187,22 +187,33 @@ public:
 		std::set<Edge, EdgeComp> edgeSet;
 
 		initSet(edgeSet, vertices, halfEdges, quadrics);
-		uint32_t targetVerts = static_cast<uint32_t>(vertices.size() * (percent / 100.0f));
+		uint32_t targetHE = static_cast<uint32_t>(halfEdges.size() * (percent / 100.0f));
 
 		uint32_t i = 0;
-		while (vertices.size() > targetVerts) {
+		while (halfEdges.size() > targetHE) {
 			if (i >= 238) {
 				std::cout << "Breakpoint at: " << i << std::endl;
 			}
 			auto start = std::chrono::high_resolution_clock::now();
 			Edge bestEdge = findBestEC(edgeSet);
 			collapseEdge(edgeSet, halfEdges, quadrics, bestEdge, vertices);
+
+			std::cout << "--------------" << std::endl;
+			bool right = isOrderCorrect(halfEdges);
+			if (right) {
+				std::cout << "Order is correct!" << std::endl;
+			}
+			else {
+				std::cout << "Order is incorrect!" << std::endl;
+			}
+			std::cout << "--------------" << std::endl;
+
+
 			auto stop = std::chrono::high_resolution_clock::now();
 			auto duration = std::chrono::duration_cast<std::chrono::microseconds>(stop - start);
-
 			std::cout << "Time taken: " << duration.count() << " microseconds. i: " << i
-				<< ". Halfedge count: " << halfEdges.size() << ". Vertex count: " << vertices.size()
-				<< "/" << targetVerts << ". set size: " << edgeSet.size() << std::endl;
+				<< ". Halfedge count: " << halfEdges.size() << " / " << targetHE
+				<< ". set size : " << edgeSet.size() << std::endl;
 			i++;
 		}
 
@@ -215,16 +226,6 @@ private:
 		uint32_t v1 = bestEdge.v1;
 		uint32_t v2 = bestEdge.v2;
 
-		std::cout << "--------------" << std::endl;
-		bool right = isOrderCorrect(halfEdges);
-		if (right) {
-			std::cout << "Order is correct!" << std::endl;
-		}
-		else {
-			std::cout << "Order is incorrect!" << std::endl;
-		}
-		std::cout << "--------------" << std::endl;
-
 		// remove edges connected to v1 or v2 from edgeset
 		for (auto it = edgeSet.begin(); it != edgeSet.end(); ) {
 			if (it->v1 == v1 || it->v1 == v2 || it->v2 == v1 || it->v2 == v2) {
@@ -235,28 +236,13 @@ private:
 			}
 		}
 
+		updateHalfedgeIndices(halfEdges, v1, v2);
+
 		// get the new pos for the vertex
 		verts[v1].pos = (verts[v1].pos + verts[v2].pos) / 2.0f;
 
 		// update quadrics for the affected vertices
 		quadrics[v1] = quadrics[v1] + quadrics[v2];
-
-		// for each halfedge around v2, update the vertex to v1
-		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
-			HalfEdge& h = halfEdges[i];
-			if (h.next > v2) h.next--;
-			if (h.pair > v2) h.pair--;
-			if (h.vert == v2) h.vert = v1;
-		}
-
-		// remove redundant halfedges
-		halfEdges.erase(
-			std::remove_if(halfEdges.begin(), halfEdges.end(),
-				[&](const HalfEdge& h) { return h.vert == h.next || h.vert == v2; }),
-			halfEdges.end());
-
-		verts.erase(std::remove(verts.begin(), verts.end(), verts[v2]), verts.end());
-		quadrics.erase(std::remove(quadrics.begin(), quadrics.end(), quadrics[v2]), quadrics.end());
 
 		// add newly formed edges to edgeSet
 		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
@@ -270,6 +256,51 @@ private:
 			}
 		}
 		/// TODO: make sure the edgeset remains sorted after an edge collapse
+	}
+
+	static void updateHalfedgeIndices(std::vector<HalfEdge>& halfEdges, uint32_t v1, uint32_t v2) {
+		std::vector<uint32_t> indexmap(halfEdges.size(), UINT32_MAX);
+		uint32_t newIndex = 0;
+
+		// reindex valid halfedges and find ones to remove
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			HalfEdge& h = halfEdges[i];
+			// dont process this halfedge bc it will be removed
+			if (h.vert == v2) {
+				continue;
+			}
+
+			// dont proccess self looping halfedges
+			if (h.next == h.vert || h.pair == h.vert || h.next == halfEdges[h.next].vert) {
+				continue;
+			}
+			if (!h.boundary) {
+				if (h.pair == halfEdges[h.pair].vert) {
+					continue;
+				}
+			}
+			indexmap[i] = newIndex++; // store the new index for valid halfedges
+		}
+
+		// compact the halfEdges vector and update indicies
+		uint32_t compactIndex = 0; // next valid position in halfedges
+		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
+			if (indexmap[i] != UINT32_MAX) { // if not marked for removal
+				HalfEdge& h = halfEdges[i];
+				// if marked for removal, update the halfedge indices
+				h.next = indexmap[h.next] != UINT32_MAX ? indexmap[h.next] : h.next;
+				h.pair = indexmap[h.pair] != UINT32_MAX ? indexmap[h.pair] : h.pair;
+
+				// move to compact position if i isnt the compact index
+				if (i != compactIndex) {
+					halfEdges[compactIndex] = h;
+				}
+				compactIndex++;
+			}
+		}
+		// resize to remove the unused tail elements
+		// this is pretty fast
+		halfEdges.resize(compactIndex);
 	}
 
 	// find the best edge to collapse and remove invalid edges from the set
