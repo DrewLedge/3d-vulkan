@@ -489,16 +489,18 @@ private:
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createObject("models/sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		//createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
-		setPlayer(0);
+		setPlayer(1);
+		setPlayer(2);
 	}
 
 	void createInstance() {
@@ -1311,8 +1313,6 @@ private:
 				newObject.scale = scale;
 				newObject.position = pos;
 				newObject.rotation = rot;
-
-				dvl::simplifyMesh(newObject.vertices, newObject.indices, 50);
 
 				// calculate the model matrix for the mesh
 				newObject.modelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
@@ -3206,7 +3206,7 @@ private:
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 0, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 2, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateBuffers();
 	}
