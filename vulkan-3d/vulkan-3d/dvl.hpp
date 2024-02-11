@@ -158,14 +158,15 @@ public:
 		}
 	};
 
-	struct EdgeComp { //comparator for the set of edges
-		static constexpr double EPSILON = 1e-6;
-
+	struct EdgeComp {
 		bool operator()(const Edge& a, const Edge& b) const {
-			if (a.v1 != b.v1) return a.v1 < b.v1;
-			if (a.v2 != b.v2) return a.v2 < b.v2;
+			if (a.error < b.error) return true;
+			if (a.error > b.error) return false;
 
-			return (a.error < b.error - EPSILON);
+			if (a.v1 < b.v1) return true;
+			if (a.v1 > b.v1) return false;
+
+			return a.v2 < b.v2;
 		}
 	};
 
@@ -191,7 +192,7 @@ public:
 
 		uint32_t i = 0;
 		while (halfEdges.size() > targetHE) {
-			if (i >= 238) {
+			if (i >= 400) {
 				std::cout << "Breakpoint at: " << i << std::endl;
 			}
 			auto start = std::chrono::high_resolution_clock::now();
@@ -255,8 +256,24 @@ private:
 				edgeSet.insert(newEdge);
 			}
 		}
-		/// TODO: make sure the edgeset remains sorted after an edge collapse
 	}
+
+	static bool correctIndex(const std::vector<HalfEdge>& halfEdges, const HalfEdge& h) {
+		if (h.next >= halfEdges.size()) return false;
+		HalfEdge nextHE = halfEdges[h.next];
+		if (h.boundary) {
+			if (h.vert == nextHE.vert) return false;
+		}
+		else {
+			HalfEdge pairHE = halfEdges[h.pair];
+			if (h.vert == nextHE.vert) return false;
+			if (h.vert == pairHE.vert) return false;
+			if (h.pair >= halfEdges.size()) return false;
+		}
+		if (h.vert == h.next || h.vert == h.pair) return false;
+		return true;
+	}
+
 
 	static void updateHalfedgeIndices(std::vector<HalfEdge>& halfEdges, uint32_t v1, uint32_t v2) {
 		std::vector<uint32_t> indexmap(halfEdges.size(), UINT32_MAX);
@@ -265,19 +282,13 @@ private:
 		// reindex valid halfedges and find ones to remove
 		for (uint32_t i = 0; i < halfEdges.size(); ++i) {
 			HalfEdge& h = halfEdges[i];
-			// dont process this halfedge bc it will be removed
-			if (h.vert == v2) {
-				continue;
-			}
 
-			// dont proccess self looping halfedges
-			if (h.next == h.vert || h.pair == h.vert || h.next == halfEdges[h.next].vert) {
+			// dont process this halfedge bc it will be removed
+			if (h.vert == v2 || h.next == v2 || h.pair == v2) {
 				continue;
 			}
-			if (!h.boundary) {
-				if (h.pair == halfEdges[h.pair].vert) {
-					continue;
-				}
+			if (!correctIndex(halfEdges, h)) {
+				continue;
 			}
 			indexmap[i] = newIndex++; // store the new index for valid halfedges
 		}
@@ -444,7 +455,7 @@ private:
 
 		dml::vec3 normal = dml::cross(v2.pos - v1.pos, v3.pos - v1.pos);
 		normal = dml::normalize(normal);
-		float d = -dml::dot(normal, v1.pos);
+		float d = dml::dot(normal, v1.pos);
 
 		dml::vec4 plane(normal, d);
 		dml::mat4 quadric = dml::outerProduct(plane, plane);
@@ -469,18 +480,18 @@ private:
 		const dml::mat4& q1 = quadrics[edge.v1];
 		const dml::mat4& q2 = quadrics[edge.v2];
 
-		// combine the quadrics
-		dml::mat4 q = q1 + q2;
-
 		// homogeneous representation of the edges vertices
 		dml::vec4 v1(verts[edge.v1].pos, 1.0f);
 		dml::vec4 v2(verts[edge.v2].pos, 1.0f);
 
 		// calc error for each vertex
-		float error = dml::dot(v1, q * v1) + dml::dot(v2, q * v2);
+		float e1 = dml::dot(v1, q1 * v1);
+		float e2 = dml::dot(v2, q2 * v2);
 
-		return error;
+		float total = e1 + e2;
+		return total;
 	}
+
 
 	static void initSet(std::set<Edge, EdgeComp>& s, const std::vector<Vertex>& vertices, const std::vector<HalfEdge>& halfEdges, const std::vector<dml::mat4>& quadrics) {
 
