@@ -114,6 +114,7 @@ private:
 			image(VK_NULL_HANDLE),
 			memory(VK_NULL_HANDLE),
 			imageView(VK_NULL_HANDLE),
+			path(""),
 			mipLevels(1),
 			stagingBuffer(VK_NULL_HANDLE),
 			stagingBufferMem(VK_NULL_HANDLE),
@@ -247,6 +248,38 @@ private:
 		float linearAttenuation;
 		float quadraticAttenuation;
 		shadowMapDataObject shadowMapData;
+
+		// default constructor
+		light()
+			: pos(dml::vec3(0.0f, 0.0f, 0.0f)),
+			col(dml::vec3(1.0f, 1.0f, 1.0f)),
+			target(dml::vec3(0.0f, 0.0f, 0.0f)),
+			baseIntensity(1.0f),
+			proj(dml::mat4(1.0f)),
+			view(dml::mat4(1.0f)),
+			innerConeAngle(6.6f),
+			outerConeAngle(10.0f),
+			constantAttenuation(1.0f),
+			linearAttenuation(0.1f),
+			quadraticAttenuation(0.032f),
+			shadowMapData() {
+		}
+
+		// copy constructor
+		light(const light& other)
+			: pos(other.pos),
+			col(other.col),
+			target(other.target),
+			baseIntensity(other.baseIntensity),
+			proj(other.proj),
+			view(other.view),
+			innerConeAngle(other.innerConeAngle),
+			outerConeAngle(other.outerConeAngle),
+			constantAttenuation(other.constantAttenuation),
+			linearAttenuation(other.linearAttenuation),
+			quadraticAttenuation(other.quadraticAttenuation),
+			shadowMapData(other.shadowMapData) {
+		}
 	};
 	struct lightMatrixUBO {
 		dml::mat4 view;
@@ -421,7 +454,7 @@ private:
 	modelMatSSBO objMatData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
-	std::vector<light> lights;
+	std::vector<std::unique_ptr<light>> lights;
 	shadowMapProportionsObject shadowProps;
 	uint32_t modelIndex; // index of where vertecies are loaded to
 
@@ -496,7 +529,7 @@ private:
 		l.quadraticAttenuation = 0.032f;
 		l.innerConeAngle = 6.6f;
 		l.outerConeAngle = 10.0f;
-		lights.push_back(l);
+		lights.push_back(std::make_unique<light>(l));
 	}
 	void setPlayer(uint16_t i) {
 		auto p = std::make_unique<model>(*objects[i]);
@@ -1400,9 +1433,9 @@ private:
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
 		for (size_t i = 0; i < lights.size(); i++) {
-			createDepthImage(lights[i].shadowMapData.image, lights[i].shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat);
-			lights[i].shadowMapData.imageView = createDepthView(lights[i].shadowMapData.image, depthFormat);
-			createTS(lights[i].shadowMapData, false, "shadow");
+			createDepthImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat);
+			lights[i]->shadowMapData.imageView = createDepthView(lights[i]->shadowMapData.image, depthFormat);
+			createTS(lights[i]->shadowMapData, false, "shadow");
 		}
 	}
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
@@ -1679,10 +1712,11 @@ private:
 	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
-			calcShadowMats(lights[i]);
-			memcpy(&lightData.lightsMatricies[i].proj, &lights[i].proj, sizeof(lights[i].proj));
-			memcpy(&lightData.lightsMatricies[i].view, &lights[i].view, sizeof(lights[i].view));
-			copyLightToLightCords(lights[i], lightData.lightCords[i]);
+			light& l = *lights[i];
+			calcShadowMats(l);
+			memcpy(&lightData.lightsMatricies[i].proj, &lights[i]->proj, sizeof(lights[i]->proj));
+			memcpy(&lightData.lightsMatricies[i].view, &lights[i]->view, sizeof(lights[i]->view));
+			copyLightToLightCords(l, lightData.lightCords[i]);
 		}
 		void* lData;
 		vkMapMemory(device, lightBufferMem, 0, sizeof(lightData), 0, &lData);
@@ -1803,7 +1837,7 @@ private:
 		std::vector<shadowMapDataObject>allMaps;
 		allMaps.reserve(lights.size());
 		for (const auto& light : lights) {
-			allMaps.push_back(light.shadowMapData);
+			allMaps.push_back(light->shadowMapData);
 		}
 		return allMaps;
 	}
@@ -3390,10 +3424,10 @@ private:
 		shadowMapCommandBuffers.resize(lights.size());
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
-			if (lights[i].shadowMapData.frameBuffer != VK_NULL_HANDLE) {
-				vkDestroyFramebuffer(device, lights[i].shadowMapData.frameBuffer, nullptr);
+			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) {
+				vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
 			}
-			createFB(lights[i].shadowMapData.frameBuffer, lights[i].shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
+			createFB(lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -3416,12 +3450,12 @@ private:
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
+			transitionImageLayout(lights[i]->shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = shadowMapPipelineData.renderPass;
-			renderPassInfo.framebuffer = lights[i].shadowMapData.frameBuffer;
+			renderPassInfo.framebuffer = lights[i]->shadowMapData.frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
 
@@ -3459,7 +3493,7 @@ private:
 			}
 			// end the render pass and transition the shadowmap image to shader read only optimal
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
-			transitionImageLayout(lights[i].shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
+			transitionImageLayout(lights[i]->shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
@@ -3780,10 +3814,15 @@ private:
 			for (const auto& o : objects) {
 				vertCount += o->vertices.size();
 			}
+
+			double startS = ((double)vertCount / fps) / 1000;
+			double memEfficiency = vertCount / (1024.0 * 1024.0); // convert to mb
+			double finalS = (startS) / memEfficiency;
+
 			std::cout << "-------------------------------------------------" << std::endl;
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
 			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
-			std::cout << "Score: " << (vertCount / fps) / 1000 << std::endl;
+			std::cout << "Score: " << finalS << std::endl;
 		}
 
 		// lock / unlock mouse
