@@ -30,6 +30,8 @@
 #include <ctime> //random seed based on time
 #include <chrono> // random seed based on time
 #include <cmath>
+#include <memory>
+
 #define MAX_TEXTURES 4000 // temp max num of textures and models (used for passing data to shaders)
 #define MAX_MODELS 1200
 
@@ -178,9 +180,9 @@ private:
 		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
 
-		bool player = false; // if the object is treated as a player model or not
+		bool player; // if the object is treated as a player model or not
 
-		// default constructor:
+		// default constructor
 		model()
 			: material(),
 			vertices(),
@@ -189,11 +191,30 @@ private:
 			position(dml::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
 			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
+			modelMatrix(),
+			textureCount(0),
+			texIndex(0),
 			isLoaded(false),
 			startObj(true),
-			textureCount(0),
-			modelMatrix()
+			player(false)
 		{}
+
+		// copy constructor
+		model(const model& other)
+			: material(other.material),
+			vertices(other.vertices),
+			indices(other.indices),
+			pathObj(other.pathObj),
+			position(other.position),
+			rotation(other.rotation),
+			scale(other.scale),
+			modelMatrix(other.modelMatrix),
+			textureCount(other.textureCount),
+			texIndex(other.texIndex),
+			isLoaded(other.isLoaded),
+			startObj(other.startObj),
+			player(other.player) {
+		}
 	};
 	struct shadowMapDataObject {
 		VkImage image;
@@ -396,7 +417,7 @@ private:
 
 	// scene data and objects
 	std::vector<bufData> bufferData;
-	std::vector<model> objects;
+	std::vector<std::unique_ptr<model>> objects;
 	modelMatSSBO objMatData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
@@ -478,11 +499,11 @@ private:
 		lights.push_back(l);
 	}
 	void setPlayer(uint16_t i) {
-		model p = objects[i];
-		p.player = true;
-		p.scale = { 0.3f, 0.3f, 0.3f };
-		p.position = { -3.0f, 0.0f, 3.0f };
-		objects.push_back(p);
+		auto p = std::make_unique<model>(*objects[i]);
+		p->player = true;
+		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
+		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
+		objects.push_back(std::move(p));
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
@@ -1319,7 +1340,7 @@ private:
 
 				// add newObject to global objects list
 				modelMtx.lock();
-				objects.push_back(newObject);
+				objects.push_back(std::make_unique<model>(newObject));
 				modelMtx.unlock();
 
 				modelIndex++;
@@ -1329,37 +1350,37 @@ private:
 			}).name("load_model");
 
 			auto loadTextureTask = taskFlow.emplace([&]() {
-				for (model& object : objects) {
+				for (auto& object : objects) {
 					//create the texture image for each texture (material)
 					//also create mipmaps for certain textures
-					if (object.material.baseColor.found) {
-						createTexturedImage(object.material.baseColor, true);
-						createTextureImgView(object.material.baseColor, true);
-						createTS(object.material.baseColor, true);
+					if (object->material.baseColor.found) {
+						createTexturedImage(object->material.baseColor, true);
+						createTextureImgView(object->material.baseColor, true);
+						createTS(object->material.baseColor, true);
 					}
 
-					if (object.material.metallicRoughness.found) {
-						createTexturedImage(object.material.metallicRoughness, false, "metallic");
-						createTextureImgView(object.material.metallicRoughness, false, "metallic");
-						createTS(object.material.metallicRoughness, false, "metallic");
+					if (object->material.metallicRoughness.found) {
+						createTexturedImage(object->material.metallicRoughness, false, "metallic");
+						createTextureImgView(object->material.metallicRoughness, false, "metallic");
+						createTS(object->material.metallicRoughness, false, "metallic");
 					}
 
-					if (object.material.normalMap.found) {
-						createTexturedImage(object.material.normalMap, false, "norm");
-						createTextureImgView(object.material.normalMap, false, "norm");
-						createTS(object.material.normalMap, false, "norm");
+					if (object->material.normalMap.found) {
+						createTexturedImage(object->material.normalMap, false, "norm");
+						createTextureImgView(object->material.normalMap, false, "norm");
+						createTS(object->material.normalMap, false, "norm");
 					}
 
-					if (object.material.emissiveMap.found) {
-						createTexturedImage(object.material.emissiveMap, false, "emissive");
-						createTextureImgView(object.material.emissiveMap, false, "emissive");
-						createTS(object.material.emissiveMap, false, "emissive");
+					if (object->material.emissiveMap.found) {
+						createTexturedImage(object->material.emissiveMap, false, "emissive");
+						createTextureImgView(object->material.emissiveMap, false, "emissive");
+						createTS(object->material.emissiveMap, false, "emissive");
 					}
 
-					if (object.material.occlusionMap.found) {
-						createTexturedImage(object.material.occlusionMap, false, "occlusion");
-						createTextureImgView(object.material.occlusionMap, false, "occlusion");
-						createTS(object.material.occlusionMap, false, "occlusion");
+					if (object->material.occlusionMap.found) {
+						createTexturedImage(object->material.occlusionMap, false, "occlusion");
+						createTextureImgView(object->material.occlusionMap, false, "occlusion");
+						createTS(object->material.occlusionMap, false, "occlusion");
 					}
 				}
 				}).name("load_texture");
@@ -1680,17 +1701,17 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			if (objects[i].player) {
+			if (objects[i]->player) {
 				dml::mat4 updatedModel;
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
-				dml::mat4 s = dml::scale(objects[i].scale);
-				dml::mat4 model = (t * r * s) * objects[i].modelMatrix;
+				dml::mat4 s = dml::scale(objects[i]->scale);
+				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 				updatedModel = model;
 				memcpy(&objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
 			}
 			else {
-				memcpy(&objMatData.objectMatrixData[i].model, &objects[i].modelMatrix, sizeof(objects[i].modelMatrix));
+				memcpy(&objMatData.objectMatrixData[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
 			}
 		}
 		void* matrixData;
@@ -1748,31 +1769,31 @@ private:
 	std::vector<Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
-		for (const model& obj : objects) {
+		for (const auto& obj : objects) {
 			meshTexStartInd.push_back(static_cast<int>(currentIndex));
-			if (obj.material.baseColor.found) {
-				allTextures.emplace_back(obj.material.baseColor);
+			if (obj->material.baseColor.found) {
+				allTextures.emplace_back(obj->material.baseColor);
 				currentIndex++;
 			}
-			if (obj.material.metallicRoughness.found) {
-				allTextures.emplace_back(obj.material.metallicRoughness);
+			if (obj->material.metallicRoughness.found) {
+				allTextures.emplace_back(obj->material.metallicRoughness);
 				currentIndex++;
 			}
-			if (obj.material.normalMap.found) {
-				allTextures.emplace_back(obj.material.normalMap);
+			if (obj->material.normalMap.found) {
+				allTextures.emplace_back(obj->material.normalMap);
 				currentIndex++;
 			}
-			if (obj.material.emissiveMap.found) {
-				allTextures.emplace_back(obj.material.emissiveMap);
+			if (obj->material.emissiveMap.found) {
+				allTextures.emplace_back(obj->material.emissiveMap);
 				currentIndex++;
 			}
-			if (obj.material.occlusionMap.found) {
-				allTextures.emplace_back(obj.material.occlusionMap);
+			if (obj->material.occlusionMap.found) {
+				allTextures.emplace_back(obj->material.occlusionMap);
 				currentIndex++;
 			}
 		}
 		for (size_t i = 0; i < objects.size(); i++) {
-			objects[i].texIndex = i;
+			objects[i]->texIndex = i;
 		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
@@ -1975,8 +1996,8 @@ private:
 		descs.sets.clear();
 		totalTextureCount = 0;
 		for (const auto& object : objects) {
-			if (object.startObj) {
-				totalTextureCount += object.textureCount;
+			if (object->startObj) {
+				totalTextureCount += object->textureCount;
 			}
 		}
 		if (initial) {
@@ -3118,8 +3139,8 @@ private:
 		VkDeviceSize totalVertexBufferSize = 0;
 		VkDeviceSize totalIndexBufferSize = 0;
 		for (const auto& obj : objects) {
-			totalVertexBufferSize += sizeof(dvl::Vertex) * obj.vertices.size();
-			totalIndexBufferSize += sizeof(uint32_t) * obj.indices.size();
+			totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
+			totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
 		}
 
 		// create and map the vertex buffer
@@ -3137,15 +3158,15 @@ private:
 		for (size_t i = 0; i < objects.size(); i++) {
 			// vertex data
 			bufferData[i].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
-			bufferData[i].vertexCount = static_cast<uint32_t>(objects[i].vertices.size());
-			memcpy(vertexData, objects[i].vertices.data(), bufferData[i].vertexCount * sizeof(dvl::Vertex));
+			bufferData[i].vertexCount = static_cast<uint32_t>(objects[i]->vertices.size());
+			memcpy(vertexData, objects[i]->vertices.data(), bufferData[i].vertexCount * sizeof(dvl::Vertex));
 			vertexData += bufferData[i].vertexCount * sizeof(dvl::Vertex);
 			currentVertexOffset += bufferData[i].vertexCount;
 
 			// index data
 			bufferData[i].indexOffset = static_cast<uint32_t>(currentIndexOffset);
-			bufferData[i].indexCount = static_cast<uint32_t>(objects[i].indices.size());
-			memcpy(indexData, objects[i].indices.data(), bufferData[i].indexCount * sizeof(uint32_t));
+			bufferData[i].indexCount = static_cast<uint32_t>(objects[i]->indices.size());
+			memcpy(indexData, objects[i]->indices.data(), bufferData[i].indexCount * sizeof(uint32_t));
 			indexData += bufferData[i].indexCount * sizeof(uint32_t);
 			currentIndexOffset += bufferData[i].indexCount;
 		}
@@ -3182,23 +3203,23 @@ private:
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		model m = objects[object];
-		m.scale = scale;
-		m.position = pos;
-		m.startObj = false;
-		m.rotation = rotation;
+		auto m = std::make_unique<model>(*objects[object]);
+
+		m->scale = scale;
+		m->position = pos;
+		m->startObj = false;
+		m->rotation = rotation;
 
 		size_t objSize = objects.size();
-		size_t verticesSize = m.vertices.size();
+		size_t verticesSize = m->vertices.size();
 
 		for (size_t i = 0; i < verticesSize; i++) {
-			m.vertices[i].matIndex = static_cast<uint32_t>(objSize);
+			m->vertices[i].matIndex = static_cast<uint32_t>(objSize);
 		}
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
-		m.modelMatrix = newModel * m.modelMatrix;
+		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
-
 	}
 
 	void realtimeLoad(std::string p) {
@@ -3272,11 +3293,11 @@ private:
 			for (size_t j = 0; j < objects.size(); j++) {
 				int textureExistence = 0;
 				// bitfield for which textures exist
-				textureExistence |= (objects[j].material.baseColor.found ? 1 : 0);
-				textureExistence |= (objects[j].material.metallicRoughness.found ? 1 : 0) << 1;
-				textureExistence |= (objects[j].material.normalMap.found ? 1 : 0) << 2;
-				textureExistence |= (objects[j].material.emissiveMap.found ? 1 : 0) << 3;
-				textureExistence |= (objects[j].material.occlusionMap.found ? 1 : 0) << 4;
+				textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+				textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+				textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+				textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+				textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
 
 				struct {
 					int notRender; // which index of the objects to not render in the main shader
@@ -3284,11 +3305,11 @@ private:
 					int texIndex; // starting index of the textures in the texture array
 				} pushConst;
 
-				if (objects[j].player) {
+				if (objects[j]->player) {
 					pushConst.notRender = static_cast<int>(j);
 				}
 				pushConst.textureExist = textureExistence;
-				pushConst.texIndex = meshTexStartInd[objects[j].texIndex];
+				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
 			}
@@ -3757,7 +3778,7 @@ private:
 		if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
 			uint64_t vertCount = 0;
 			for (const auto& o : objects) {
-				vertCount += o.vertices.size();
+				vertCount += o->vertices.size();
 			}
 			std::cout << "-------------------------------------------------" << std::endl;
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
