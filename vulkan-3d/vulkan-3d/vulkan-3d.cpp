@@ -178,10 +178,11 @@ private:
 		size_t textureCount; // number of textures in the model
 		size_t texIndex; // where in the texture array the textures of the model start
 
-		bool isLoaded; // if object is loaded or not to prevent reloading
 		bool startObj; // wether is loaded at the start of the program or not
-
 		bool player; // if the object is treated as a player model or not
+
+		uint32_t modelHash;
+
 
 		// default constructor
 		model()
@@ -195,9 +196,9 @@ private:
 			modelMatrix(),
 			textureCount(0),
 			texIndex(0),
-			isLoaded(false),
 			startObj(true),
-			player(false)
+			player(false),
+			modelHash()
 		{}
 
 		// copy constructor
@@ -212,9 +213,9 @@ private:
 			modelMatrix(other.modelMatrix),
 			textureCount(other.textureCount),
 			texIndex(other.texIndex),
-			isLoaded(other.isLoaded),
 			startObj(other.startObj),
-			player(other.player) {
+			player(other.player),
+			modelHash(other.modelHash) {
 		}
 	};
 	struct shadowMapDataObject {
@@ -456,6 +457,7 @@ private:
 	std::vector<std::unique_ptr<light>> lights;
 	shadowMapProportionsObject shadowProps;
 	uint32_t modelIndex; // index of where vertecies are loaded to
+	size_t uniqueModelCount = 0;
 
 	// textures and materials
 	std::vector<Texture> allTextures;
@@ -554,6 +556,8 @@ private:
 
 		setPlayer(1);
 		setPlayer(2);
+
+		uniqueModelCount = getUniqueModels();
 	}
 
 	void createInstance() {
@@ -1250,6 +1254,7 @@ private:
 						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+
 						if (colorFound) {
 							vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
 						}
@@ -1269,7 +1274,7 @@ private:
 							vertex.tangent = tangents[index];
 
 						}
-						vertex.matIndex = modelIndex;  // set the material index
+						vertex.vertIndex = modelIndex; // set the vert index
 
 						if (uniqueVertices.count(vertex) == 0) {
 							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -1361,8 +1366,11 @@ private:
 				newObject.vertices = tempVertices;
 				newObject.indices = tempIndices;
 
-				// set the newObject as loaded
-				newObject.isLoaded = true;
+				uint32_t hash1 = std::hash<std::size_t>{}(tempVertices.size());
+				uint32_t hash2 = std::hash<std::size_t>{}(tempIndices.size());
+
+				newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+
 				newObject.scale = scale;
 				newObject.position = pos;
 				newObject.rotation = rot;
@@ -1937,7 +1945,7 @@ private:
 			}
 		}
 
-		setupModelMatUBO(); //create the model matrix UBOs for each object
+		setupModelMatUBO(); //create the model matrix SSBO for each object
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
 
 		VkDescriptorBufferInfo modelMatBufferInfo{};
@@ -2562,8 +2570,8 @@ private:
 		// material index
 		attrDesc[4].binding = 0;
 		attrDesc[4].location = 4;
-		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for material index
-		attrDesc[4].offset = offsetof(dvl::Vertex, matIndex);
+		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for vert index
+		attrDesc[4].offset = offsetof(dvl::Vertex, vertIndex);
 
 		// normal
 		attrDesc[5].binding = 0;
@@ -3247,12 +3255,30 @@ private:
 		size_t verticesSize = m->vertices.size();
 
 		for (size_t i = 0; i < verticesSize; i++) {
-			m->vertices[i].matIndex = static_cast<uint32_t>(objSize);
+			m->vertices[i].vertIndex = static_cast<uint32_t>(objSize);
 		}
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
+	}
+
+	size_t getModelNumHash(uint32_t hash) { // get the number of models that have the same hash
+		size_t count = 0;
+		for (auto& m : objects) {
+			if (m->modelHash == hash) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	size_t getUniqueModels() { // get the number of unique models
+		std::unordered_set<uint32_t> uniqueModels;
+		for (auto& m : objects) {
+			uniqueModels.insert(m->modelHash);
+		}
+		return uniqueModels.size();
 	}
 
 	void realtimeLoad(std::string p) {
@@ -3851,7 +3877,6 @@ private:
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		createCommandBuffer();
 		recordAllCommandBuffers();
-		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 
 	void scatterObjects(int count, float radius) {

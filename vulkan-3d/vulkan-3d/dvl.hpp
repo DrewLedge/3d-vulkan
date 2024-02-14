@@ -17,7 +17,7 @@ public:
 		dml::vec4 col; // color r, g, b, a
 		dml::vec3 normal; // normal vector x, y, z
 		float alpha;
-		uint32_t matIndex; // used to know which vertex belong to which material
+		uint32_t vertIndex; // used to know which vertex belong to which material
 		dml::vec4 tangent;
 
 		// default constructor:
@@ -42,7 +42,7 @@ public:
 			col(color),
 			normal(normalVector),
 			alpha(alphaValue),
-			matIndex(0),
+			vertIndex(0),
 			tangent(tang)
 		{}
 		bool operator==(const Vertex& other) const {
