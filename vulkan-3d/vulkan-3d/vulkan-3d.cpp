@@ -431,7 +431,6 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
-	VkSemaphore skyboxSemaphore;
 
 	// shader modules
 	VkShaderModule fragShaderModule;
@@ -3292,7 +3291,6 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
-			vkWaitForFences(device, 1, &inFlightFences[i], VK_TRUE, UINT64_MAX);
 			if (vkBeginCommandBuffer(commandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
@@ -3445,12 +3443,14 @@ private:
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
+
+		VkClearValue clearValue = {};
+		clearValue.depthStencil.depth = 1.0f;
+		clearValue.depthStencil.stencil = 0;
 		for (size_t i = 0; i < lights.size(); i++) {
-			vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer!");
 			}
-			transitionImageLayout(lights[i]->shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1);
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3458,11 +3458,6 @@ private:
 			renderPassInfo.framebuffer = lights[i]->shadowMapData.frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
-
-			VkClearValue clearValue = {};
-			clearValue.depthStencil.depth = 1.0f;
-			clearValue.depthStencil.stencil = 0;
-
 			renderPassInfo.clearValueCount = 1;
 			renderPassInfo.pClearValues = &clearValue;
 			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -3491,9 +3486,8 @@ private:
 				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0); // 3d models vert and index buffers
 			}
-			// end the render pass and transition the shadowmap image to shader read only optimal
+			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
-			transitionImageLayout(lights[i]->shadowMapData.image, VK_FORMAT_D32_SFLOAT, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
@@ -3570,10 +3564,6 @@ private:
 		if (resultShadowFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow finished semaphore!");
 		}
-		VkResult resultSkyFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &skyboxSemaphore);
-		if (resultSkyFinished != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shadow finished semaphore!");
-		}
 	}
 
 	void recreateSwap() {
@@ -3597,8 +3587,7 @@ private:
 		createGraphicsPipeline();
 		createSkyboxPipeline();
 		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
-		recordShadowCommandBuffers();
-		recordCommandBuffers();
+		recordAllCommandBuffers();
 		initializeMouseInput(true);
 	}
 
@@ -3686,7 +3675,8 @@ private:
 	}
 
 
-	void recordAllCommandBuffers() { // re-record command buffers to reference the new buffers
+	void recordAllCommandBuffers() { // record the main and shadow command buffers
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 	}
@@ -3859,9 +3849,8 @@ private:
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
 		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
-		recordShadowCommandBuffers();
 		createCommandBuffer();
-		recordCommandBuffers(); //record and submit the command buffers
+		recordAllCommandBuffers();
 		std::cout << "Vulkan initialized successfully!" << std::endl;
 	}
 
@@ -3885,7 +3874,6 @@ private:
 		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
 		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
 		vkDestroySemaphore(device, shadowSemaphore, nullptr);
-		vkDestroySemaphore(device, skyboxSemaphore, nullptr);
 		for (size_t i = 0; i < 3; i++) {
 			vkDestroyFence(device, inFlightFences[i], nullptr);
 		}
