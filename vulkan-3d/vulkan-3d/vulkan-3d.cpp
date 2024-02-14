@@ -459,6 +459,9 @@ private:
 	uint32_t modelIndex; // index of where vertecies are loaded to
 	size_t uniqueModelCount = 0;
 
+	std::unordered_map<size_t, size_t> uniqueModelIndex;
+	std::unordered_map<size_t, size_t> modelHashToBufferIndex;
+
 	// textures and materials
 	std::vector<Texture> allTextures;
 	std::vector<int> meshTexStartInd;
@@ -558,6 +561,7 @@ private:
 		setPlayer(2);
 
 		uniqueModelCount = getUniqueModels();
+		std::cout << "Unique models: " << uniqueModelCount << std::endl;
 	}
 
 	void createInstance() {
@@ -1368,8 +1372,12 @@ private:
 
 				uint32_t hash1 = std::hash<std::size_t>{}(tempVertices.size());
 				uint32_t hash2 = std::hash<std::size_t>{}(tempIndices.size());
+				uint32_t hash3 = std::hash<std::size_t>{}(mesh.primitives.size());
+				uint32_t hash4 = std::hash<std::string>{}(mesh.name);
 
-				newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+				uint32_t hash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+				hash ^= (hash3 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
+				newObject.modelHash = hash ^ (hash4 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
 
 				newObject.scale = scale;
 				newObject.position = pos;
@@ -3173,15 +3181,24 @@ private:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	void createModelBuffers() { // creates the vertex and index buffers for the models into a single buffer
-		bufferData.resize(objects.size());
+	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
+		bufferData.resize(uniqueModelCount);
+		uniqueModelIndex.clear();
+		modelHashToBufferIndex.clear();
 
-		// get the total size of the vertex and index buffers
 		VkDeviceSize totalVertexBufferSize = 0;
 		VkDeviceSize totalIndexBufferSize = 0;
-		for (const auto& obj : objects) {
-			totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
-			totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+
+		// get the total size of the vertex and index buffers
+		uint32_t ind = 0;
+		for (size_t i = 0; i < objects.size(); ++i) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex.find(obj->modelHash) == uniqueModelIndex.end()) {
+				totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
+				totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+				uniqueModelIndex[obj->modelHash] = i; //store the index of the object
+				modelHashToBufferIndex[obj->modelHash] = ind++;
+			}
 		}
 
 		// create and map the vertex buffer
@@ -3197,21 +3214,24 @@ private:
 		VkDeviceSize currentIndexOffset = 0;
 
 		for (size_t i = 0; i < objects.size(); i++) {
+			size_t modelInd = uniqueModelIndex[objects[i]->modelHash];
+			if (modelInd != i) continue; // skip if not the first instance of the model
+			size_t bufferInd = modelHashToBufferIndex[objects[i]->modelHash];
+
 			// vertex data
-			bufferData[i].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
-			bufferData[i].vertexCount = static_cast<uint32_t>(objects[i]->vertices.size());
-			memcpy(vertexData, objects[i]->vertices.data(), bufferData[i].vertexCount * sizeof(dvl::Vertex));
-			vertexData += bufferData[i].vertexCount * sizeof(dvl::Vertex);
-			currentVertexOffset += bufferData[i].vertexCount;
+			bufferData[bufferInd].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
+			bufferData[bufferInd].vertexCount = static_cast<uint32_t>(objects[modelInd]->vertices.size());
+			memcpy(vertexData, objects[modelInd]->vertices.data(), bufferData[bufferInd].vertexCount * sizeof(dvl::Vertex));
+			vertexData += bufferData[bufferInd].vertexCount * sizeof(dvl::Vertex);
+			currentVertexOffset += bufferData[bufferInd].vertexCount;
 
 			// index data
-			bufferData[i].indexOffset = static_cast<uint32_t>(currentIndexOffset);
-			bufferData[i].indexCount = static_cast<uint32_t>(objects[i]->indices.size());
-			memcpy(indexData, objects[i]->indices.data(), bufferData[i].indexCount * sizeof(uint32_t));
-			indexData += bufferData[i].indexCount * sizeof(uint32_t);
-			currentIndexOffset += bufferData[i].indexCount;
+			bufferData[bufferInd].indexOffset = static_cast<uint32_t>(currentIndexOffset);
+			bufferData[bufferInd].indexCount = static_cast<uint32_t>(objects[modelInd]->indices.size());
+			memcpy(indexData, objects[modelInd]->indices.data(), bufferData[bufferInd].indexCount * sizeof(uint32_t));
+			indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
+			currentIndexOffset += bufferData[bufferInd].indexCount;
 		}
-
 		vkUnmapMemory(device, vertBufferMem);
 		vkUnmapMemory(device, indBufferMem);
 	}
@@ -3261,6 +3281,8 @@ private:
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
+
+		uniqueModelCount = getUniqueModels();
 	}
 
 	size_t getModelNumHash(uint32_t hash) { // get the number of models that have the same hash
@@ -3347,7 +3369,8 @@ private:
 			VkBuffer indexBuffer = indBuffer;
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-			size_t culled = 0;
+
+
 			for (size_t j = 0; j < objects.size(); j++) {
 				int textureExistence = 0;
 				// bitfield for which textures exist
@@ -3369,7 +3392,13 @@ private:
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-				vkCmdDrawIndexed(commandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0);
+
+				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
+				if (modelInd != j) continue; // skip if not the first instance of the model
+				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+				vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount,
+					getModelNumHash(objects[modelInd]->modelHash), bufferData[bufferInd].indexOffset,
+					bufferData[bufferInd].vertexOffset, 0);
 			}
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
@@ -3510,7 +3539,13 @@ private:
 				pushConst.lightIndex = static_cast<int>(i);
 
 				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[j].indexCount, 1, bufferData[j].indexOffset, bufferData[j].vertexOffset, 0); // 3d models vert and index buffers
+
+				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
+				if (modelInd != j) continue; // skip if not the first instance of the model
+				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount,
+					getModelNumHash(objects[modelInd]->modelHash), bufferData[bufferInd].indexOffset,
+					bufferData[bufferInd].vertexOffset, 0);
 			}
 			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
