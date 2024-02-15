@@ -308,8 +308,8 @@ private:
 	struct modelMat {
 		dml::mat4 model;
 	};
-	struct modelMatSSBO {
-		modelMat objectMatrixData[MAX_MODELS];
+	struct modelMatInstanceData {
+		modelMat object[MAX_MODELS];
 	};
 	struct camUBO {
 		dml::mat4 view;
@@ -418,12 +418,16 @@ private:
 	// buffers and related memory
 	VkBuffer vertBuffer;
 	VkDeviceMemory vertBufferMem;
+
 	VkBuffer indBuffer;
 	VkDeviceMemory indBufferMem;
-	VkBuffer modelMatBuffer;
-	VkDeviceMemory modelMatBufferMem;
+
+	VkBuffer instanceBuffer;
+	VkDeviceMemory instanceBufferMem;
+
 	VkBuffer lightBuffer;
 	VkDeviceMemory lightBufferMem;
+
 	VkBuffer sceneIndexBuffer;
 	VkDeviceMemory sceneIndexBufferMem;
 
@@ -451,7 +455,7 @@ private:
 	// scene data and objects
 	std::vector<bufData> bufferData;
 	std::vector<std::unique_ptr<model>> objects;
-	modelMatSSBO objMatData;
+	modelMatInstanceData objInstanceData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
 	std::vector<std::unique_ptr<light>> lights;
@@ -1605,37 +1609,38 @@ private:
 		return shaderModule;
 	}
 
-	void setupModelMatUBO() { // ssbo containing the model matricies for each object
+	void setupModelMatInstanceBuffer() {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(modelMatSSBO);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT; // will be used as a storage buffer
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
+		bufferCreateInfo.size = sizeof(modelMatInstanceData);
+		bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &modelMatBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create matrix SSBO!");
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &instanceBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create instance buffer!");
 		}
 
 		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, modelMatBuffer, &memoryRequirements);
+		vkGetBufferMemoryRequirements(device, instanceBuffer, &memoryRequirements);
 
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
 		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &modelMatBufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &instanceBufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for the instance buffer!");
 		}
 
-		vkBindBufferMemory(device, modelMatBuffer, modelMatBufferMem, 0);
+		vkBindBufferMemory(device, instanceBuffer, instanceBufferMem, 0);
 
 		// once memory is bound, map and fill it
 		void* data;
-		vkMapMemory(device, modelMatBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &objMatData, bufferCreateInfo.size);
-		vkUnmapMemory(device, modelMatBufferMem);
+		vkMapMemory(device, instanceBufferMem, 0, bufferCreateInfo.size, 0, &data);
+		memcpy(data, &objInstanceData, bufferCreateInfo.size);
+		vkUnmapMemory(device, instanceBufferMem);
 	}
+
 
 	void setupCamMatUBO() { // ubo containing the cameras matricies (view and projection)
 		VkBufferCreateInfo bufferCreateInfo{};
@@ -1757,16 +1762,16 @@ private:
 				dml::mat4 s = dml::scale(objects[i]->scale);
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 				updatedModel = model;
-				memcpy(&objMatData.objectMatrixData[i].model, &updatedModel, sizeof(updatedModel));
+				memcpy(&objInstanceData.object[i].model, &updatedModel, sizeof(updatedModel));
 			}
 			else {
-				memcpy(&objMatData.objectMatrixData[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
 			}
 		}
 		void* matrixData;
-		vkMapMemory(device, modelMatBufferMem, 0, sizeof(objMatData), 0, &matrixData);
-		memcpy(matrixData, &objMatData, sizeof(objMatData));
-		vkUnmapMemory(device, modelMatBufferMem);
+		vkMapMemory(device, instanceBufferMem, 0, sizeof(objInstanceData), 0, &matrixData);
+		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
+		vkUnmapMemory(device, instanceBufferMem);
 	}
 
 	void copyLightToLightCords(const light& src, lightCords& dest) {
@@ -1910,32 +1915,30 @@ private:
 	}
 
 	void createDS() {
-		int size = 6;
+		int size = 5;
 		descs.sets.resize(size);
 		descs.layouts.resize(size);
 		descs.pools.resize(size);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
 		//initialize descriptor set layouts and pools
-		descs.layouts[0] = createDSLayout(0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // model matricies ssbo
-		descs.layouts[1] = createDSLayout(1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
-		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
-		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
+		descs.layouts[0] = createDSLayout(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
+		descs.layouts[1] = createDSLayout(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
+		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
+		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 
-		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
-		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
-		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
+		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
+		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
+		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
+		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
+		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { 1, static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -1953,13 +1956,7 @@ private:
 			}
 		}
 
-		setupModelMatUBO(); //create the model matrix SSBO for each object
 		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
-
-		VkDescriptorBufferInfo modelMatBufferInfo{};
-		modelMatBufferInfo.buffer = modelMatBuffer;
-		modelMatBufferInfo.offset = 0;
-		modelMatBufferInfo.range = sizeof(modelMatSSBO);
 
 		VkDescriptorBufferInfo camMatBufferInfo{};
 		camMatBufferInfo.buffer = cam.buffer;
@@ -1988,55 +1985,47 @@ private:
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = sizeof(lightDataSSBO);
 
-		std::array<VkWriteDescriptorSet, 6> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, 5> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descs.sets[0];
 		descriptorWrites[0].dstBinding = 0;
 		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER; //type=SSBO
-		descriptorWrites[0].descriptorCount = 1;
-		descriptorWrites[0].pBufferInfo = &modelMatBufferInfo;
+		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[0].descriptorCount = static_cast<uint32_t>(totalTextureCount);
+		descriptorWrites[0].pImageInfo = imageInfos.data();
 
 		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[1].dstSet = descs.sets[1];
 		descriptorWrites[1].dstBinding = 1;
 		descriptorWrites[1].dstArrayElement = 0;
-		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[1].descriptorCount = static_cast<uint32_t>(totalTextureCount);
-		descriptorWrites[1].pImageInfo = imageInfos.data();
+		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
+		descriptorWrites[1].descriptorCount = 1;
+		descriptorWrites[1].pBufferInfo = &lightBufferInfo;
 
 		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[2].dstSet = descs.sets[2];
 		descriptorWrites[2].dstBinding = 2;
 		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
-		descriptorWrites[2].descriptorCount = 1;
-		descriptorWrites[2].pBufferInfo = &lightBufferInfo;
+		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[2].descriptorCount = static_cast<uint32_t>(lights.size());
+		descriptorWrites[2].pImageInfo = shadowInfos.data();
 
 		descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[3].dstSet = descs.sets[3];
 		descriptorWrites[3].dstBinding = 3;
 		descriptorWrites[3].dstArrayElement = 0;
 		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[3].descriptorCount = static_cast<uint32_t>(lights.size());
-		descriptorWrites[3].pImageInfo = shadowInfos.data();
+		descriptorWrites[3].descriptorCount = 1;
+		descriptorWrites[3].pImageInfo = &skyboxInfo;
 
 		descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[4].dstSet = descs.sets[4];
 		descriptorWrites[4].dstBinding = 4;
 		descriptorWrites[4].dstArrayElement = 0;
-		descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=ubo
 		descriptorWrites[4].descriptorCount = 1;
-		descriptorWrites[4].pImageInfo = &skyboxInfo;
-
-		descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[5].dstSet = descs.sets[5];
-		descriptorWrites[5].dstBinding = 5;
-		descriptorWrites[5].dstArrayElement = 0;
-		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=ubo
-		descriptorWrites[5].descriptorCount = 1;
-		descriptorWrites[5].pBufferInfo = &camMatBufferInfo;
+		descriptorWrites[4].pBufferInfo = &camMatBufferInfo;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -2545,12 +2534,20 @@ private:
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
 		// Vertex input setup (tells Vulkan how to read/organize vertex data based on the stride, offset, and rate)
-		VkVertexInputBindingDescription bindDesc{};
-		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(dvl::Vertex); // Number of bytes from one entry to the next
-		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
+		VkVertexInputBindingDescription vertBindDesc{};
+		vertBindDesc.binding = 0;
+		vertBindDesc.stride = sizeof(dvl::Vertex); // Number of bytes from one entry to the next
+		vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
 
-		std::array<VkVertexInputAttributeDescription, 7> attrDesc;
+		VkVertexInputBindingDescription instanceBindDesc{};
+		instanceBindDesc.binding = 1;
+		instanceBindDesc.stride = sizeof(modelMat);
+		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
+
+		std::vector<VkVertexInputAttributeDescription> attrDesc;
+		attrDesc.resize(11);
 
 		attrDesc[0].binding = 0;
 		attrDesc[0].location = 0;
@@ -2575,28 +2572,38 @@ private:
 		attrDesc[3].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
 		attrDesc[3].offset = offsetof(dvl::Vertex, tex);
 
-		// material index
+		// normal
 		attrDesc[4].binding = 0;
 		attrDesc[4].location = 4;
-		attrDesc[4].format = VK_FORMAT_R32_UINT; // 1 uint32_t for vert index
-		attrDesc[4].offset = offsetof(dvl::Vertex, vertIndex);
-
-		// normal
-		attrDesc[5].binding = 0;
-		attrDesc[5].location = 5;
-		attrDesc[5].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
-		attrDesc[5].offset = offsetof(dvl::Vertex, normal);
+		attrDesc[4].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
+		attrDesc[4].offset = offsetof(dvl::Vertex, normal);
 
 		// tangents
-		attrDesc[6].binding = 0;
-		attrDesc[6].location = 6;
-		attrDesc[6].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
-		attrDesc[6].offset = offsetof(dvl::Vertex, tangent);
+		attrDesc[5].binding = 0;
+		attrDesc[5].location = 5;
+		attrDesc[5].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
+		attrDesc[5].offset = offsetof(dvl::Vertex, tangent);
+
+		// pass the model matrix as a per-instance data
+		// seperate the matrix into 4 vec4's so it can be quickly passed and processed
+		for (uint32_t i = 0; i < 4; i++) {
+			uint8_t index = 6 + i;
+			attrDesc[index].binding = 1;
+			attrDesc[index].location = index;
+			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
+		}
+
+		// vertex index
+		attrDesc[10].binding = 0;
+		attrDesc[10].location = 10;
+		attrDesc[10].format = VK_FORMAT_R32_UINT; // 1 uint32_t for vert index
+		attrDesc[10].offset = offsetof(dvl::Vertex, vertIndex);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 1;
-		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
+		vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
+		vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
 		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
 		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
 
@@ -2714,7 +2721,7 @@ private:
 		pushConstantRange.size = sizeof(int) * 3;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[3], descs.layouts[5] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2797,8 +2804,8 @@ private:
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
-
 	}
+
 	void createShadowPipeline() {
 		// get shader data
 		auto vertShaderSPV = readFile("shadow_vert_shader.spv");
@@ -2818,13 +2825,20 @@ private:
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
-		// vertex input setup:
-		VkVertexInputBindingDescription bindDesc{};
-		bindDesc.binding = 0;
-		bindDesc.stride = sizeof(dvl::Vertex);
-		bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+		VkVertexInputBindingDescription vertBindDesc{};
+		vertBindDesc.binding = 0;
+		vertBindDesc.stride = sizeof(dvl::Vertex);
+		vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-		std::array<VkVertexInputAttributeDescription, 1> attrDesc; // array of attribute descriptions
+		VkVertexInputBindingDescription instanceBindDesc{};
+		instanceBindDesc.binding = 1;
+		instanceBindDesc.stride = sizeof(modelMat);
+		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
+
+		std::vector<VkVertexInputAttributeDescription> attrDesc; // array of attribute descriptions
+		attrDesc.resize(5);
 
 		// vertex position attribute
 		attrDesc[0].binding = 0;
@@ -2832,10 +2846,20 @@ private:
 		attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
 		attrDesc[0].offset = offsetof(dvl::Vertex, pos);
 
+		// pass the model matrix as a per-instance data
+		// seperate the matrix into 4 vec4's so it can be quickly passed and processed
+		for (uint32_t i = 0; i < 4; i++) {
+			uint8_t index = i + 1;
+			attrDesc[index].binding = 1;
+			attrDesc[index].location = index;
+			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
+		}
+
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-		vertexInputInfo.vertexBindingDescriptionCount = 1;
-		vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
+		vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
+		vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
 		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
 		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
 
@@ -2936,10 +2960,10 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 2; // 2 ints for the light index and the objects model matrix index
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[2] }; // the object's ubo data and the light data
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[1] }; // the light data ssbo
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.setLayoutCount = 1;
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
@@ -3072,7 +3096,7 @@ private:
 		dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
 		dynamicState.pDynamicStates = dynamicStates;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[4], descs.layouts[5] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3], descs.layouts[4] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3330,9 +3354,11 @@ private:
 
 	void recordCommandBuffers() { //records and submits the command buffers
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet skyboxDescriptorSets[] = { descs.sets[4], descs.sets[5] };
-		VkDescriptorSet descriptorSetsForScene[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[3], descs.sets[5] };
-		VkDeviceSize offsets[] = { 0 };
+		VkDescriptorSet skyboxDescriptorSets[] = { descs.sets[3], descs.sets[4] };
+		VkDescriptorSet descriptorSetsForScene[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+		VkDeviceSize skyboxOffsets[] = { 0 };
+		VkDeviceSize mainOffsets[] = { 0, 0 };
+
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3358,16 +3384,18 @@ private:
 			// FOR THE SKYBOX
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
 			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, 2, skyboxDescriptorSets, 0, nullptr);
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skybox.vertBuffer, offsets);
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, &skybox.vertBuffer, skyboxOffsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
 			vkCmdDrawIndexed(commandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
 			// FOR THE MAIN PASS
 			vkCmdBindPipeline(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineData.graphicsPipeline);
-			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineData.layout, 0, 5, descriptorSetsForScene, 0, nullptr);
-			VkBuffer vertexBuffersArray[1] = { vertBuffer };
+			vkCmdBindDescriptorSets(commandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPipelineData.layout, 0, 4, descriptorSetsForScene, 0, nullptr);
+			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
 			VkBuffer indexBuffer = indBuffer;
-			vkCmdBindVertexBuffers(commandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+
+			// bind the vertex and instance buffers
+			vkCmdBindVertexBuffers(commandBuffers[i], 0, 2, vertexBuffersArray, mainOffsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 
@@ -3393,13 +3421,16 @@ private:
 				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
+				// only process unique models
 				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
-				if (modelInd != j) continue; // skip if not the first instance of the model
+				if (modelInd != j) continue;
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-				vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount,
-					getModelNumHash(objects[modelInd]->modelHash), bufferData[bufferInd].indexOffset,
-					bufferData[bufferInd].vertexOffset, 0);
+
+				uint32_t instanceCount = getModelNumHash(objects[modelInd]->modelHash);
+				vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, modelInd);
 			}
+
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
 			ImGui_ImplGlfw_NewFrame();
@@ -3520,14 +3551,16 @@ private:
 			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineData.graphicsPipeline);
 
 			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
-			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[2] };
-			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineData.layout, 0, 2, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descs.sets[1] };
+			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipelineData.layout, 0, 1, dSets, 0, nullptr);
 
 			// iterate through all objects that cast shadows
-			VkBuffer vertexBuffersArray[1] = { vertBuffer };
+			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
 			VkBuffer indexBuffer = indBuffer;
-			VkDeviceSize offsets[] = { 0 };
-			vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 1, vertexBuffersArray, offsets);
+			VkDeviceSize offsets[] = { 0, 0 };
+
+			vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 2, vertexBuffersArray, offsets);
+
 			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 			for (size_t j = 0; j < objects.size(); j++) {
@@ -3540,12 +3573,14 @@ private:
 
 				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
+				// only process unique models
 				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
-				if (modelInd != j) continue; // skip if not the first instance of the model
+				if (modelInd != j) continue;
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount,
-					getModelNumHash(objects[modelInd]->modelHash), bufferData[bufferInd].indexOffset,
-					bufferData[bufferInd].vertexOffset, 0);
+
+				uint32_t instanceCount = getModelNumHash(objects[modelInd]->modelHash);
+				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, 0);
 			}
 			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
@@ -3902,6 +3937,7 @@ private:
 		setupShadowMaps(); // create the inital textures for the shadow maps
 		loadSkybox("skyboxes/overcast-skies.hdr");
 		createSkyboxBufferData();
+		setupModelMatInstanceBuffer();
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createGraphicsPipeline();
 		createSkyboxPipeline();

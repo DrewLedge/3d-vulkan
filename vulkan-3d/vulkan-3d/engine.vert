@@ -9,9 +9,16 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec4 inColor; 
 layout(location = 2) in float inAlpha;
 layout(location = 3) in vec2 inTexCoord;
-layout(location = 4) in uint inVertIndex;
-layout(location = 5) in vec3 inNormal;
-layout(location = 6) in vec4 inTangent;
+layout(location = 4) in vec3 inNormal;
+layout(location = 5) in vec4 inTangent;
+layout(location = 10) in uint inVertIndex;
+
+
+// individual rows of the instanced model matrix
+layout(location = 6) in vec4 model1;
+layout(location = 7) in vec4 model2;
+layout(location = 8) in vec4 model3;
+layout(location = 9) in vec4 model4;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outTexCoord;
@@ -27,15 +34,7 @@ layout(location = 11) flat out uint bitfield; // number of textures per model
 layout(location = 20) out vec3 test;
 
 
-
-struct matrixUBO {
-    mat4 model;
-};
-layout(set = 0, binding = 0) buffer matBufferObject {
-    matrixUBO matrixSSBO[MAX_MODELS];
-} matSSBO;
-
-layout(set = 4, binding = 5) uniform camBufferObject {
+layout(set = 3, binding = 4) uniform camBufferObject {
     mat4 view;
     mat4 proj;
 } camUBO;
@@ -58,7 +57,7 @@ void main() {
 
     mat4 proj = camUBO.proj;
     mat4 view = camUBO.view;
-    mat4 model = matSSBO.matrixSSBO[modelIndex].model;
+    mat4 model = mat4(model1, model2, model3, model4);
 
     vec3 worldCamPos = vec3(inverse(view)[3]);
     vec4 worldPos = model * vec4(inPosition, 1.0);

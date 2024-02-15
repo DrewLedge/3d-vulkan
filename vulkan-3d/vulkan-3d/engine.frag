@@ -3,9 +3,9 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 #extension GL_EXT_shadow_samplers : enable
 
-layout(set = 1, binding = 1) uniform sampler2D texSamplers[];
+layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
-layout(set = 3, binding = 3) uniform sampler2DShadow shadowMapSamplers[];
+layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
 
 struct formsVec3 { // custom structure to hold my vec3s
     float x;
@@ -29,7 +29,7 @@ struct lightData {
 };
 
 
-layout (set=2, binding = 2) buffer LightBuffer {
+layout (set=1, binding = 1) buffer LightBuffer {
 	lightMatrix lightMatricies[20];
     lightData lights[20];
 };
