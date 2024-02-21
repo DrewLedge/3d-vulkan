@@ -300,6 +300,14 @@ public:
 				}
 			}
 		}
+
+		vec4 getRow(int index) const {
+			if (index < 0 || index > 3) {
+				throw std::out_of_range("Index out of range!");
+			}
+			return vec4(m[0][index], m[1][index], m[2][index], m[3][index]);
+		}
+
 		bool operator==(const mat4& other) const {
 			const float epsilon = 0.00001f;
 			bool equal = true;

@@ -461,7 +461,6 @@ private:
 	std::vector<std::unique_ptr<light>> lights;
 	shadowMapProportionsObject shadowProps;
 	uint32_t modelIndex; // index of where vertecies are loaded to
-	size_t uniqueModelCount = 0;
 
 	std::unordered_map<size_t, size_t> uniqueModelIndex;
 	std::unordered_map<size_t, size_t> modelHashToBufferIndex;
@@ -564,8 +563,6 @@ private:
 		setPlayer(1);
 		setPlayer(2);
 
-		uniqueModelCount = getUniqueModels();
-		std::cout << "Unique models: " << uniqueModelCount << std::endl;
 	}
 
 	void createInstance() {
@@ -1756,13 +1753,11 @@ private:
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
 			if (objects[i]->player) {
-				dml::mat4 updatedModel;
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i]->scale);
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
-				updatedModel = model;
-				memcpy(&objInstanceData.object[i].model, &updatedModel, sizeof(updatedModel));
+				memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
 			}
 			else {
 				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
@@ -3206,7 +3201,7 @@ private:
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
-		bufferData.resize(uniqueModelCount);
+		bufferData.resize(getUniqueModels());
 		uniqueModelIndex.clear();
 		modelHashToBufferIndex.clear();
 
@@ -3305,8 +3300,6 @@ private:
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
-
-		uniqueModelCount = getUniqueModels();
 	}
 
 	size_t getModelNumHash(uint32_t hash) { // get the number of models that have the same hash
@@ -3333,8 +3326,6 @@ private:
 
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 2, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-
-		recreateBuffers();
 	}
 	void recreateBuffers() {
 		vkDestroyBuffer(device, vertBuffer, nullptr);
@@ -3398,7 +3389,6 @@ private:
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 2, vertexBuffersArray, mainOffsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
-
 			for (size_t j = 0; j < objects.size(); j++) {
 				int textureExistence = 0;
 				// bitfield for which textures exist
@@ -3417,18 +3407,21 @@ private:
 				if (objects[j]->player) {
 					pushConst.notRender = static_cast<int>(j);
 				}
+				else {
+					pushConst.notRender = -1;
+				}
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
 				// only process unique models
-				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
-				if (modelInd != j) continue;
-				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-
-				uint32_t instanceCount = getModelNumHash(objects[modelInd]->modelHash);
-				vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
-					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, modelInd);
+				size_t uniqueModelInd = uniqueModelIndex[objects[j]->modelHash];
+				if (uniqueModelInd == j) {
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+				}
 			}
 
 			// prepare for next frame in ImGui:
@@ -3574,13 +3567,13 @@ private:
 				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
 				// only process unique models
-				size_t modelInd = uniqueModelIndex[objects[j]->modelHash];
-				if (modelInd != j) continue;
-				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-
-				uint32_t instanceCount = getModelNumHash(objects[modelInd]->modelHash);
-				vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
-					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, 0);
+				size_t uniqueModelInd = uniqueModelIndex[objects[j]->modelHash];
+				if (uniqueModelInd == j) {
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+				}
 			}
 			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
@@ -3908,6 +3901,7 @@ private:
 			std::cout << "-------------------------------------------------" << std::endl;
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
 			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
+			std::cout << "Object count: " << objects.size() << std::endl;
 			std::cout << "Score: " << finalS << std::endl;
 		}
 
