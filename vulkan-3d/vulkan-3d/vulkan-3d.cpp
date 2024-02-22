@@ -183,6 +183,8 @@ private:
 
 		uint32_t modelHash;
 
+		std::string name;
+
 
 		// default constructor
 		model()
@@ -198,7 +200,8 @@ private:
 			texIndex(0),
 			startObj(true),
 			player(false),
-			modelHash()
+			modelHash(),
+			name("")
 		{}
 
 		// copy constructor
@@ -215,7 +218,8 @@ private:
 			texIndex(other.texIndex),
 			startObj(other.startObj),
 			player(other.player),
-			modelHash(other.modelHash) {
+			modelHash(other.modelHash),
+			name(other.name) {
 		}
 	};
 	struct shadowMapDataObject {
@@ -455,6 +459,7 @@ private:
 	// scene data and objects
 	std::vector<bufData> bufferData;
 	std::vector<std::unique_ptr<model>> objects;
+	std::vector<std::unique_ptr<model>> uniqueObjects;
 	modelMatInstanceData objInstanceData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
@@ -559,6 +564,10 @@ private:
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
+
+		for (auto& obj : objects) {
+			uniqueObjects.push_back(std::make_unique<model>(*obj));
+		}
 
 		setPlayer(1);
 		setPlayer(2);
@@ -1379,6 +1388,8 @@ private:
 				uint32_t hash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
 				hash ^= (hash3 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
 				newObject.modelHash = hash ^ (hash4 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
+
+				newObject.name = mesh.name;
 
 				newObject.scale = scale;
 				newObject.position = pos;
@@ -3201,6 +3212,8 @@ private:
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
+		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->modelHash < b->modelHash; });
+
 		bufferData.resize(getUniqueModels());
 		uniqueModelIndex.clear();
 		modelHashToBufferIndex.clear();
@@ -3283,7 +3296,7 @@ private:
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<model>(*objects[object]);
+		auto m = std::make_unique<model>(*uniqueObjects[object]);
 
 		m->scale = scale;
 		m->position = pos;
@@ -3326,6 +3339,9 @@ private:
 
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 2, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+
+		recreateBuffers();
+
 	}
 	void recreateBuffers() {
 		vkDestroyBuffer(device, vertBuffer, nullptr);
@@ -3407,9 +3423,6 @@ private:
 				if (objects[j]->player) {
 					pushConst.notRender = static_cast<int>(j);
 				}
-				else {
-					pushConst.notRender = -1;
-				}
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
@@ -3419,6 +3432,7 @@ private:
 				if (uniqueModelInd == j) {
 					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
 					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+
 					vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				}

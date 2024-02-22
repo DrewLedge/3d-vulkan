@@ -305,7 +305,7 @@ public:
 			if (index < 0 || index > 3) {
 				throw std::out_of_range("Index out of range!");
 			}
-			return vec4(m[0][index], m[1][index], m[2][index], m[3][index]);
+			return vec4(m[index][0], m[index][1], m[index][2], m[index][3]);
 		}
 
 		bool operator==(const mat4& other) const {
