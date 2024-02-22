@@ -37,20 +37,14 @@ layout (set=1, binding = 1) buffer LightBuffer {
 layout(location = 0) in vec4 fragColor; // base color data from vertex attributes
 layout(location = 1) in vec2 inTexCoord;
 layout(location = 2) flat in uint inTexIndex;
-layout(location = 3) flat in uint inModelIndex;
-layout(location = 4) in vec3 inFragPos;
-layout(location = 5) in vec3 inViewDir;
-layout(location = 6) in mat3 TBN;
-layout(location = 9) in float handedness;
-layout(location = 10) flat in uint render; // if 0 render, if 1 don't render
-layout(location = 11) flat in uint bitfield;
-layout(location = 20) in vec3 test;
-
+layout(location = 3) in vec3 inFragPos;
+layout(location = 4) in vec3 inViewDir;
+layout(location = 5) in mat3 TBN;
+layout(location = 8) flat in uint render; // if 0 render, if 1 don't render
+layout(location = 9) flat in uint bitfield;
 
 layout(location = 0) out vec4 outColor; 
 float PI = acos(-1.0);
-
-
 
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  

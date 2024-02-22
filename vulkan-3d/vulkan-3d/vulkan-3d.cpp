@@ -182,9 +182,8 @@ private:
 		bool player; // if the object is treated as a player model or not
 
 		uint32_t modelHash;
-
 		std::string name;
-
+		int index;
 
 		// default constructor
 		model()
@@ -201,7 +200,8 @@ private:
 			startObj(true),
 			player(false),
 			modelHash(),
-			name("")
+			name(""),
+			index(-1)
 		{}
 
 		// copy constructor
@@ -219,7 +219,8 @@ private:
 			startObj(other.startObj),
 			player(other.player),
 			modelHash(other.modelHash),
-			name(other.name) {
+			name(other.name),
+			index(other.index) {
 		}
 	};
 	struct shadowMapDataObject {
@@ -311,6 +312,7 @@ private:
 
 	struct modelMat {
 		dml::mat4 model;
+		uint32_t render;
 	};
 	struct modelMatInstanceData {
 		modelMat object[MAX_MODELS];
@@ -460,6 +462,7 @@ private:
 	std::vector<bufData> bufferData;
 	std::vector<std::unique_ptr<model>> objects;
 	std::vector<std::unique_ptr<model>> uniqueObjects;
+	std::vector<uint32_t> playerModels;
 	modelMatInstanceData objInstanceData;
 	camUBO camMatData;
 	lightDataSSBO lightData;
@@ -548,6 +551,7 @@ private:
 		p->player = true;
 		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
 		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
+		playerModels.push_back(i);
 		objects.push_back(std::move(p));
 	}
 
@@ -1288,7 +1292,6 @@ private:
 							vertex.tangent = tangents[index];
 
 						}
-						vertex.vertIndex = modelIndex; // set the vert index
 
 						if (uniqueVertices.count(vertex) == 0) {
 							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
@@ -1390,6 +1393,7 @@ private:
 				newObject.modelHash = hash ^ (hash4 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
 
 				newObject.name = mesh.name;
+				newObject.index = modelIndex;
 
 				newObject.scale = scale;
 				newObject.position = pos;
@@ -1763,15 +1767,19 @@ private:
 
 		// calc matrixes for objects
 		for (size_t i = 0; i < objects.size(); i++) {
+			int render = 0;
 			if (objects[i]->player) {
 				dml::mat4 t = dml::translate(cam.camPos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i]->scale);
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 				memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+				render = 1;
+				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 			else {
 				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 		}
 		void* matrixData;
@@ -2601,10 +2609,10 @@ private:
 		}
 
 		// vertex index
-		attrDesc[10].binding = 0;
+		attrDesc[10].binding = 1;
 		attrDesc[10].location = 10;
 		attrDesc[10].format = VK_FORMAT_R32_UINT; // 1 uint32_t for vert index
-		attrDesc[10].offset = offsetof(dvl::Vertex, vertIndex);
+		attrDesc[10].offset = offsetof(modelMat, render);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2723,8 +2731,8 @@ private:
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		pushConstantRange.offset = 0;
 
-		// 1 int for the model index to not render, 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
-		pushConstantRange.size = sizeof(int) * 3;
+		// 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
+		pushConstantRange.size = sizeof(int) * 2;
 
 		//pipeline layout setup: Allows for uniform variables to be passed into the shader
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
@@ -3302,13 +3310,7 @@ private:
 		m->position = pos;
 		m->startObj = false;
 		m->rotation = rotation;
-
-		size_t objSize = objects.size();
-		size_t verticesSize = m->vertices.size();
-
-		for (size_t i = 0; i < verticesSize; i++) {
-			m->vertices[i].vertIndex = static_cast<uint32_t>(objSize);
-		}
+		m->index = objects.size();
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
@@ -3415,14 +3417,10 @@ private:
 				textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
 
 				struct {
-					int notRender; // which index of the objects to not render in the main shader
 					int textureExist; // bitfield of which textures exist
 					int texIndex; // starting index of the textures in the texture array
 				} pushConst;
 
-				if (objects[j]->player) {
-					pushConst.notRender = static_cast<int>(j);
-				}
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
 				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);

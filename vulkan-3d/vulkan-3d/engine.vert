@@ -11,28 +11,22 @@ layout(location = 2) in float inAlpha;
 layout(location = 3) in vec2 inTexCoord;
 layout(location = 4) in vec3 inNormal;
 layout(location = 5) in vec4 inTangent;
-layout(location = 10) in uint inVertIndex;
 
-
-// individual rows of the instanced model matrix
+// per-instance data
 layout(location = 6) in vec4 model1;
 layout(location = 7) in vec4 model2;
 layout(location = 8) in vec4 model3;
 layout(location = 9) in vec4 model4;
+layout(location = 10) in uint toRender;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outTexCoord;
 layout(location = 2) flat out uint outTexIndex;
-layout(location = 3) flat out uint outModelIndex;
-layout(location = 4) out vec3 outFragPos;
-layout(location = 5) out vec3 outViewDirection;
-layout(location = 6) out mat3 TBN;
-layout(location = 9) out float handedness;
-layout(location = 10) flat out uint render; // if 0 render, if 1 don't render
-layout(location = 11) flat out uint bitfield; // number of textures per model
-
-layout(location = 20) out vec3 test;
-
+layout(location = 3) out vec3 outFragPos;
+layout(location = 4) out vec3 outViewDirection;
+layout(location = 5) out mat3 TBN;
+layout(location = 8) flat out uint render; // if 0 render, if 1 don't render
+layout(location = 9) flat out uint bitfield; // number of textures per model
 
 layout(set = 3, binding = 4) uniform camBufferObject {
     mat4 view;
@@ -40,18 +34,12 @@ layout(set = 3, binding = 4) uniform camBufferObject {
 } camUBO;
 
 layout(push_constant) uniform PC {
-    int notRender;
     int textureExist;
     int texInd;
 } pc;
 
-
 void main() {
-    uint modelIndex = inVertIndex;
-    render = 0;
-    if (pc.notRender == modelIndex) {
-        render = 1; // dont render this model
-	}
+    render = toRender;
     uint texIndex = pc.texInd;
     bitfield = pc.textureExist;
 
@@ -69,10 +57,7 @@ void main() {
     if (texIndex <= MAX_TEXTURES) {
         outTexIndex = texIndex; // pass the texture index to the fragment shader
     }
-    if (modelIndex <= MAX_MODELS) {
-        outModelIndex = modelIndex; // pass the model/material index to the fragment shader
-    }
-    handedness = inTangent.w;
+    float handedness = inTangent.w;
     
     mat3 normMat = transpose(inverse(mat3(model)));
     vec3 N = normalize(normMat * inNormal);
@@ -80,8 +65,6 @@ void main() {
     T = normalize(T - dot(T, N) * N); // re orthogonalize tangent
     vec3 B = normalize(cross(N, T) * handedness);  
     TBN = mat3(T, B, N);
-    test = N;
-
 
     //for lighting
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
