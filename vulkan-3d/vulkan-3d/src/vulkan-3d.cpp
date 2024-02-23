@@ -43,6 +43,7 @@ const std::string MODEL_DIR = "assets/models/";
 const std::string SKYBOX_DIR = "assets/skyboxes/";
 const std::string FONT_DIR = "assets/fonts/";
 
+
 struct camData {
 	dml::vec3 camPos; //x, y, z
 	dml::vec4 quat;
@@ -186,9 +187,8 @@ private:
 		bool startObj; // wether is loaded at the start of the program or not
 		bool player; // if the object is treated as a player model or not
 
-		uint32_t modelHash;
+		size_t modelHash;
 		std::string name;
-		int index;
 
 		// default constructor
 		model()
@@ -205,8 +205,7 @@ private:
 			startObj(true),
 			player(false),
 			modelHash(),
-			name(""),
-			index(-1)
+			name("")
 		{}
 
 		// copy constructor
@@ -224,8 +223,7 @@ private:
 			startObj(other.startObj),
 			player(other.player),
 			modelHash(other.modelHash),
-			name(other.name),
-			index(other.index) {
+			name(other.name) {
 		}
 	};
 	struct shadowMapDataObject {
@@ -1388,13 +1386,12 @@ private:
 				newObject.vertices = tempVertices;
 				newObject.indices = tempIndices;
 
-				uint32_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
-				uint32_t hash2 = std::hash<std::string>{}(mesh.name);
+				size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
+				size_t hash2 = std::hash<std::string>{}(mesh.name);
 
 				newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
 
 				newObject.name = mesh.name;
-				newObject.index = modelIndex;
 
 				newObject.scale = scale;
 				newObject.position = pos;
@@ -3318,15 +3315,14 @@ private:
 		m->position = pos;
 		m->startObj = false;
 		m->rotation = rotation;
-		m->index = objects.size();
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
 	}
 
-	size_t getModelNumHash(uint32_t hash) { // get the number of models that have the same hash
-		size_t count = 0;
+	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
+		uint32_t count = 0;
 		for (auto& m : objects) {
 			if (m->modelHash == hash) {
 				count++;
@@ -3336,7 +3332,7 @@ private:
 	}
 
 	size_t getUniqueModels() { // get the number of unique models
-		std::unordered_set<uint32_t> uniqueModels;
+		std::unordered_set<size_t> uniqueModels;
 		for (auto& m : objects) {
 			uniqueModels.insert(m->modelHash);
 		}
@@ -3375,7 +3371,6 @@ private:
 		VkDescriptorSet descriptorSetsForScene[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
 		VkDeviceSize skyboxOffsets[] = { 0 };
 		VkDeviceSize mainOffsets[] = { 0, 0 };
-
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3416,7 +3411,7 @@ private:
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 			uint32_t p = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				size_t uniqueModelInd = uniqueModelIndex[objects[j]->modelHash];
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
 				if (uniqueModelInd == j) { // only process unique models
 					// bitfield for which textures exist
 					int textureExistence = 0;
@@ -3587,7 +3582,7 @@ private:
 				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
 				// only process unique models
-				size_t uniqueModelInd = uniqueModelIndex[objects[j]->modelHash];
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
 				if (uniqueModelInd == j) {
 					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
 					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
@@ -3595,6 +3590,7 @@ private:
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				}
 			}
+
 			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
