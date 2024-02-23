@@ -461,7 +461,7 @@ private:
 	// scene data and objects
 	std::vector<bufData> bufferData;
 	std::vector<std::unique_ptr<model>> objects;
-	std::vector<std::unique_ptr<model>> uniqueObjects;
+	std::vector<std::unique_ptr<model>> originalObjects;
 	std::vector<uint32_t> playerModels;
 	modelMatInstanceData objInstanceData;
 	camUBO camMatData;
@@ -570,7 +570,7 @@ private:
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
 		for (auto& obj : objects) {
-			uniqueObjects.push_back(std::make_unique<model>(*obj));
+			originalObjects.push_back(std::make_unique<model>(*obj));
 		}
 
 		setPlayer(1);
@@ -1837,31 +1837,37 @@ private:
 	std::vector<Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
-		for (const auto& obj : objects) {
-			meshTexStartInd.push_back(static_cast<int>(currentIndex));
-			if (obj->material.baseColor.found) {
-				allTextures.emplace_back(obj->material.baseColor);
-				currentIndex++;
-			}
-			if (obj->material.metallicRoughness.found) {
-				allTextures.emplace_back(obj->material.metallicRoughness);
-				currentIndex++;
-			}
-			if (obj->material.normalMap.found) {
-				allTextures.emplace_back(obj->material.normalMap);
-				currentIndex++;
-			}
-			if (obj->material.emissiveMap.found) {
-				allTextures.emplace_back(obj->material.emissiveMap);
-				currentIndex++;
-			}
-			if (obj->material.occlusionMap.found) {
-				allTextures.emplace_back(obj->material.occlusionMap);
-				currentIndex++;
+		for (size_t i = 0; i < objects.size(); i++) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->modelHash] == i) {
+				meshTexStartInd.push_back(static_cast<int>(currentIndex));
+				if (obj->material.baseColor.found) {
+					allTextures.emplace_back(obj->material.baseColor);
+					currentIndex++;
+				}
+				if (obj->material.metallicRoughness.found) {
+					allTextures.emplace_back(obj->material.metallicRoughness);
+					currentIndex++;
+				}
+				if (obj->material.normalMap.found) {
+					allTextures.emplace_back(obj->material.normalMap);
+					currentIndex++;
+				}
+				if (obj->material.emissiveMap.found) {
+					allTextures.emplace_back(obj->material.emissiveMap);
+					currentIndex++;
+				}
+				if (obj->material.occlusionMap.found) {
+					allTextures.emplace_back(obj->material.occlusionMap);
+					currentIndex++;
+				}
 			}
 		}
 		for (size_t i = 0; i < objects.size(); i++) {
-			objects[i]->texIndex = i;
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->modelHash] == i) {
+				objects[i]->texIndex = i;
+			}
 		}
 		std::cout << "Finished loading texture array" << std::endl;
 		return allTextures;
@@ -2047,9 +2053,10 @@ private:
 	void setupDescriptorSets(bool initial = true) {
 		descs.sets.clear();
 		totalTextureCount = 0;
-		for (const auto& object : objects) {
-			if (object->startObj) {
-				totalTextureCount += object->textureCount;
+		for (uint32_t i = 0; i < objects.size(); i++) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->modelHash] == i) {
+				totalTextureCount += obj->textureCount;
 			}
 		}
 		if (initial) {
@@ -3304,7 +3311,7 @@ private:
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<model>(*uniqueObjects[object]);
+		auto m = std::make_unique<model>(*originalObjects[object]);
 
 		m->scale = scale;
 		m->position = pos;
@@ -3406,33 +3413,33 @@ private:
 			// bind the vertex and instance buffers
 			vkCmdBindVertexBuffers(commandBuffers[i], 0, 2, vertexBuffersArray, mainOffsets);
 			vkCmdBindIndexBuffer(commandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
+			uint32_t p = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				int textureExistence = 0;
-				// bitfield for which textures exist
-				textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
-				textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
-				textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
-				textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
-				textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
-
-				struct {
-					int textureExist; // bitfield of which textures exist
-					int texIndex; // starting index of the textures in the texture array
-				} pushConst;
-
-				pushConst.textureExist = textureExistence;
-				pushConst.texIndex = meshTexStartInd[objects[j]->texIndex];
-				vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-				// only process unique models
 				size_t uniqueModelInd = uniqueModelIndex[objects[j]->modelHash];
-				if (uniqueModelInd == j) {
+				if (uniqueModelInd == j) { // only process unique models
+					// bitfield for which textures exist
+					int textureExistence = 0;
+					textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+					textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+					textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+					textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+					textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
+
+					struct {
+						int textureExist; // bitfield of which textures exist
+						int texIndex; // starting index of the textures in the texture array
+					} pushConst;
+
+					pushConst.textureExist = textureExistence;
+					pushConst.texIndex = meshTexStartInd[p];
+					vkCmdPushConstants(commandBuffers[i], mainPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
 					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
 					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
 
 					vkCmdDrawIndexed(commandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+					p++;
 				}
 			}
 
