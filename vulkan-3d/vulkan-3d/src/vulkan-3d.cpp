@@ -513,7 +513,7 @@ private:
 		ImGui::StyleColorsDark();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
 
-		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-Italic-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
+		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
 
 	}
 	const std::vector<const char*> validationLayers = {
@@ -3445,9 +3445,13 @@ private:
 			ImGui::NewFrame();
 
 			// draw the imgui text
-			std::string str = std::to_string(fps);
-			std::string text = "fps: " + str;
-			drawText(text.c_str(), static_cast<float>(swap.extent.width / 2), 30, font_large, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+			std::string fpsText = "fps: " + std::to_string(fps);
+			std::string objText = "objects: " + std::to_string(objects.size());
+			drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
+
+			float w = ImGui::CalcTextSize(fpsText.c_str()).x;
+			float x = static_cast<float>(swap.extent.width / 2) + w + 20.0;
+			drawText(objText, x, 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
 
 			// render the imgui frame and draw imgui's commands into the command buffer:
 			ImGui::Render();
@@ -3460,15 +3464,26 @@ private:
 		}
 	}
 
-	void drawText(const char* text, float x, float y, ImFont* font = nullptr, ImVec4 backgroundColor = ImVec4(-1, -1, -1, -1)) {
-		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always); //set the position of the window
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always); //set the size of the window
+	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
+		// set the pos and size of ther window
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
+		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
 
-		if (backgroundColor.x != -1) {
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, backgroundColor);
+		// normalize the colors
+		bgColor.x /= 255;
+		bgColor.y /= 255;
+		bgColor.z /= 255;
+
+		if (bgColor.x != -1) {
+			ImGui::PushStyleColor(ImGuiCol_WindowBg, bgColor);
 		}
+		// unique window name
+		std::string name = ("window: " + std::to_string(x) + " " + std::to_string(y));
 
-		ImGui::Begin("TextWindow", nullptr,
+		// get the settings for the window
+		ImGui::Begin(
+			name.c_str(),
+			nullptr,
 			ImGuiWindowFlags_NoTitleBar |
 			ImGuiWindowFlags_NoResize |
 			ImGuiWindowFlags_NoMove |
@@ -3476,21 +3491,27 @@ private:
 			ImGuiWindowFlags_NoSavedSettings |
 			ImGuiWindowFlags_NoInputs |
 			ImGuiWindowFlags_NoBringToFrontOnFocus);
-		if (font != nullptr) { //if font exists, use it. otherwise, use the default font
+
+		// if font exists, use it. otherwise, use the default font
+		if (font != nullptr) {
 			ImGui::PushFont(font);
 		}
 		if (font != nullptr) {
 			ImGui::PopFont();
 		}
-		float font_size = ImGui::GetFontSize();
-		float text_width = ImGui::CalcTextSize(text).x;
-		float window_width = ImGui::GetWindowSize().x;
-		float centered_start_position = (window_width - text_width) / 2.0f;
+		const char* textChar = text.c_str();
 
-		ImGui::SetCursorPosX(centered_start_position); // center the text around the x position cords
-		ImGui::TextUnformatted(text); // dont format the text
+		// center the text
+		float fontSize = ImGui::GetFontSize();
+		float textWidth = ImGui::CalcTextSize(textChar).x;
+		float windowWidth = ImGui::GetWindowSize().x;
+		float centeredStartPos = (windowWidth - textWidth) / 2.0f;
 
-		if (backgroundColor.x != -1) {
+		// center the text around the x position cords
+		ImGui::SetCursorPosX(centeredStartPos);
+		ImGui::TextUnformatted(textChar);
+
+		if (bgColor.x != -1) {
 			ImGui::PopStyleColor();  // revert background color change
 		}
 		ImGui::End();
@@ -3823,18 +3844,20 @@ private:
 		if (initial) {
 			cam.lastX = static_cast<float>(swap.extent.width) / 2.0f;
 			cam.lastY = static_cast<float>(swap.extent.height) / 2.0f;
+			glfwSetCursorPos(window, cam.lastX, cam.lastY);
 		}
 
 		// only hide and capture cursor if cam.locked is true
 		if (cam.locked) {
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+			// set the mouse callback
+			glfwSetCursorPosCallback(window, mouseCallback);
 		}
 		else {
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 		}
 
-		// set the mouse callback
-		glfwSetCursorPosCallback(window, mouseCallback);
 	}
 
 	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
@@ -3842,23 +3865,19 @@ private:
 		float xp = static_cast<float>(xPos);
 		float yp = static_cast<float>(yPos);
 
-		if (mouseFirst) {
+		if (cam.locked) {
+			float xoff = cam.lastX - xp;
+			float yoff = cam.lastY - yp;
 			cam.lastX = xp;
 			cam.lastY = yp;
-			mouseFirst = false;
+
+			float sens = 0.1f;
+			xoff *= sens;
+			yoff *= sens;
+
+			cam.rightAngle += xoff;
+			cam.upAngle += yoff;
 		}
-
-		float xoff = cam.lastX - xp;
-		float yoff = cam.lastY - yp;
-		cam.lastX = xp;
-		cam.lastY = yp;
-
-		float sens = 0.1f;
-		xoff *= sens;
-		yoff *= sens;
-
-		cam.rightAngle += xoff;
-		cam.upAngle += yoff;
 	}
 
 
@@ -3924,7 +3943,7 @@ private:
 		// lock / unlock mouse
 		if (isEsc && !keyPO.escPressedLastFrame) {
 			cam.locked = !cam.locked;
-			initializeMouseInput(false);
+			initializeMouseInput(cam.locked);
 		}
 		keyPO.escPressedLastFrame = isEsc;
 	}
