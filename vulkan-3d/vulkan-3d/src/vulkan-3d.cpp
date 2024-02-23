@@ -2,14 +2,14 @@
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
-#include "ext/tiny_gltf.h" // load .obj and .mtl files
-#include "ext/stb_image_resize.h"
+#include "../ext/tiny_gltf.h" // load .obj and .mtl files
+#include "../ext/stb_image_resize.h"
 #include "dml.hpp"
 #include "dvl.hpp"
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include "ext/taskflow/taskflow.hpp"
+#include "../ext/taskflow/taskflow.hpp"
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -35,8 +35,13 @@
 #define MAX_TEXTURES 4000 // temp max num of textures and models (used for passing data to shaders)
 #define MAX_MODELS 1200
 
-const uint32_t WIDTH = 3200;
-const uint32_t HEIGHT = 1800;
+#define SCREEN_WIDTH 3200
+#define SCREEN_HEIGHT 1800
+
+const std::string SHADER_DIR = "shaders/compiled/";
+const std::string MODEL_DIR = "assets/models/";
+const std::string SKYBOX_DIR = "assets/skyboxes/";
+const std::string FONT_DIR = "assets/fonts/";
 
 struct camData {
 	dml::vec3 camPos; //x, y, z
@@ -504,13 +509,13 @@ private:
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
 
-		window = glfwCreateWindow(WIDTH, HEIGHT, "Vulkan", nullptr, nullptr);
+		window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Vulkan", nullptr, nullptr);
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
 
-		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF("Fonts/OpenSans/OpenSans-Italic-VariableFont_wdth,wght.ttf", 50.0f);
+		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-Italic-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
 
 	}
 	const std::vector<const char*> validationLayers = {
@@ -531,7 +536,7 @@ private:
 		std::cout << " ----------------" << std::endl;
 	}
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
-		loadModel(scale, pos, rotation, path);
+		loadModel(scale, pos, rotation, MODEL_DIR + path);
 	}
 	void createLight(dml::vec3 pos, dml::vec3 color, float intensity, dml::vec3 t) {
 		light l;
@@ -558,12 +563,12 @@ private:
 	void loadUniqueObjects() { // load all unqiue objects and all lights
 		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObject("models/knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		createObject("sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
 		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
@@ -887,7 +892,7 @@ private:
 		vkGetDeviceQueue(device, indicesP.presentFamily.value(), 0, &presentQueue);
 	}
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
-		VkExtent2D actualExtent = { WIDTH, HEIGHT }; //extent=res
+		VkExtent2D actualExtent = { SCREEN_WIDTH, SCREEN_HEIGHT }; //extent=res
 		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));  //clamp the width between the min and max extents
 		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
 
@@ -1113,7 +1118,7 @@ private:
 	}
 
 	void loadSkybox(std::string path) {
-		skybox.tex.path = path;
+		skybox.tex.path = SKYBOX_DIR + path;
 		createTexturedCubemap(skybox.tex);
 		createTextureImgView(skybox.tex, false, "cube");
 		createTS(skybox.tex, false, "cube");
@@ -2533,8 +2538,8 @@ private:
 		assert(err == 0); //if true, continue, if false, throw error
 	}
 	void createGraphicsPipeline() {
-		std::vector<char> vertShaderCode = readFile("vertex_shader.spv"); //read the vertex shader binary
-		std::vector<char> fragShaderCode = readFile("fragment_shader.spv");
+		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
+		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
 		vertShaderModule = createShaderModule(vertShaderCode);
 		fragShaderModule = createShaderModule(fragShaderCode);
 		// shader stage setup 
@@ -2825,8 +2830,8 @@ private:
 
 	void createShadowPipeline() {
 		// get shader data
-		auto vertShaderSPV = readFile("shadow_vert_shader.spv");
-		auto fragShaderSPV = readFile("shadow_frag_shader.spv");
+		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
+		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
 		VkShaderModule shadowVertShaderModule = createShaderModule(vertShaderSPV);
 		VkShaderModule shadowFragShaderModule = createShaderModule(fragShaderSPV);
 
@@ -3012,8 +3017,8 @@ private:
 	}
 
 	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
-		std::vector<char> vertShaderCode = readFile("sky_vert_shader.spv");
-		std::vector<char> fragShaderCode = readFile("sky_frag_shader.spv");
+		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
+		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
 		vertShaderModule = createShaderModule(vertShaderCode);
 		fragShaderModule = createShaderModule(fragShaderCode);
 
@@ -3944,7 +3949,7 @@ private:
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupDepthResources();
 		setupShadowMaps(); // create the inital textures for the shadow maps
-		loadSkybox("skyboxes/overcast-skies.hdr");
+		loadSkybox("overcast-skies.hdr");
 		createSkyboxBufferData();
 		setupModelMatInstanceBuffer();
 		setupDescriptorSets(); //setup and create all the descriptor sets

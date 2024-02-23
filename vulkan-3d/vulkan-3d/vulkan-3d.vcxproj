@@ -104,13 +104,13 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)\ext\imgui;$(ProjectDir)\ext\GLM;$(ProjectDir)\ext\GLFW\include;C:\VulkanSDK\1.3.268.0\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)ext\imgui;$(ProjectDir)ext\GLM;$(ProjectDir)ext\GLFW\include;C:\VulkanSDK\1.3.268.0\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ProjectDir)\ext\GLFW\lib-vc2022;C:\VulkanSDK\1.3.268.0\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>$(ProjectDir)ext\GLFW\lib-vc2022;C:\VulkanSDK\1.3.268.0\Lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>vulkan-1.lib;glfw3.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
@@ -138,25 +138,25 @@
     <ClCompile Include="ext\imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="ext\imgui\imgui_tables.cpp" />
     <ClCompile Include="ext\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="vulkan-3d.cpp" />
+    <ClCompile Include="src\vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\README.md" />
-    <None Include="engine.frag" />
-    <None Include="engine.vert" />
-    <None Include="shadow.frag" />
-    <None Include="shadow.vert" />
-    <None Include="sky.frag" />
-    <None Include="sky.vert" />
+    <None Include="shaders\engine.frag" />
+    <None Include="shaders\engine.vert" />
+    <None Include="shaders\shadow.frag" />
+    <None Include="shaders\shadow.vert" />
+    <None Include="shaders\sky.frag" />
+    <None Include="shaders\sky.vert" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="dvl.hpp" />
     <ClInclude Include="ext\imgui\imconfig.h" />
     <ClInclude Include="ext\imgui\imgui.h" />
     <ClInclude Include="ext\imgui\imgui_impl_glfw.h" />
     <ClInclude Include="ext\imgui\imgui_impl_vulkan.h" />
     <ClInclude Include="ext\imgui\imgui_internal.h" />
-    <ClInclude Include="dml.hpp" />
+    <ClInclude Include="src\dml.hpp" />
+    <ClInclude Include="src\dvl.hpp" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

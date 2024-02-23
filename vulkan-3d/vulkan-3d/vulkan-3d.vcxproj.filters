@@ -30,9 +30,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="vulkan-3d.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="ext\imgui\imgui.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
@@ -54,34 +51,32 @@
     <ClCompile Include="ext\imgui\imgui_widgets.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
+    <ClCompile Include="src\vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="engine.vert">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
-    <None Include="engine.frag">
-      <Filter>Source Files\Shaders</Filter>
-    </None>
     <None Include="..\..\README.md">
       <Filter>Source Files\Other files</Filter>
     </None>
-    <None Include="shadow.vert">
+    <None Include="shaders\engine.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="shadow.frag">
+    <None Include="shaders\engine.vert">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="sky.frag">
+    <None Include="shaders\shadow.frag">
       <Filter>Source Files\Shaders</Filter>
     </None>
-    <None Include="sky.vert">
+    <None Include="shaders\shadow.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="shaders\sky.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="shaders\sky.vert">
       <Filter>Source Files\Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="dml.hpp">
-      <Filter>Source Files</Filter>
-    </ClInclude>
     <ClInclude Include="stb_image.h">
       <Filter>Other dependencies</Filter>
     </ClInclude>
@@ -100,8 +95,7 @@
     <ClInclude Include="ext\imgui\imgui_internal.h">
       <Filter>Header Files\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="dvl.hpp">
-      <Filter>Source Files</Filter>
-    </ClInclude>
+    <ClInclude Include="src\dvl.hpp" />
+    <ClInclude Include="src\dml.hpp" />
   </ItemGroup>
 </Project>
