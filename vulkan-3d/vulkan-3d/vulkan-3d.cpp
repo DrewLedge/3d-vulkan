@@ -1383,14 +1383,10 @@ private:
 				newObject.vertices = tempVertices;
 				newObject.indices = tempIndices;
 
-				uint32_t hash1 = std::hash<std::size_t>{}(tempVertices.size());
-				uint32_t hash2 = std::hash<std::size_t>{}(tempIndices.size());
-				uint32_t hash3 = std::hash<std::size_t>{}(mesh.primitives.size());
-				uint32_t hash4 = std::hash<std::string>{}(mesh.name);
+				uint32_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
+				uint32_t hash2 = std::hash<std::string>{}(mesh.name);
 
-				uint32_t hash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
-				hash ^= (hash3 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
-				newObject.modelHash = hash ^ (hash4 + 0x9e3779b9 + (hash << 6) + (hash >> 2));
+				newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
 
 				newObject.name = mesh.name;
 				newObject.index = modelIndex;
@@ -3961,6 +3957,7 @@ private:
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		createCommandBuffer();
 		recordAllCommandBuffers();
+		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
 	}
 
 	void scatterObjects(int count, float radius) {
