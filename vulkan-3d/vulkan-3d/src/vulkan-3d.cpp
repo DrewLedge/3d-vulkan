@@ -1414,7 +1414,7 @@ private:
 			auto loadTextureTask = taskFlow.emplace([&]() {
 				for (auto& object : objects) {
 					//create the texture image for each texture (material)
-					//also create mipmaps for certain textures
+					//also create mipmaps for every texture
 					if (object->material.baseColor.found) {
 						createTexturedImage(object->material.baseColor, true);
 						createTextureImgView(object->material.baseColor, true);
@@ -1422,27 +1422,27 @@ private:
 					}
 
 					if (object->material.metallicRoughness.found) {
-						createTexturedImage(object->material.metallicRoughness, false, "metallic");
-						createTextureImgView(object->material.metallicRoughness, false, "metallic");
-						createTS(object->material.metallicRoughness, false, "metallic");
+						createTexturedImage(object->material.metallicRoughness, true, "metallic");
+						createTextureImgView(object->material.metallicRoughness, true, "metallic");
+						createTS(object->material.metallicRoughness, true, "metallic");
 					}
 
 					if (object->material.normalMap.found) {
-						createTexturedImage(object->material.normalMap, false, "norm");
-						createTextureImgView(object->material.normalMap, false, "norm");
-						createTS(object->material.normalMap, false, "norm");
+						createTexturedImage(object->material.normalMap, true, "norm");
+						createTextureImgView(object->material.normalMap, true, "norm");
+						createTS(object->material.normalMap, true, "norm");
 					}
 
 					if (object->material.emissiveMap.found) {
-						createTexturedImage(object->material.emissiveMap, false, "emissive");
-						createTextureImgView(object->material.emissiveMap, false, "emissive");
-						createTS(object->material.emissiveMap, false, "emissive");
+						createTexturedImage(object->material.emissiveMap, true, "emissive");
+						createTextureImgView(object->material.emissiveMap, true, "emissive");
+						createTS(object->material.emissiveMap, true, "emissive");
 					}
 
 					if (object->material.occlusionMap.found) {
-						createTexturedImage(object->material.occlusionMap, false, "occlusion");
-						createTextureImgView(object->material.occlusionMap, false, "occlusion");
-						createTS(object->material.occlusionMap, false, "occlusion");
+						createTexturedImage(object->material.occlusionMap, true, "occlusion");
+						createTextureImgView(object->material.occlusionMap, true, "occlusion");
+						createTS(object->material.occlusionMap, true, "occlusion");
 					}
 				}
 				}).name("load_texture");
@@ -2126,7 +2126,7 @@ private:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "occlusion") {
-			viewInf.format = VK_FORMAT_R8_UNORM;
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "cube") {
@@ -2365,9 +2365,6 @@ private:
 			if (type == "base") {
 				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
 			}
-			else if (type == "occlusion") {
-				imageInf.format = VK_FORMAT_R8_UNORM;
-			}
 			else {
 				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM; // default
 			}
@@ -2433,21 +2430,20 @@ private:
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
 					VkImageMemoryBarrier barrierToSrc{};
 					barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 					barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 					barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 					barrierToSrc.image = tex.image;
-					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // color image not a depth or stencil image
+					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 					barrierToSrc.subresourceRange.baseMipLevel = j;
 					barrierToSrc.subresourceRange.levelCount = 1;
 					barrierToSrc.subresourceRange.baseArrayLayer = 0;
 					barrierToSrc.subresourceRange.layerCount = 1;
-					barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
-					barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
+					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+					barrierToSrc.srcAccessMask = 0;
+					barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 1, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
 
-					//iterate through all but the last mip level to blit from the previous mip level to the next mip level:
 					if (j < tex.mipLevels - 1) {
 						VkImageBlit blit{};
 						blit.srcOffsets[0] = { 0, 0, 0 };
@@ -2477,24 +2473,24 @@ private:
 					if (mipHeight > 1) mipHeight /= 2;
 				}
 			}
-
-			//transition the image from the transfer destination layout to the shader read only layout:
-			for (uint32_t j = doMipmap ? tex.mipLevels : 0; j < tex.mipLevels; j++) {
+			else {
 				VkImageMemoryBarrier barrierToSrc{};
 				barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+				barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 				barrierToSrc.image = tex.image;
-				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // color image not a depth or stencil image
-				barrierToSrc.subresourceRange.baseMipLevel = j;
-				barrierToSrc.subresourceRange.levelCount = 1;
+				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+				barrierToSrc.subresourceRange.baseMipLevel = 0;
+				barrierToSrc.subresourceRange.levelCount = tex.mipLevels;
 				barrierToSrc.subresourceRange.baseArrayLayer = 0;
 				barrierToSrc.subresourceRange.layerCount = 1;
 				barrierToSrc.srcAccessMask = 0;
 				barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-				//from the top of the pipeline to the transfer stage
-				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc);
+				//from the top of the pipeline to the fragment shader stage
+				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc);
 			}
 
 			endSingleTimeCommands(tempBuffer, commandPool);

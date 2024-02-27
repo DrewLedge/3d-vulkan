@@ -44,7 +44,7 @@ layout(location = 8) flat in uint render; // if 0 render, if 1 don't render
 layout(location = 9) flat in uint bitfield;
 
 layout(location = 0) out vec4 outColor; 
-float PI = acos(-1.0);
+float PI = 3.141592653589793238;
 
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {  
@@ -147,18 +147,17 @@ void main() {
 		emissive = texture(texSamplers[nextTexture], inTexCoord).rgb;
         nextTexture += 1;
     }
+    if (occlusionExists) {
+        occlusion = texture(texSamplers[nextTexture], inTexCoord).r;
+    }
     
     vec4 color = albedo * fragColor; 
 
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
 
-    vec3 ambient = vec3(0.0);
     vec3 accumulated = vec3(0.0);
     
-    if (occlusionExists) {
-        occlusion = metallicRoughness.r;
-    }
     float roughness = metallicRoughness.g;
     float metallic = metallicRoughness.b;
 
@@ -210,16 +209,14 @@ void main() {
 
             // cook-torrance specular lighting
             vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
-            accumulated += (lightColor * brdf * intensity * occlusion) * shadowFactor;
+            accumulated += (lightColor * brdf * intensity) * shadowFactor;
             
         }
     }
     
     // final color calculation
-    //outColor = vec4(texcount * 0.5 + 0.5, 0, 0.3, 1.0) ;
-    //outColor = vec4(roughness,  metallic, 0.0, 1.0);
-    outColor = vec4(accumulated + emissive, color.a);
-
+    vec3 ambient = vec3(0.01f) * occlusion;
+    outColor = vec4(accumulated + emissive + ambient, color.a);
 }
 
 
