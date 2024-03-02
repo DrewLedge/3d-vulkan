@@ -43,6 +43,8 @@ const std::string MODEL_DIR = "assets/models/";
 const std::string SKYBOX_DIR = "assets/skyboxes/";
 const std::string FONT_DIR = "assets/fonts/";
 
+bool rtSupported = false; // a bool if raytracing is supported on the device
+
 
 struct camData {
 	dml::vec3 camPos; //x, y, z
@@ -502,6 +504,10 @@ private:
 		return { v.x, v.y, v.z };
 	}
 
+	void sep() {
+		std::cout << "---------------------------------" << std::endl;
+	}
+
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -527,11 +533,11 @@ private:
 	};
 
 	void debugStruct(model stru) {
-		std::cout << " ----------------" << std::endl;
+		sep();
 		std::cout << "model: " << stru.pathObj << std::endl;
 		std::cout << "vertices: " << stru.vertices.size() << std::endl;
 		std::cout << "indices: " << stru.indices.size() << std::endl;
-		std::cout << " ----------------" << std::endl;
+		sep();
 	}
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
 		loadModel(scale, pos, rotation, MODEL_DIR + path);
@@ -578,7 +584,35 @@ private:
 
 		setPlayer(1);
 		setPlayer(2);
+	}
 
+	bool isRTSupported(VkPhysicalDevice device) {
+		// check if extensions are supported
+		bool extensionsSupported = checkExtensionSupport(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME)
+			&& checkExtensionSupport(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME)
+			&& checkExtensionSupport(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
+		if (!extensionsSupported) {
+			return false;
+		}
+
+		// check if the device supports ray tracing pipeline features
+		VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures{};
+		rtFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+		rtFeatures.pNext = nullptr;
+
+		// check if the device supports acceleration structure features
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+		asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+		asFeatures.pNext = &rtFeatures;
+
+		VkPhysicalDeviceFeatures2 deviceFeatures2{};
+		deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+		deviceFeatures2.pNext = &rtFeatures;
+
+		vkGetPhysicalDeviceFeatures2(device, &deviceFeatures2);
+
+		return rtFeatures.rayTracingPipeline == VK_TRUE;
 	}
 
 	void createInstance() {
@@ -658,10 +692,15 @@ private:
 		VkPhysicalDeviceProperties deviceProperties;
 		vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
 		printCapabilities(deviceProperties);
+
+		// check if ray tracing is supported
+		rtSupported = isRTSupported(physicalDevice);
+		std::cout << "Raytacing is " << (rtSupported ? "supported" : "not supported") << "!!!!" << std::endl;
+		sep();
 	}
 
 	void printCapabilities(VkPhysicalDeviceProperties deviceProperties) {
-		std::cout << "---------------------------------" << std::endl;
+		sep();
 		std::cout << "Device Name: " << deviceProperties.deviceName << std::endl;
 		std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
 		std::cout << "Max Uniform Buffers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetUniformBuffers << std::endl;
@@ -674,7 +713,7 @@ private:
 		std::cout << "Max Vertex Input Attribute Offset: " << deviceProperties.limits.maxVertexInputAttributeOffset << std::endl;
 		std::cout << "Max Vertex Input Binding Stride: " << deviceProperties.limits.maxVertexInputBindingStride << std::endl;
 		std::cout << "Max Vertex Output Components: " << deviceProperties.limits.maxVertexOutputComponents << std::endl;
-		std::cout << "---------------------------------" << std::endl;
+		sep();
 	}
 
 	void createLogicalDevice() {
@@ -704,11 +743,17 @@ private:
 		newInfo.pEnabledFeatures = &deviceFeatures; //device features to enable
 
 		// specify the device extensions to enable
-		const std::vector<const char*> deviceExtensions = {
+		std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME
 		};
+
+		if (rtSupported) {
+			deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+			deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+		}
 
 		for (auto& e : deviceExtensions) {
 			if (checkExtensionSupport(e)) {
@@ -1137,7 +1182,7 @@ private:
 		std::string warn;
 
 		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-		std::cout << "-----------------------" << std::endl;
+		sep();
 		std::cout << "Finished loading binaries" << std::endl;
 
 		if (!warn.empty()) {
@@ -1449,7 +1494,7 @@ private:
 				loadModelTask.precede(loadTextureTask);
 				executor.run(taskFlow).get();
 
-				std::cout << "-----------------------" << std::endl;
+				sep();
 				std::cout << "Successfully loaded " << objects.size() << " meshes" << std::endl;
 				taskFlow.clear();
 	}
@@ -2697,7 +2742,6 @@ private:
 		dStencil.back.writeMask = 0;
 		dStencil.back.reference = 0;
 
-
 		//color blending setup: Combines the output of the fragment shader with the color that is already in the viewbuffer
 		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
@@ -3929,7 +3973,7 @@ private:
 			double memEfficiency = vertCount / (1024.0 * 1024.0); // convert to mb
 			double finalS = (startS) / memEfficiency;
 
-			std::cout << "-------------------------------------------------" << std::endl;
+			sep();
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
 			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
 			std::cout << "Object count: " << objects.size() << std::endl;
