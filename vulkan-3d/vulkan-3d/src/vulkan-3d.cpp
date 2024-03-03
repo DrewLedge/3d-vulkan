@@ -399,6 +399,26 @@ private:
 		bool escPressedLastFrame = false; // unlock mouse
 	};
 
+	struct depthPeelTex {
+		VkImage image;
+		VkDeviceMemory memory;
+		VkImageView imageView;
+	};
+
+	struct depthPeelFB {
+		VkFramebuffer framebuffer;
+		depthPeelTex color;
+		depthPeelTex depth;
+	};
+
+	struct depthPeelingData {
+		std::vector<depthPeelFB> frameBuffers;
+		VkRenderPass renderPass;
+		VkPipeline pipeline;
+		uint32_t numPeels = 6;
+	};
+
+
 	// window and rendering context
 	GLFWwindow* window;
 	VkSurfaceKHR surface;
@@ -457,6 +477,7 @@ private:
 	VkDeviceMemory depthImageMemory;
 	VkImageView depthImageView;
 	VkFormat depthFormat;
+	depthPeelingData depthPeels;
 
 	// descriptor sets and pools
 	descriptorSetObject descs;
@@ -980,7 +1001,7 @@ private:
 		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); //gets the images in the swap chain
 		swap.imageFormat = surfaceFormat.format;
 		swap.extent = extent;
-		createImageViews();
+		createSCImageViews();
 	}
 	VkSurfaceFormatKHR  chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) { //choose the best surface format for the swap chain
 		for (const auto& availableFormat : availableFormats) {
@@ -1503,6 +1524,15 @@ private:
 		depthFormat = findDepthFormat();
 		createDepthImage(depthImage, depthImageMemory, swap.extent.width, swap.extent.height, depthFormat);
 		depthImageView = createDepthView(depthImage, depthFormat);
+
+		depthPeels.frameBuffers.resize(depthPeels.numPeels);
+		for (depthPeelFB& d : depthPeels.frameBuffers) {
+			createDepthImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat);
+			d.depth.imageView = createDepthView(d.depth.image, depthFormat);
+
+			createColorImage(d.color.image, d.color.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+			d.color.imageView = createColorView(d.color.image, VK_FORMAT_R8G8B8A8_UNORM, VK_IMAGE_ASPECT_COLOR_BIT);
+		}
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
@@ -1512,6 +1542,7 @@ private:
 			createTS(lights[i]->shadowMapData, false, "shadow");
 		}
 	}
+
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 
@@ -1572,8 +1603,6 @@ private:
 		endSingleTimeCommands(commandBuffer, commandPool);
 	}
 
-
-
 	void createDepthImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format) { //create the depth image and allocate memory for it
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -1625,7 +1654,62 @@ private:
 		return imageView;
 	}
 
-	void createImageViews() { //create the image views for the swap chain images
+	void createColorImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers, bool cubeMap, VkImageUsageFlags usage) {
+		VkImageCreateInfo imageInfo{};
+		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		imageInfo.imageType = VK_IMAGE_TYPE_2D;
+		imageInfo.extent.width = width;
+		imageInfo.extent.height = height;
+		imageInfo.extent.depth = 1;
+		imageInfo.arrayLayers = arrayLayers;
+		imageInfo.mipLevels = mipLevels;
+		imageInfo.format = format;
+		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		imageInfo.usage = usage;
+		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+		if (cubeMap) imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
+
+		if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create color image!");
+		}
+
+		VkMemoryRequirements memRequirements;
+		vkGetImageMemoryRequirements(device, image, &memRequirements);
+		VkMemoryAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocInfo.allocationSize = memRequirements.size;
+		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate color image memory!");
+		}
+
+		vkBindImageMemory(device, image, imageMemory, 0);
+	}
+
+	VkImageView createColorView(VkImage& image, VkFormat format, VkImageAspectFlags aspectFlags) {
+		VkImageViewCreateInfo viewInfo{};
+		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		viewInfo.image = image;
+		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		viewInfo.format = format;
+		viewInfo.subresourceRange.aspectMask = aspectFlags;
+		viewInfo.subresourceRange.baseMipLevel = 0;
+		viewInfo.subresourceRange.levelCount = 1;
+		viewInfo.subresourceRange.baseArrayLayer = 0;
+		viewInfo.subresourceRange.layerCount = 1;
+
+		VkImageView imageView;
+		if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create texture image view!");
+		}
+
+		return imageView;
+	}
+
+	void createSCImageViews() { //create the image views for the swap chain images
 		swap.imageViews.resize(swap.images.size()); // resize swapChainImageViews to hold all the image views
 		for (size_t i = 0; i < swap.images.size(); i++) {
 			VkImageViewCreateInfo newinfo{};
@@ -2314,40 +2398,8 @@ private:
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
 		}
 
+		createColorImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-		VkImageCreateInfo imageInfo{};
-		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageInfo.extent.width = faceWidth;
-		imageInfo.extent.height = faceHeight;
-		imageInfo.extent.depth = 1;
-		imageInfo.mipLevels = 1;
-		imageInfo.arrayLayers = 6; // 6 for the six faces of a cubemap
-		imageInfo.format = VK_FORMAT_R32G32B32A32_SFLOAT; // HDR format
-		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-
-		// create the Vulkan image
-		if (vkCreateImage(device, &imageInfo, nullptr, &tex.image) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create texture image!");
-		}
-
-		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, tex.image, &memRequirements);
-
-		VkMemoryAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		if (vkAllocateMemory(device, &allocInf, nullptr, &tex.memory) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate texture image memory!!!");
-		}
-		vkBindImageMemory(device, tex.image, tex.memory, 0);
 		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
@@ -2398,44 +2450,9 @@ private:
 			}
 			createStagingBuffer(tex, false);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
-			// create image:
-			VkImageCreateInfo imageInf{};
-			imageInf.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-			imageInf.imageType = VK_IMAGE_TYPE_2D;
-			imageInf.extent.width = tex.width;
-			imageInf.extent.height = tex.height;
-			imageInf.extent.depth = 1;
-			imageInf.mipLevels = tex.mipLevels;
-			imageInf.arrayLayers = 1;
-			if (type == "base") {
-				imageInf.format = VK_FORMAT_R8G8B8A8_SRGB; //rgba for base texture
-			}
-			else {
-				imageInf.format = VK_FORMAT_R8G8B8A8_UNORM; // default
-			}
-			imageInf.tiling = VK_IMAGE_TILING_OPTIMAL;
-			imageInf.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-			imageInf.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-			// transfer destination bit (copy from buffer to image) and sampled bit (can be used for sampling operations)
 
-			imageInf.samples = VK_SAMPLE_COUNT_1_BIT; // no multisampling
-			imageInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-			if (vkCreateImage(device, &imageInf, nullptr, &tex.image) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create texture image!");
-			}
-
-			VkMemoryRequirements memRequirements;
-			vkGetImageMemoryRequirements(device, tex.image, &memRequirements);
-
-			VkMemoryAllocateInfo allocInf{};
-			allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-			allocInf.allocationSize = memRequirements.size;
-			allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-			if (vkAllocateMemory(device, &allocInf, nullptr, &tex.memory) != VK_SUCCESS) {
-				throw std::runtime_error("failed to allocate texture image memory!!!");
-			}
-			vkBindImageMemory(device, tex.image, tex.memory, 0);
+			VkFormat imgFormat = type == "base" ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
+			createColorImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
 			// initialize img and barrier data before buffer copy:
 			VkBufferImageCopy region{};
@@ -2543,6 +2560,7 @@ private:
 			imageData = nullptr;
 		}
 	}
+
 	VkCommandBuffer beginSingleTimeCommands(VkCommandPool cPool) {
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -3715,6 +3733,25 @@ private:
 		}
 	}
 
+	void createDepthPeelFramebuffers() {
+		for (auto& peel : depthPeels.frameBuffers) {
+			std::array<VkImageView, 2> attachments = { peel.color.imageView, peel.depth.imageView };
+
+			VkFramebufferCreateInfo framebufferInfo{};
+			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			framebufferInfo.renderPass = depthPeels.renderPass;
+			framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // color and depth
+			framebufferInfo.pAttachments = attachments.data();
+			framebufferInfo.width = swap.extent.width;
+			framebufferInfo.height = swap.extent.height;
+			framebufferInfo.layers = 1;
+
+			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &peel.framebuffer) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create depth peel framebuffer!");
+			}
+		}
+	}
+
 	void createSemaphores() {
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -3743,7 +3780,7 @@ private:
 		vkDeviceWaitIdle(device); // Wait for device idle
 		cleanupSwapChain();
 		createSC();
-		createImageViews();
+		createSCImageViews();
 		cleanupDS();
 		setupDescriptorSets(false);
 		vkDestroyImageView(device, depthImageView, nullptr);

@@ -216,7 +216,7 @@ void main() {
     
     // final color calculation
     vec3 ambient = vec3(0.01f) * occlusion;
-    outColor = vec4(accumulated + emissive + ambient, color.a);
+    outColor = vec4(accumulated + emissive + ambient, 0.8);
 }
 
 
