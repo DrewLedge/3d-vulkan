@@ -144,6 +144,8 @@
     <None Include="..\..\README.md" />
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
+    <None Include="shaders\peel.frag" />
+    <None Include="shaders\peel.vert" />
     <None Include="shaders\shadow.frag" />
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\sky.frag" />

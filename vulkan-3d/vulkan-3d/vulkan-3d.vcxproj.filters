@@ -75,6 +75,12 @@
     <None Include="shaders\sky.vert">
       <Filter>Source Files\Shaders</Filter>
     </None>
+    <None Include="shaders\peel.frag">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
+    <None Include="shaders\peel.vert">
+      <Filter>Source Files\Shaders</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">
