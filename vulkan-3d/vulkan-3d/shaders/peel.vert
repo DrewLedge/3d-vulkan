@@ -15,7 +15,7 @@ layout(location = 0) out vec4 outColor;
 layout(location = 1) out vec2 outTexCoord;
 
 
-layout(set = 0, binding = 4) uniform camBufferObject {
+layout(set = 1, binding = 4) uniform camBufferObject {
     mat4 view;
     mat4 proj;
 } camUBO;

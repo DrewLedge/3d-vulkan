@@ -399,16 +399,10 @@ private:
 		bool escPressedLastFrame = false; // unlock mouse
 	};
 
-	struct depthPeelTex {
-		VkImage image;
-		VkDeviceMemory memory;
-		VkImageView imageView;
-	};
-
 	struct depthPeelFB {
 		VkFramebuffer framebuffer;
-		depthPeelTex color;
-		depthPeelTex depth;
+		Texture color;
+		Texture depth;
 	};
 
 	struct depthPeelingData {
@@ -442,7 +436,7 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> commandBuffers;
 	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
-	std::vector<VkCommandBuffer> skyboxCommandBuffers;
+	std::vector<VkCommandBuffer> depthPeelCommandBuffers;
 
 	// buffers and related memory
 	VkBuffer vertBuffer;
@@ -465,6 +459,7 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
+	VkSemaphore depthPeelSemaphore;
 
 	// shader modules
 	VkShaderModule fragShaderModule;
@@ -594,7 +589,7 @@ private:
 		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
+		createLight({ -20.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
 		for (auto& obj : objects) {
@@ -1480,7 +1475,8 @@ private:
 		for (depthPeelFB& d : depthPeels.frameBuffers) {
 			// depth image
 			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-			d.depth.imageView = createImageView(d.depth.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+			createTextureImgView(d.depth, false, "depth");
+			createTS(d.depth, false, "depth");
 
 			// color image
 			createImage(d.color.image, d.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -1492,7 +1488,7 @@ private:
 		for (size_t i = 0; i < lights.size(); i++) {
 			createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 			lights[i]->shadowMapData.imageView = createImageView(lights[i]->shadowMapData.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-			createTS(lights[i]->shadowMapData, false, "shadow");
+			createTS(lights[i]->shadowMapData, false, "depth");
 		}
 	}
 
@@ -1753,7 +1749,7 @@ private:
 
 	void calcCameraMats() {
 		cam.viewMatrix = cam.getViewMatrix();
-		cam.projectionMatrix = dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.01f, 15.0f);
+		cam.projectionMatrix = dml::projection(90.0f, static_cast<float>(swap.extent.width / swap.extent.height), 0.1f, 1000.0f);
 	}
 
 	void calcShadowMats(light& l) {
@@ -1898,7 +1894,7 @@ private:
 				objects[i]->texIndex = i;
 			}
 		}
-		std::cout << "Finished loading texture array" << std::endl;
+		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
 		return allTextures;
 	}
 
@@ -1964,7 +1960,7 @@ private:
 	}
 
 	void createDS() {
-		int size = 5;
+		const uint8_t size = 6;
 		descs.sets.resize(size);
 		descs.layouts.resize(size);
 		descs.pools.resize(size);
@@ -1976,18 +1972,22 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
+
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2024,6 +2024,12 @@ private:
 			shadowInfos[i].imageView = shadowMaps[i].imageView;
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
+
+		VkDescriptorImageInfo prevDepthTex;
+		prevDepthTex.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		prevDepthTex.imageView = depthPeels.frameBuffers[0].depth.imageView;
+		prevDepthTex.sampler = depthPeels.frameBuffers[0].depth.sampler;
+
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		skyboxInfo.imageView = skybox.tex.imageView;
@@ -2034,7 +2040,7 @@ private:
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = sizeof(lightDataSSBO);
 
-		std::array<VkWriteDescriptorSet, 5> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
+		std::array<VkWriteDescriptorSet, size> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
 
 		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[0].dstSet = descs.sets[0];
@@ -2076,6 +2082,14 @@ private:
 		descriptorWrites[4].descriptorCount = 1;
 		descriptorWrites[4].pBufferInfo = &camMatBufferInfo;
 
+		descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[5].dstSet = descs.sets[5];
+		descriptorWrites[5].dstBinding = 5;
+		descriptorWrites[5].dstArrayElement = 0;
+		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[5].descriptorCount = 1;
+		descriptorWrites[5].pImageInfo = &prevDepthTex;
+
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
@@ -2108,7 +2122,7 @@ private:
 		samplerInf.maxAnisotropy = 16;
 		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		samplerInf.unnormalizedCoordinates = VK_FALSE;
-		if (type == "shadow") {
+		if (type == "depth") {
 			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.compareEnable = VK_TRUE;
@@ -2136,7 +2150,7 @@ private:
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		if (type == "shadow") {
+		if (type == "depth") {
 			viewInf.format = VK_FORMAT_D32_SFLOAT;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
@@ -2609,9 +2623,6 @@ private:
 		vpState.pViewports = &vp;
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
-
-		// copy the viewport state to the heap so it can be used in the pipeline data struct
-		VkPipelineViewportStateCreateInfo* viewportState = new VkPipelineViewportStateCreateInfo(vpState);
 
 		//rasterizer setup: Transforms 3D primitives into 3D fragments for display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
@@ -3179,13 +3190,21 @@ private:
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
 		inputAssem.primitiveRestartEnable = VK_FALSE;
 
+		VkViewport depthPeelVP{}; // shadow viewport
+		depthPeelVP.x = 0.0f;
+		depthPeelVP.y = 0.0f;
+		depthPeelVP.width = static_cast<float>(swap.extent.width);
+		depthPeelVP.height = static_cast<float>(swap.extent.height);
+		depthPeelVP.minDepth = 0.0f;
+		depthPeelVP.maxDepth = 1.0f;
+
 		VkRect2D scissor{};
 		scissor.offset = { 0, 0 };
 		scissor.extent = swap.extent;
 		VkPipelineViewportStateCreateInfo vpState{};
 		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 		vpState.viewportCount = 1;
-		vpState.pViewports = &vp;
+		vpState.pViewports = &depthPeelVP;
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
 
@@ -3288,19 +3307,18 @@ private:
 			throw std::runtime_error("failed to create render pass!");
 		}
 
-		VkDynamicState dynamicStates[] = {
-			VK_DYNAMIC_STATE_VIEWPORT
-		};
-		VkPipelineDynamicStateCreateInfo dynamicState{};
-		dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
-		dynamicState.dynamicStateCount = static_cast<uint32_t>(std::size(dynamicStates));
-		dynamicState.pDynamicStates = dynamicStates;
+		VkPushConstantRange pushConstantRange{};
+		pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+		pushConstantRange.offset = 0;
+		pushConstantRange.size = sizeof(int); // albedo index
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+		pipelineLayoutInf.pushConstantRangeCount = 1;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &depthPeels.pipeline.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for depth peels!!");
@@ -3317,7 +3335,6 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.pDynamicState = &dynamicState;
 		pipelineInf.layout = depthPeels.pipeline.layout;
 		pipelineInf.renderPass = depthPeels.pipeline.renderPass;
 		pipelineInf.subpass = 0;
@@ -3718,9 +3735,7 @@ private:
 		shadowMapCommandBuffers.resize(lights.size());
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
-			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) {
-				vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
-			}
+			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
 			createFB(lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
@@ -3730,6 +3745,41 @@ private:
 		allocInfo.commandBufferCount = static_cast<uint32_t>(lights.size());
 
 		if (vkAllocateCommandBuffers(device, &allocInfo, shadowMapCommandBuffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers!");
+		}
+	}
+
+	void createDepthPeelCommandBuffers() { // create a depth peel command buffer for each peel
+		depthPeelCommandBuffers.resize(depthPeels.numPeels);
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(depthPeelCommandBuffers.size()), depthPeelCommandBuffers.data());
+
+		// create the framebuffers for the depth peels
+		for (auto& peel : depthPeels.frameBuffers) {
+			if (peel.framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, peel.framebuffer, nullptr);
+			std::array<VkImageView, 2> attachments = { peel.color.imageView, peel.depth.imageView };
+
+			VkFramebufferCreateInfo framebufferInfo{};
+			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+			framebufferInfo.renderPass = depthPeels.pipeline.renderPass;
+			framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // color and depth
+			framebufferInfo.pAttachments = attachments.data();
+			framebufferInfo.width = swap.extent.width;
+			framebufferInfo.height = swap.extent.height;
+			framebufferInfo.layers = 1;
+
+			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &peel.framebuffer) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create depth peel framebuffer!");
+			}
+		}
+
+		// create the command buffers
+		VkCommandBufferAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+		allocInfo.commandPool = commandPool;
+		allocInfo.commandBufferCount = depthPeels.numPeels;
+
+		if (vkAllocateCommandBuffers(device, &allocInfo, depthPeelCommandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
@@ -3774,18 +3824,17 @@ private:
 			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 			for (size_t j = 0; j < objects.size(); j++) {
-				struct {
-					int modelIndex;
-					int lightIndex;
-				} pushConst;
-				pushConst.modelIndex = static_cast<int>(j);
-				pushConst.lightIndex = static_cast<int>(i);
-
-				vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-				// only process unique models
 				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
-				if (uniqueModelInd == j) {
+				if (uniqueModelInd == j) { // only process unique models
+					struct {
+						int modelIndex;
+						int lightIndex;
+					} pushConst;
+					pushConst.modelIndex = static_cast<int>(j);
+					pushConst.lightIndex = static_cast<int>(i);
+
+					vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipelineData.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
 					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
 					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
 					vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
@@ -3796,6 +3845,70 @@ private:
 			// end the render pass and command buffer
 			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
 			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record command buffer!");
+			}
+		}
+	}
+
+	void recordDepthPeelCommandBuffers() {
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f, 0} };
+
+		for (size_t i = 0; i < depthPeels.numPeels; i++) {
+			if (vkBeginCommandBuffer(depthPeelCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording command buffer for depth peels!");
+			}
+			// render pass
+			VkRenderPassBeginInfo renderPassInfo{};
+			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+			renderPassInfo.renderPass = depthPeels.pipeline.renderPass;
+			renderPassInfo.framebuffer = depthPeels.frameBuffers[i].framebuffer;
+			renderPassInfo.renderArea.offset = { 0, 0 };
+			renderPassInfo.renderArea.extent = { swap.extent.width, swap.extent.height };
+			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());;
+			renderPassInfo.pClearValues = clearValues.data();
+			vkCmdBeginRenderPass(depthPeelCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+			vkCmdBindPipeline(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.graphicsPipeline);
+
+			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[4] };
+			vkCmdBindDescriptorSets(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.layout, 0, 2, dSets, 0, nullptr);
+
+			// iterate through all objects
+			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
+			VkBuffer indexBuffer = indBuffer;
+			VkDeviceSize offsets[] = { 0, 0 };
+
+			vkCmdBindVertexBuffers(depthPeelCommandBuffers[i], 0, 2, vertexBuffersArray, offsets);
+
+			vkCmdBindIndexBuffer(depthPeelCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+			uint32_t p = 0;
+			for (size_t j = 0; j < objects.size(); j++) {
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
+				if (uniqueModelInd == j) {
+					struct {
+						int albedo;
+					} pushConst;
+					pushConst.albedo = meshTexStartInd[p];
+
+					vkCmdPushConstants(depthPeelCommandBuffers[i], depthPeels.pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
+
+					// only process unique models
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					vkCmdDrawIndexed(depthPeelCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+					p++;
+				}
+			}
+
+			// end the render pass and command buffer
+			vkCmdEndRenderPass(depthPeelCommandBuffers[i]);
+			if (vkEndCommandBuffer(depthPeelCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
 		}
@@ -3856,25 +3969,6 @@ private:
 		}
 	}
 
-	void createDepthPeelFramebuffers() {
-		for (auto& peel : depthPeels.frameBuffers) {
-			std::array<VkImageView, 2> attachments = { peel.color.imageView, peel.depth.imageView };
-
-			VkFramebufferCreateInfo framebufferInfo{};
-			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			framebufferInfo.renderPass = depthPeels.pipeline.renderPass;
-			framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // color and depth
-			framebufferInfo.pAttachments = attachments.data();
-			framebufferInfo.width = swap.extent.width;
-			framebufferInfo.height = swap.extent.height;
-			framebufferInfo.layers = 1;
-
-			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &peel.framebuffer) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create depth peel framebuffer!");
-			}
-		}
-	}
-
 	void createSemaphores() {
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -3889,6 +3983,10 @@ private:
 		VkResult resultShadowFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &shadowSemaphore);
 		if (resultShadowFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow finished semaphore!");
+		}
+		VkResult resultDepthPeelFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &depthPeelSemaphore);
+		if (resultDepthPeelFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create depth peel finished semaphore!");
 		}
 	}
 
@@ -3910,6 +4008,8 @@ private:
 		vkDestroyImage(device, depthImage, nullptr);
 		vkFreeMemory(device, depthImageMemory, nullptr);
 		setupDepthResources();
+		createDepthPeelPipeline();
+		createDepthPeelCommandBuffers();
 		createGraphicsPipeline();
 		createSkyboxPipeline();
 		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
@@ -3949,10 +4049,11 @@ private:
 
 		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
 		VkSemaphore shadowSignalSemaphores[] = { shadowSemaphore };
+		VkSemaphore depthPeelSignalSemaphores[] = { depthPeelSemaphore };
 		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
 
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
-		VkSubmitInfo submitInfos[2] = {};
+		VkSubmitInfo submitInfos[3] = {};
 
 		// shadow pass submission
 		submitInfos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -3972,10 +4073,20 @@ private:
 		submitInfos[1].commandBufferCount = 1;
 		submitInfos[1].pCommandBuffers = &commandBuffers[imageIndex];
 		submitInfos[1].signalSemaphoreCount = 1;
-		submitInfos[1].pSignalSemaphores = renderFinishedSemaphores;
+		submitInfos[1].pSignalSemaphores = depthPeelSignalSemaphores;
+
+		// depth peel pass submission
+		submitInfos[2].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[2].waitSemaphoreCount = 1;
+		submitInfos[2].pWaitSemaphores = depthPeelSignalSemaphores;
+		submitInfos[2].pWaitDstStageMask = waitStages;
+		submitInfos[2].commandBufferCount = static_cast<uint32_t>(depthPeelCommandBuffers.size());
+		submitInfos[2].pCommandBuffers = depthPeelCommandBuffers.data();
+		submitInfos[2].signalSemaphoreCount = 1;
+		submitInfos[2].pSignalSemaphores = renderFinishedSemaphores;
 
 		// submit both command buffers in a single call
-		if (vkQueueSubmit(graphicsQueue, 2, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, 3, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit command buffers!");
 		}
 
@@ -4004,6 +4115,7 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
+		recordDepthPeelCommandBuffers();
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
@@ -4167,7 +4279,7 @@ private:
 		setupModelMatInstanceBuffer();
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createDepthPeelPipeline();
-		createDepthPeelFramebuffers();
+		createDepthPeelCommandBuffers();
 		createGraphicsPipeline();
 		createSkyboxPipeline();
 		createShadowPipeline(); // pipeline for my shadow maps
