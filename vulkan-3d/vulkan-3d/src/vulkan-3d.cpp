@@ -3299,7 +3299,7 @@ private:
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = sizeof(int); // albedo index
+		pushConstantRange.size = sizeof(int) * 3;
 
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4], descs.layouts[5] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
@@ -3910,8 +3910,12 @@ private:
 				if (uniqueModelInd == j) {
 					struct {
 						int albedo;
+						int peelIndex;
+						int numPeels;
 					} pushConst;
 					pushConst.albedo = meshTexStartInd[p];
+					pushConst.peelIndex = static_cast<int>(i);
+					pushConst.numPeels = static_cast<int>(depthPeels.numPeels);
 
 					vkCmdPushConstants(depthPeelCommandBuffers[i], depthPeels.pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
 

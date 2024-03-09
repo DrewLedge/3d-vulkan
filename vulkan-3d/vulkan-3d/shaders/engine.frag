@@ -152,6 +152,7 @@ void main() {
     }
     
     vec4 color = albedo * fragColor; 
+    if (color.a < 0.99) discard;
 
     vec3 diffuse = vec3(0.0);
     vec3 specular = vec3(0.0);
@@ -215,8 +216,8 @@ void main() {
     }
     
     // final color calculation
-    vec3 ambient = vec3(0.01f) * occlusion;
-    outColor = vec4(accumulated + emissive + ambient, 0.8);
+    vec3 ambient = vec3(0.005f) * occlusion;
+    outColor = vec4(accumulated + emissive + ambient, 1.0f);
 }
 
 
