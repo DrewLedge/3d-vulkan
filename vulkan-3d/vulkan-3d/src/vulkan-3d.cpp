@@ -409,6 +409,9 @@ private:
 		std::vector<depthPeelFB> frameBuffers;
 		pipelineData pipeline;
 		uint32_t numPeels = 6;
+		size_t currentPeel = 0;
+
+		Texture input;
 	};
 
 	// window and rendering context
@@ -466,11 +469,9 @@ private:
 	VkShaderModule vertShaderModule;
 
 	// depth buffering
-	VkImage depthImage;
-	VkDeviceMemory depthImageMemory;
-	VkImageView depthImageView;
 	VkFormat depthFormat;
 	depthPeelingData depthPeels;
+	Texture depthImage;
 
 	// descriptor sets and pools
 	descriptorSetObject descs;
@@ -589,7 +590,7 @@ private:
 		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
 		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -20.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
+		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
 		for (auto& obj : objects) {
@@ -1468,32 +1469,35 @@ private:
 
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
-		createImage(depthImage, depthImageMemory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+		createImage(depthImage.image, depthImage.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		createTextureImgView(depthImage, false, "depth");
+
+		// input depth image
+		createImage(depthPeels.input.image, depthPeels.input.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createTextureImgView(depthPeels.input, false, "depth");
 
 		depthPeels.frameBuffers.resize(depthPeels.numPeels);
 		for (depthPeelFB& d : depthPeels.frameBuffers) {
 			// depth image
-			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 			createTextureImgView(d.depth, false, "depth");
-			createTS(d.depth, false, "depth");
 
 			// color image
 			createImage(d.color.image, d.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-			d.color.imageView = createImageView(d.color.image, swap.imageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
+			createTextureImgView(d.color, false, "swap");
 		}
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
 		for (size_t i = 0; i < lights.size(); i++) {
 			createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-			lights[i]->shadowMapData.imageView = createImageView(lights[i]->shadowMapData.image, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
+			createTextureImgView(lights[i]->shadowMapData, false, "depth");
 			createTS(lights[i]->shadowMapData, false, "depth");
 		}
 	}
 
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount) {
-		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+	void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
+		bool temp = (commandBuffer == VK_NULL_HANDLE);
 
 		VkImageMemoryBarrier barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1508,8 +1512,8 @@ private:
 		else {
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
-		barrier.subresourceRange.baseMipLevel = 0;
-		barrier.subresourceRange.levelCount = 1;
+		barrier.subresourceRange.baseMipLevel = baseMip;
+		barrier.subresourceRange.levelCount = levelCount;
 		barrier.subresourceRange.baseArrayLayer = 0;
 		barrier.subresourceRange.layerCount = layerCount;
 
@@ -1518,14 +1522,30 @@ private:
 		VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 
 		if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-			barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
+				barrier.srcAccessMask = 0;
+				barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+				sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+				destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			}
+			else {
+				barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+				destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			}
 		}
 		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+				barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+				sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+				destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			}
+			else {
+				barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+				sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+				destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+			}
 		}
 		else if (newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
 			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
@@ -1539,17 +1559,28 @@ private:
 			sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
 			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		}
-		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		else if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
 			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+		}
+		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
+			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
-		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
-		endSingleTimeCommands(commandBuffer, commandPool);
+		if (temp) {
+			VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
+			vkCmdPipelineBarrier(tempCommandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
+			endSingleTimeCommands(tempCommandBuffer, commandPool);
+		}
+		else {
+			vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
+		}
 	}
 
 	void createImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers, bool cubeMap, VkImageUsageFlags usage) {
@@ -1585,26 +1616,6 @@ private:
 		}
 
 		vkBindImageMemory(device, image, imageMemory, 0);
-	}
-
-	VkImageView createImageView(VkImage& image, VkFormat format, VkImageAspectFlags aspectFlags) {
-		VkImageViewCreateInfo viewInfo{};
-		viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInfo.image = image;
-		viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInfo.format = format;
-		viewInfo.subresourceRange.aspectMask = aspectFlags;
-		viewInfo.subresourceRange.baseMipLevel = 0;
-		viewInfo.subresourceRange.levelCount = 1;
-		viewInfo.subresourceRange.baseArrayLayer = 0;
-		viewInfo.subresourceRange.layerCount = 1;
-
-		VkImageView imageView;
-		if (vkCreateImageView(device, &viewInfo, nullptr, &imageView) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image view!");
-		}
-
-		return imageView;
 	}
 
 	void createSCImageViews() { //create the image views for the swap chain images
@@ -1749,7 +1760,8 @@ private:
 
 	void calcCameraMats() {
 		cam.viewMatrix = cam.getViewMatrix();
-		cam.projectionMatrix = dml::projection(90.0f, static_cast<float>(swap.extent.width / swap.extent.height), 0.1f, 1000.0f);
+		cam.projectionMatrix = dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.1f, 1000.0f);
+
 	}
 
 	void calcShadowMats(light& l) {
@@ -1972,16 +1984,14 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
-
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
-
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -2025,15 +2035,14 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		VkDescriptorImageInfo prevDepthTex;
-		prevDepthTex.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		prevDepthTex.imageView = depthPeels.frameBuffers[0].depth.imageView;
-		prevDepthTex.sampler = depthPeels.frameBuffers[0].depth.sampler;
-
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		skyboxInfo.imageView = skybox.tex.imageView;
 		skyboxInfo.sampler = skybox.tex.sampler;
+
+		VkDescriptorImageInfo depthInpAttachmentInfo = {};
+		depthInpAttachmentInfo.imageView = depthPeels.input.imageView;
+		depthInpAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
@@ -2086,9 +2095,9 @@ private:
 		descriptorWrites[5].dstSet = descs.sets[5];
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
-		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
 		descriptorWrites[5].descriptorCount = 1;
-		descriptorWrites[5].pImageInfo = &prevDepthTex;
+		descriptorWrites[5].pImageInfo = &depthInpAttachmentInfo;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -2160,6 +2169,10 @@ private:
 		}
 		else if (type == "base") {
 			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for base texture
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		}
+		else if (type == "swap") {
+			viewInf.format = swap.imageFormat; // format of the swap chain
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		}
 		else if (type == "metallic") {
@@ -2316,7 +2329,7 @@ private:
 
 		createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6);
+		transitionImageLayout(VK_NULL_HANDLE, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
@@ -2350,10 +2363,9 @@ private:
 		}
 		endSingleTimeCommands(copyCmdBuffer, commandPool);
 
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6);
+		transitionImageLayout(VK_NULL_HANDLE, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
-
 	}
 
 	void createTexturedImage(Texture& tex, bool doMipmap, std::string type = "base") {
@@ -2384,43 +2396,14 @@ private:
 
 			VkCommandBuffer tempBuffer = beginSingleTimeCommands(commandPool);
 
-			VkImageMemoryBarrier barrier{};
-			barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-			barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED; //specifies the layout to transition from
-			barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL; //specifies the layout to transition to
-			barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-			barrier.image = tex.image;
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			barrier.subresourceRange.baseMipLevel = 0;
-			barrier.subresourceRange.levelCount = tex.mipLevels;
-			barrier.subresourceRange.baseArrayLayer = 0;
-			barrier.subresourceRange.layerCount = 1;
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT; //specifies the operations that must be finished on the old layout before it transitions to the new layout
-			vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier); //from the top of the pipeline to the transfer stage
-
+			transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
 			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
 			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
-					VkImageMemoryBarrier barrierToSrc{};
-					barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-					barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-					barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-					barrierToSrc.image = tex.image;
-					barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-					barrierToSrc.subresourceRange.baseMipLevel = j;
-					barrierToSrc.subresourceRange.levelCount = 1;
-					barrierToSrc.subresourceRange.baseArrayLayer = 0;
-					barrierToSrc.subresourceRange.layerCount = 1;
-					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-					barrierToSrc.srcAccessMask = 0;
-					barrierToSrc.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 1, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //from the top of the pipeline to the transfer stage
+					transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
 
 					if (j < tex.mipLevels - 1) {
 						VkImageBlit blit{};
@@ -2439,12 +2422,7 @@ private:
 						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
-					barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
-					barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-					barrierToSrc.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-					barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-					vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc); //mip levels are read by the fragment shader
+					transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
 
 					//for the next mip level, divide the width and height by 2, unless they are already 1
 					if (mipWidth > 1) mipWidth /= 2;
@@ -2452,23 +2430,7 @@ private:
 				}
 			}
 			else {
-				VkImageMemoryBarrier barrierToSrc{};
-				barrierToSrc.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-				barrierToSrc.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-				barrierToSrc.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-				barrierToSrc.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				barrierToSrc.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-				barrierToSrc.image = tex.image;
-				barrierToSrc.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-				barrierToSrc.subresourceRange.baseMipLevel = 0;
-				barrierToSrc.subresourceRange.levelCount = tex.mipLevels;
-				barrierToSrc.subresourceRange.baseArrayLayer = 0;
-				barrierToSrc.subresourceRange.layerCount = 1;
-				barrierToSrc.srcAccessMask = 0;
-				barrierToSrc.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-
-				//from the top of the pipeline to the fragment shader stage
-				vkCmdPipelineBarrier(tempBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrierToSrc);
+				transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
 			}
 
 			endSingleTimeCommands(tempBuffer, commandPool);
@@ -3287,21 +3249,48 @@ private:
 		depthAttachmentRef.attachment = 1;
 		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+		// input depth attatchment to pass in the previous depth texture
+		VkAttachmentDescription inpDepthAttatchment{};
+		inpDepthAttatchment.format = depthFormat;
+		inpDepthAttatchment.samples = VK_SAMPLE_COUNT_1_BIT;
+		inpDepthAttatchment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		inpDepthAttatchment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttatchment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		inpDepthAttatchment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttatchment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		inpDepthAttatchment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+		VkAttachmentReference inpDepthAttachmentRef{};
+		inpDepthAttachmentRef.attachment = 2;
+		inpDepthAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
 		// create the subpass
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;
+		subpass.inputAttachmentCount = 1;
+		subpass.pInputAttachments = &inpDepthAttachmentRef;
+
+		VkSubpassDependency dependency = {};
+		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+		dependency.dstSubpass = 0;
+		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.srcAccessMask = 0;
+		dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 		// define the render pass
-		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+		std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, inpDepthAttatchment };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
+		renderPassInf.dependencyCount = 1;
+		renderPassInf.pDependencies = &dependency;
 		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &depthPeels.pipeline.renderPass);
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
@@ -3312,7 +3301,7 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int); // albedo index
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4], descs.layouts[5] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3756,7 +3745,7 @@ private:
 		// create the framebuffers for the depth peels
 		for (auto& peel : depthPeels.frameBuffers) {
 			if (peel.framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, peel.framebuffer, nullptr);
-			std::array<VkImageView, 2> attachments = { peel.color.imageView, peel.depth.imageView };
+			std::array<VkImageView, 3> attachments = { peel.color.imageView, peel.depth.imageView, depthPeels.input.imageView };
 
 			VkFramebufferCreateInfo framebufferInfo{};
 			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -3850,6 +3839,25 @@ private:
 		}
 	}
 
+	void copyDepthPeelImg(VkImage& srcImage, VkImage& dstImage, VkCommandBuffer& commandBuffer) {
+		transitionImageLayout(commandBuffer, srcImage, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
+		transitionImageLayout(commandBuffer, dstImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
+
+		VkImageCopy copy{};
+		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		copy.srcSubresource.mipLevel = 0;
+		copy.srcSubresource.baseArrayLayer = 0;
+		copy.srcSubresource.layerCount = 1;
+		copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		copy.dstSubresource.mipLevel = 0;
+		copy.dstSubresource.baseArrayLayer = 0;
+		copy.dstSubresource.layerCount = 1;
+		copy.extent = { swap.extent.width, swap.extent.height, 1 };
+
+		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+		transitionImageLayout(commandBuffer, dstImage, depthFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
+	}
+
 	void recordDepthPeelCommandBuffers() {
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3861,6 +3869,16 @@ private:
 			if (vkBeginCommandBuffer(depthPeelCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer for depth peels!");
 			}
+
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.input.image, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
+
+			// copy the depth buffer from the previous peel to the input image
+			if (i > 0) {
+				copyDepthPeelImg(depthPeels.frameBuffers[i - 1].depth.image, depthPeels.input.image, depthPeelCommandBuffers[i]);
+			}
+
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.input.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
+
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3874,8 +3892,8 @@ private:
 
 			vkCmdBindPipeline(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.graphicsPipeline);
 
-			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[4] };
-			vkCmdBindDescriptorSets(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.layout, 0, 2, dSets, 0, nullptr);
+			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[4], descs.sets[5] };
+			vkCmdBindDescriptorSets(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.layout, 0, 3, dSets, 0, nullptr);
 
 			// iterate through all objects
 			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
@@ -4004,15 +4022,15 @@ private:
 		createSCImageViews();
 		cleanupDS();
 		setupDescriptorSets(false);
-		vkDestroyImageView(device, depthImageView, nullptr);
-		vkDestroyImage(device, depthImage, nullptr);
-		vkFreeMemory(device, depthImageMemory, nullptr);
+		vkDestroyImageView(device, depthImage.imageView, nullptr);
+		vkDestroyImage(device, depthImage.image, nullptr);
+		vkFreeMemory(device, depthImage.memory, nullptr);
 		setupDepthResources();
 		createDepthPeelPipeline();
 		createDepthPeelCommandBuffers();
 		createGraphicsPipeline();
 		createSkyboxPipeline();
-		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImage.imageView);
 		recordAllCommandBuffers();
 		initializeMouseInput(true);
 	}
@@ -4191,7 +4209,6 @@ private:
 		}
 	}
 
-
 	void handleKeyboardInput() {
 		bool isEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
 
@@ -4285,26 +4302,11 @@ private:
 		createShadowPipeline(); // pipeline for my shadow maps
 		imguiSetup();
 		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
-		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImageView);
+		createFramebuffersSC(mainPipelineData.renderPass, swap.framebuffers, true, depthImage.imageView);
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		createCommandBuffer();
 		recordAllCommandBuffers();
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
-	}
-
-	void scatterObjects(int count, float radius) {
-		for (int i = 0; i < count; i++) {
-			// generate random angles (rads)
-			float theta = (float(rand()) / float(RAND_MAX)) * 2.0f * PI;
-			float phi = acos(2.0f * (float(rand()) / float(RAND_MAX)) - 1.0f);
-
-			// convert to cartesian coordinates
-			float x = radius * sin(phi) * cos(theta);
-			float y = radius * sin(phi) * sin(theta);
-			float z = radius * cos(phi);
-
-			cloneObject({ x, y, z }, 0, { 0.1f, 0.1f, 0.1f }, { 0.0f, 0.0f, 0.0f, 0.0f });
-		}
 	}
 
 	void cleanup() { //FIX
