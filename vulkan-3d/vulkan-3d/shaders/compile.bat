@@ -10,3 +10,7 @@ glslangValidator -V sky.frag -o compiled/sky_frag_shader.spv >> shaderlogs/skyEr
 
 glslangValidator -V peel.vert -o compiled/peel_vert_shader.spv > shaderlogs/peelErr.txt
 glslangValidator -V peel.frag -o compiled/peel_frag_shader.spv >> shaderlogs/peelErr.txt
+
+glslangValidator -V composition.vert -o compiled/composition_vert_shader.spv > shaderlogs/compositionErr.txt
+glslangValidator -V composition.frag -o compiled/composition_frag_shader.spv >> shaderlogs/compositionErr.txt
+
