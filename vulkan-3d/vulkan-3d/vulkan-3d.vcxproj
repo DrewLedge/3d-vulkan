@@ -142,6 +142,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\..\README.md" />
+    <None Include="shaders\composition.frag" />
+    <None Include="shaders\composition.vert" />
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
     <None Include="shaders\peel.frag" />
