@@ -468,6 +468,7 @@ private:
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
 	VkSemaphore depthPeelSemaphore;
+	VkSemaphore compSemaphore;
 
 	// shader modules
 	VkShaderModule fragShaderModule;
@@ -3499,9 +3500,9 @@ private:
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 		pushConstantRange.offset = 0;
-		pushConstantRange.size = sizeof(int) * 3;
+		pushConstantRange.size = sizeof(int);
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[5], descs.layouts[6] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[6], descs.layouts[7] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3841,6 +3842,9 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
+			if (vkBeginCommandBuffer(compCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording command buffer!");
+			}
 
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -3854,6 +3858,15 @@ private:
 			vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.graphicsPipeline);
 			vkCmdBindDescriptorSets(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.layout, 0, 2, compDescs, 0, nullptr);
+
+			struct {
+				int peelNum; // the number of depth peels
+			} pushConst;
+
+			pushConst.peelNum = depthPeels.numPeels;
+			vkCmdPushConstants(compCommandBuffers[i], compositionPipelineData.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
+
+			vkCmdDraw(compCommandBuffers[i], 6, 1, 0, 0);
 
 			// prepare for next frame in ImGui:
 			ImGui_ImplVulkan_NewFrame();
@@ -4243,6 +4256,10 @@ private:
 		if (resultDepthPeelFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create depth peel finished semaphore!");
 		}
+		VkResult restultCompFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &compSemaphore);
+		if (restultCompFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create composition finished semaphore!");
+		}
 	}
 
 	void recreateSwap() {
@@ -4304,46 +4321,52 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image!");
 		}
 
-		VkSemaphore waitSemaphores[] = { imageAvailableSemaphore };
-		VkSemaphore shadowSignalSemaphores[] = { shadowSemaphore };
-		VkSemaphore depthPeelSignalSemaphores[] = { depthPeelSemaphore };
-		VkSemaphore renderFinishedSemaphores[] = { renderFinishedSemaphore };
-
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
-		VkSubmitInfo submitInfos[3] = {};
+		const size_t size = 4;
+		VkSubmitInfo submitInfos[size] = {};
 
 		// shadow pass submission
 		submitInfos[0].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfos[0].waitSemaphoreCount = 1;
-		submitInfos[0].pWaitSemaphores = waitSemaphores;
+		submitInfos[0].pWaitSemaphores = &imageAvailableSemaphore;
 		submitInfos[0].pWaitDstStageMask = waitStages;
 		submitInfos[0].commandBufferCount = static_cast<uint32_t>(shadowMapCommandBuffers.size());
 		submitInfos[0].pCommandBuffers = shadowMapCommandBuffers.data();
 		submitInfos[0].signalSemaphoreCount = 1;
-		submitInfos[0].pSignalSemaphores = shadowSignalSemaphores;
+		submitInfos[0].pSignalSemaphores = &shadowSemaphore;
 
 		// main scene pass submission
 		submitInfos[1].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfos[1].waitSemaphoreCount = 1;
-		submitInfos[1].pWaitSemaphores = shadowSignalSemaphores;
+		submitInfos[1].pWaitSemaphores = &shadowSemaphore;
 		submitInfos[1].pWaitDstStageMask = waitStages;
 		submitInfos[1].commandBufferCount = 1;
 		submitInfos[1].pCommandBuffers = &mainPassCommandBuffers[imageIndex];
 		submitInfos[1].signalSemaphoreCount = 1;
-		submitInfos[1].pSignalSemaphores = depthPeelSignalSemaphores;
+		submitInfos[1].pSignalSemaphores = &depthPeelSemaphore;
 
 		// depth peel pass submission
 		submitInfos[2].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfos[2].waitSemaphoreCount = 1;
-		submitInfos[2].pWaitSemaphores = depthPeelSignalSemaphores;
+		submitInfos[2].pWaitSemaphores = &depthPeelSemaphore;
 		submitInfos[2].pWaitDstStageMask = waitStages;
 		submitInfos[2].commandBufferCount = static_cast<uint32_t>(depthPeelCommandBuffers.size());
 		submitInfos[2].pCommandBuffers = depthPeelCommandBuffers.data();
 		submitInfos[2].signalSemaphoreCount = 1;
-		submitInfos[2].pSignalSemaphores = renderFinishedSemaphores;
+		submitInfos[2].pSignalSemaphores = &compSemaphore;
+
+		// composition pass submission
+		submitInfos[3].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfos[3].waitSemaphoreCount = 1;
+		submitInfos[3].pWaitSemaphores = &compSemaphore;
+		submitInfos[3].pWaitDstStageMask = waitStages;
+		submitInfos[3].commandBufferCount = 1;
+		submitInfos[3].pCommandBuffers = &compCommandBuffers[imageIndex];
+		submitInfos[3].signalSemaphoreCount = 1;
+		submitInfos[3].pSignalSemaphores = &renderFinishedSemaphore;
 
 		// submit both command buffers in a single call
-		if (vkQueueSubmit(graphicsQueue, 3, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, size, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit command buffers!");
 		}
 
@@ -4373,6 +4396,7 @@ private:
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 		recordDepthPeelCommandBuffers();
+		recordCompCommandBuffers();
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
