@@ -1479,8 +1479,9 @@ private:
 
 	void setupDepthResources() {
 		depthFormat = findDepthFormat();
-		createImage(depthImage.image, depthImage.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		createImage(depthImage.image, depthImage.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 		createTextureImgView(depthImage, false, "depth");
+		createTS(depthImage, false, "depth");
 
 		// input depth image
 		createImage(depthPeels.input.image, depthPeels.input.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
@@ -1491,6 +1492,7 @@ private:
 			// depth image
 			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 			createTextureImgView(d.depth, false, "depth");
+			createTS(d.depth, false, "depth");
 
 			// color image
 			createImage(d.color.image, d.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -1997,8 +1999,8 @@ private:
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
 
-		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		descs.layouts[7] = createDSLayout(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 texture
+		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels * 2, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
+		descs.layouts[7] = createDSLayout(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 texture
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
@@ -2007,15 +2009,14 @@ private:
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
 		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
 
-		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels);
-		descs.pools[7] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
-
+		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels * 2);
+		descs.pools[7] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, depthPeels.numPeels, 1 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, depthPeels.numPeels * 2, 2 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2053,17 +2054,26 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeels.numPeels);
+		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeels.numPeels * 2);
 		for (size_t i = 0; i < depthPeels.numPeels; i++) {
 			depthPeelInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			depthPeelInfos[i].imageView = depthPeels.frameBuffers[i].color.imageView;
 			depthPeelInfos[i].sampler = depthPeels.frameBuffers[i].color.sampler;
+
+			size_t j = i + depthPeels.numPeels;
+			depthPeelInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			depthPeelInfos[j].imageView = depthPeels.frameBuffers[i].depth.imageView;
+			depthPeelInfos[j].sampler = depthPeels.frameBuffers[i].depth.sampler;
 		}
 
-		VkDescriptorImageInfo mainPassImageInfo{};
-		mainPassImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		mainPassImageInfo.imageView = mainPassTexture.imageView;
-		mainPassImageInfo.sampler = mainPassTexture.sampler;
+		std::vector<VkDescriptorImageInfo> mainPassImageInfo(2);
+		mainPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		mainPassImageInfo[0].imageView = mainPassTexture.imageView;
+		mainPassImageInfo[0].sampler = mainPassTexture.sampler;
+
+		mainPassImageInfo[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		mainPassImageInfo[1].imageView = depthImage.imageView;
+		mainPassImageInfo[1].sampler = depthImage.sampler;
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -2134,7 +2144,7 @@ private:
 		descriptorWrites[6].dstBinding = 6;
 		descriptorWrites[6].dstArrayElement = 0;
 		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[6].descriptorCount = depthPeels.numPeels;
+		descriptorWrites[6].descriptorCount = depthPeels.numPeels * 2;
 		descriptorWrites[6].pImageInfo = depthPeelInfos.data();
 
 		descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2142,8 +2152,8 @@ private:
 		descriptorWrites[7].dstBinding = 7;
 		descriptorWrites[7].dstArrayElement = 0;
 		descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[7].descriptorCount = 1;
-		descriptorWrites[7].pImageInfo = &mainPassImageInfo;
+		descriptorWrites[7].descriptorCount = 2;
+		descriptorWrites[7].pImageInfo = mainPassImageInfo.data();
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -2751,7 +2761,7 @@ private:
 		depthAttachment.format = depthFormat;
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -3222,7 +3232,7 @@ private:
 		rasterizer.rasterizerDiscardEnable = VK_FALSE;
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
-		rasterizer.cullMode = VK_CULL_MODE_NONE;
+		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
 		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f;
@@ -3855,6 +3865,11 @@ private:
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
 
+			transitionImageLayout(compCommandBuffers[i], depthImage.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+			for (size_t j = 0; j < depthPeels.numPeels; j++) {
+				transitionImageLayout(compCommandBuffers[i], depthPeels.frameBuffers[j].depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+			}
+
 			vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.graphicsPipeline);
 			vkCmdBindDescriptorSets(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.layout, 0, 2, compDescs, 0, nullptr);
@@ -4098,6 +4113,8 @@ private:
 
 		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 		transitionImageLayout(commandBuffer, dstImage, depthFormat, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
+		transitionImageLayout(commandBuffer, srcImage, depthFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
+
 	}
 
 	void recordDepthPeelCommandBuffers() {
@@ -4277,6 +4294,7 @@ private:
 		cleanupDS();
 		setupDescriptorSets(false);
 		vkDestroyImageView(device, depthImage.imageView, nullptr);
+		vkDestroySampler(device, depthImage.sampler, nullptr);
 		vkDestroyImage(device, depthImage.image, nullptr);
 		vkFreeMemory(device, depthImage.memory, nullptr);
 		setupDepthResources();

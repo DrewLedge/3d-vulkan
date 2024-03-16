@@ -24,7 +24,7 @@ void main() {
     float depth = gl_FragCoord.z;
 
     float alpha = albedoColor.a * inColor.a;
-    if (alpha == 0.0f || alpha > 0.99f) discard;
+    if (alpha > 0.99f) discard;
     
     if (pc.peelInd == 0) { // check if this is the first peel
         // output the color and depth for the first peel
@@ -34,7 +34,7 @@ void main() {
         float prevDepthVal = subpassLoad(prevDepth).r; // load the depth value from the previous peel
         
         // check if the current depth is greater than the previous depth
-        if (depth > prevDepthVal) {
+        if (depth < prevDepthVal) {
             // output the color and depth for the current peel
             outFragColor = albedoColor;
             outDepth = depth;
