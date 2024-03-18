@@ -2606,10 +2606,9 @@ private:
 			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
 		}
 
-		// vertex index
 		attrDesc[10].binding = 1;
 		attrDesc[10].location = 10;
-		attrDesc[10].format = VK_FORMAT_R32_UINT; // 1 uint32_t for vert index
+		attrDesc[10].format = VK_FORMAT_R32_UINT; // 1 uint32_t
 		attrDesc[10].offset = offsetof(modelMat, render);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -3166,7 +3165,7 @@ private:
 		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
 		std::vector<VkVertexInputAttributeDescription> attrDesc;
-		attrDesc.resize(7);
+		attrDesc.resize(8);
 
 		// position
 		attrDesc[0].binding = 0;
@@ -3195,6 +3194,11 @@ private:
 			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
 			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
 		}
+
+		attrDesc[7].binding = 1;
+		attrDesc[7].location = 7;
+		attrDesc[7].format = VK_FORMAT_R32_UINT; // 1 uint32_t
+		attrDesc[7].offset = offsetof(modelMat, render);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

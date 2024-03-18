@@ -9,6 +9,7 @@ layout(input_attachment_index = 0, set = 2, binding = 5) uniform subpassInput pr
 
 layout(location = 0) in vec4 inColor;
 layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) flat in uint inRender;
 
 layout(location = 0) out vec4 outFragColor;
 layout(location = 1) out float outDepth;
@@ -20,6 +21,10 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
+    if (inRender == 1) {
+        discard;
+    }
+
     vec4 albedoColor = texture(texSamplers[pc.albedo], inTexCoord);
     float depth = gl_FragCoord.z;
 
@@ -34,7 +39,7 @@ void main() {
         float prevDepthVal = subpassLoad(prevDepth).r; // load the depth value from the previous peel
         
         // check if the current depth is greater than the previous depth
-        if (depth < prevDepthVal) {
+        if (depth > prevDepthVal) {
             // output the color and depth for the current peel
             outFragColor = albedoColor;
             outDepth = depth;
