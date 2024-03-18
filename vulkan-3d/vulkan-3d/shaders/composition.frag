@@ -14,11 +14,35 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
-	vec4 mainColor = texture(depthPeels[0], inUV);
-	float mainDepth = texture(mainPass[1], inUV).r;
-	float peelDepth = texture(depthPeels[6], inUV).r;
-	outColor = vec4(vec3(mainDepth), 1.0f);
+    // get the color and depth from the main pass 
+    vec4 mainColor = texture(mainPass[0], inUV);
+    float mainDepth = texture(mainPass[1], inUV).r;
+
+    vec4 finalColor = vec4(0.0);
+    float finalAlpha = 1.0;
+    float finalDepth = 0.0;
+
+    // initialize the final color with the main pass color
+    finalColor = mainColor;
+    finalDepth = mainDepth;
+
+    // blend the depth peels with the main pass
+    for (int i = 0; i < pc.numPeels; i++) {
+        // color and depth of the current peel
+        vec4 peelColor = texture(depthPeels[i], inUV);
+        float peelDepth = texture(depthPeels[i + pc.numPeels], inUV).r;
+
+        if (peelDepth < finalDepth) {
+            float peelAlpha = 1.0 - peelColor.a; // get the inverse alpha
+
+            // blend the peel color with the final color
+            finalColor += peelColor * finalAlpha;
+            finalAlpha *= peelAlpha;
+
+            // update the final depth with the current peel depth
+            finalDepth = peelDepth;
+        }
+    }
+    outColor = finalColor;
 }
-
-
 

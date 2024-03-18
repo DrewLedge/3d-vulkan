@@ -24,7 +24,7 @@ void main() {
     float depth = gl_FragCoord.z;
 
     float alpha = albedoColor.a * inColor.a;
-    if (alpha > 0.99f) discard;
+    if (alpha > 0.99f) albedoColor = vec4(0.0);
     
     if (pc.peelInd == 0) { // check if this is the first peel
         // output the color and depth for the first peel
