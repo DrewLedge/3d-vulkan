@@ -1,2 +1,0 @@
-shadow.vert
-shadow.frag

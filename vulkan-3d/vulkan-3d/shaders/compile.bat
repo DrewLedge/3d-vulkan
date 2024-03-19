@@ -1,16 +1,19 @@
-@@echo off
-glslangValidator -V engine.vert -o compiled/vertex_shader.spv > shaderlogs/GLSLerr.txt
-glslangValidator -V engine.frag -o compiled/fragment_shader.spv >> shaderlogs/GLSLerr.txt
+@echo off
 
-glslangValidator -V shadow.vert -o compiled/shadow_vert_shader.spv > shaderlogs/shaderErr.txt
-glslangValidator -V shadow.frag -o compiled/shadow_frag_shader.spv >> shaderlogs/shaderErr.txt
+if not exist compiled mkdir compiled
+if not exist shaderlogs mkdir shaderlogs
 
-glslangValidator -V sky.vert -o compiled/sky_vert_shader.spv > shaderlogs/skyErr.txt
-glslangValidator -V sky.frag -o compiled/sky_frag_shader.spv >> shaderlogs/skyErr.txt
+glslc engine.vert -o compiled/vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
+glslc engine.frag -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
-glslangValidator -V peel.vert -o compiled/peel_vert_shader.spv > shaderlogs/peelErr.txt
-glslangValidator -V peel.frag -o compiled/peel_frag_shader.spv >> shaderlogs/peelErr.txt
+glslc shadow.vert -o compiled/shadow_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc shadow.frag -o compiled/shadow_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
-glslangValidator -V composition.vert -o compiled/composition_vert_shader.spv > shaderlogs/compositionErr.txt
-glslangValidator -V composition.frag -o compiled/composition_frag_shader.spv >> shaderlogs/compositionErr.txt
+glslc sky.vert -o compiled/sky_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc sky.frag -o compiled/sky_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
+glslc peel.vert -o compiled/peel_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc peel.frag -o compiled/peel_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+
+glslc composition.vert -o compiled/composition_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc composition.frag -o compiled/composition_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1

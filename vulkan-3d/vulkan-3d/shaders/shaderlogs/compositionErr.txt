@@ -1,2 +1,0 @@
-composition.vert
-composition.frag
