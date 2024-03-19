@@ -91,7 +91,18 @@ void getTextures() {
 	}
 }
 
-vec4 calculateLighting(bool discardTranslucent, bool fillTranslucent, float occlusionFactor) {
+float calcIntensity(float innerConeRads, float outerConeRads, float attenuation, float theta) {
+	float intensity;
+	if (theta > cos(innerConeRads)) {
+		intensity = 1.0;
+	}
+	else {
+		intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
+	}
+	return clamp(intensity * attenuation, 0.0, 1.0);
+}
+
+vec4 calcLighting(bool discardTranslucent, bool fillTranslucent, float occlusionFactor) {
 	vec4 color = albedo * fragColor;
 	if (discardTranslucent) {
 		if (color.a < 0.99) discard;
@@ -139,15 +150,7 @@ vec4 calculateLighting(bool discardTranslucent, bool fillTranslucent, float occl
 			vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
 			float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 
-			// spotlight intensity calculation
-			float intensity;
-			if (theta > cos(innerConeRads)) {
-				intensity = 1.0;
-			}
-			else {
-				intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
-			}
-			intensity = clamp(intensity * attenuation, 0.0, 1.0);
+			float intensity = calcIntensity(innerConeRads, outerConeRads, attenuation, theta);
 
 			// cook-torrance specular lighting
 			vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);

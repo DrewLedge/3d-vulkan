@@ -3,7 +3,8 @@
 #extension GL_EXT_nonuniform_qualifier : enable
 
 #define MAX_TEXTURES 4000 // this number must be the same as in the main code!!!
-#define MAX_MODELS 1200
+
+#include "includes/vertformulas.glsl"
 
 layout(location = 0) in vec3 inPosition; 
 layout(location = 1) in vec4 inColor; 
@@ -47,27 +48,13 @@ void main() {
     mat4 view = camUBO.view;
     mat4 model = mat4(model1, model2, model3, model4);
 
-    vec3 worldCamPos = vec3(inverse(view)[3]);
-    vec4 worldPos = model * vec4(inPosition, 1.0);
-    vec3 viewDir = normalize(worldPos.xyz - worldCamPos);
+    vec3 viewDir = getViewDir(view, model, inPosition);
+    gl_Position = getPos(proj, view, model, inPosition);
+    TBN = getTBN(inTangent, model, inNormal);
 
-    gl_Position = proj * view * model * vec4(inPosition, 1.0);
     fragColor = inColor;
     outTexCoord = inTexCoord;
-    if (texIndex <= MAX_TEXTURES) {
-        outTexIndex = texIndex; // pass the texture index to the fragment shader
-    }
-    float handedness = inTangent.w;
-    
-    mat3 normMat = transpose(inverse(mat3(model)));
-    vec3 N = normalize(normMat * inNormal);
-    vec3 T = normalize(normMat * inTangent.xyz);
-    T = normalize(T - dot(T, N) * N); // re orthogonalize tangent
-    vec3 B = normalize(cross(N, T) * handedness);  
-    TBN = mat3(T, B, N);
-
-    //for lighting
+    if (texIndex <= MAX_TEXTURES) outTexIndex = texIndex; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDirection = viewDir;
-
 }

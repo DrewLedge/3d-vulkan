@@ -1,5 +1,8 @@
 #version 460
 #define MAX_MODELS 1200
+
+#include "includes/vertformulas.glsl"
+
 layout (location = 0) in vec3 inPosition;
 
 // individual rows of the instanced model matrix
@@ -31,7 +34,6 @@ struct lightData {
 	float quadraticAttenuation;
 };
 
-
 layout (set=0, binding = 1) buffer LightBuffer {
 	lightMatrix lightMatricies[20]; // are used in the shader
     lightData lights[20]; // not used in this shader but needed because of the descriptor set and binding consistancy
@@ -46,14 +48,9 @@ void main() {
     // fetch matrices
     mat4 lightView = lightMatricies[pc.lightIndex].viewMatrix;
     mat4 lightProj = lightMatricies[pc.lightIndex].projectionMatrix;
-    mat4 modelMatrix = mat4(model1, model2, model3, model4); // model matrix of the model
+    mat4 model = mat4(model1, model2, model3, model4); // model matrix of the model
 
-    // transform position
-    mat4 lightSpace = lightProj * lightView;
-    vec4 transformedPos = lightSpace * modelMatrix * vec4(inPosition, 1.0);
-
-    gl_Position = transformedPos;
-
+    gl_Position = getPos(lightProj, lightView, model, inPosition); // transform position
 }
 
 
