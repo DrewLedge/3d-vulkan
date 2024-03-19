@@ -4,7 +4,7 @@ if not exist compiled mkdir compiled
 if not exist shaderlogs mkdir shaderlogs
 
 glslc engine.vert -o compiled/vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
-glslc engine.frag -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc engine.frag -I ./includes/ -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
 glslc shadow.vert -o compiled/shadow_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 glslc shadow.frag -o compiled/shadow_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1

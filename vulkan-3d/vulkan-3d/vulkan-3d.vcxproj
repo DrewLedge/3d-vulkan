@@ -146,6 +146,7 @@
     <None Include="shaders\composition.vert" />
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
+    <None Include="shaders\includes\fragformulas.glsl" />
     <None Include="shaders\peel.frag" />
     <None Include="shaders\peel.vert" />
     <None Include="shaders\shadow.frag" />
