@@ -2004,11 +2004,13 @@ private:
 	}
 
 	void createDS() {
-		const uint8_t size = 8;
+		const uint8_t size = 9;
 		descs.sets.resize(size);
 		descs.layouts.resize(size);
 		descs.pools.resize(size);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
+
+		const uint32_t depthPeelCount = depthPeels.iterations * 4;
 
 		//initialize descriptor set layouts and pools
 		descs.layouts[0] = createDSLayout(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
@@ -2016,26 +2018,30 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
 
-		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.iterations * 2, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		descs.layouts[7] = createDSLayout(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 texture
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous front depth texture
+		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous back depth texture
+
+		descs.layouts[7] = createDSLayout(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeelCount, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures for depth peels
+		descs.layouts[8] = createDSLayout(8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT); // main depth and main color texture
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
 
-		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.iterations * 2);
-		descs.pools[7] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
+		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
+
+		descs.pools[7] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeelCount);
+		descs.pools[8] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, depthPeels.iterations * 2, 2 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, 1, depthPeelCount, 2 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2073,16 +2079,16 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeels.iterations * 2);
+		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeelCount);
 		for (size_t i = 0; i < depthPeels.iterations; i++) {
-			depthPeelInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			depthPeelInfos[i].imageView = depthPeels.front[i].color.imageView;
-			depthPeelInfos[i].sampler = depthPeels.front[i].color.sampler;
+			size_t indices[] = { i, i + depthPeels.iterations, i + 2 * depthPeels.iterations, i + 3 * depthPeels.iterations };
+			Texture* inf[] = { &depthPeels.front[i].color, &depthPeels.front[i].depth, &depthPeels.back[i].color, &depthPeels.back[i].depth };
 
-			size_t j = i + depthPeels.iterations;
-			depthPeelInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			depthPeelInfos[j].imageView = depthPeels.front[i].depth.imageView;
-			depthPeelInfos[j].sampler = depthPeels.front[i].depth.sampler;
+			for (size_t j = 0; j < 4; j++) {
+				depthPeelInfos[indices[j]].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+				depthPeelInfos[indices[j]].imageView = inf[j]->imageView;
+				depthPeelInfos[indices[j]].sampler = inf[j]->sampler;
+			}
 		}
 
 		std::vector<VkDescriptorImageInfo> mainPassImageInfo(2);
@@ -2099,9 +2105,13 @@ private:
 		skyboxInfo.imageView = skybox.tex.imageView;
 		skyboxInfo.sampler = skybox.tex.sampler;
 
-		VkDescriptorImageInfo depthInpAttachmentInfo = {};
-		depthInpAttachmentInfo.imageView = depthPeels.input.imageView;
-		depthInpAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		VkDescriptorImageInfo frontDepthInpAttachmentInfo = {};
+		frontDepthInpAttachmentInfo.imageView = depthPeels.inpFrontDepth.imageView;
+		frontDepthInpAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		VkDescriptorImageInfo backDepthInpAttachmentInfo = {};
+		backDepthInpAttachmentInfo.imageView = depthPeels.inpBackDepth.imageView;
+		backDepthInpAttachmentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
@@ -2156,23 +2166,31 @@ private:
 		descriptorWrites[5].dstArrayElement = 0;
 		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT; //type=input attachment
 		descriptorWrites[5].descriptorCount = 1;
-		descriptorWrites[5].pImageInfo = &depthInpAttachmentInfo;
+		descriptorWrites[5].pImageInfo = &frontDepthInpAttachmentInfo;
 
 		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[6].dstSet = descs.sets[6];
 		descriptorWrites[6].dstBinding = 6;
 		descriptorWrites[6].dstArrayElement = 0;
-		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[6].descriptorCount = depthPeels.iterations * 2;
-		descriptorWrites[6].pImageInfo = depthPeelInfos.data();
+		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT; //type=input attachment
+		descriptorWrites[6].descriptorCount = 1;
+		descriptorWrites[6].pImageInfo = &backDepthInpAttachmentInfo;
 
 		descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		descriptorWrites[7].dstSet = descs.sets[7];
 		descriptorWrites[7].dstBinding = 7;
 		descriptorWrites[7].dstArrayElement = 0;
 		descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[7].descriptorCount = 2;
-		descriptorWrites[7].pImageInfo = mainPassImageInfo.data();
+		descriptorWrites[7].descriptorCount = depthPeelCount;
+		descriptorWrites[7].pImageInfo = depthPeelInfos.data();
+
+		descriptorWrites[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[8].dstSet = descs.sets[8];
+		descriptorWrites[8].dstBinding = 8;
+		descriptorWrites[8].dstArrayElement = 0;
+		descriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[8].descriptorCount = 2;
+		descriptorWrites[8].pImageInfo = mainPassImageInfo.data();
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -3380,7 +3398,7 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 3;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4], descs.layouts[5] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[4], descs.layouts[5], descs.layouts[6] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3535,7 +3553,7 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int);
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[6], descs.layouts[7] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[7], descs.layouts[8] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3868,7 +3886,7 @@ private:
 
 	void recordCompCommandBuffers() { // WIP
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet compDescs[] = { descs.sets[6], descs.sets[7] };
+		VkDescriptorSet compDescs[] = { descs.sets[7], descs.sets[8] };
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -4174,7 +4192,7 @@ private:
 
 			vkCmdBindPipeline(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.graphicsPipeline);
 
-			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[4], descs.sets[5] };
+			VkDescriptorSet dSets[] = { descs.sets[0], descs.sets[4], descs.sets[5], descs.sets[6] };
 			vkCmdBindDescriptorSets(depthPeelCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, depthPeels.pipeline.layout, 0, 3, dSets, 0, nullptr);
 
 			// iterate through all objects
