@@ -3316,61 +3316,116 @@ private:
 		colorBS.attachmentCount = 1;
 		colorBS.pAttachments = &colorBA;
 
-		// color attatchment (first)
-		VkAttachmentDescription colorAttachment{};
-		colorAttachment.format = swap.imageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		// color attachment (front)
+		VkAttachmentDescription colorAttachmentF{};
+		colorAttachmentF.format = swap.imageFormat;
+		colorAttachmentF.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachmentF.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachmentF.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachmentF.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachmentF.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachmentF.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachmentF.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentReference colorAttachmentRef{};
-		colorAttachmentRef.attachment = 0;
-		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference colorAttachmentRefF{};
+		colorAttachmentRefF.attachment = 0;
+		colorAttachmentRefF.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		// depth attachment (second)
-		VkAttachmentDescription depthAttachment{};
-		depthAttachment.format = depthFormat;
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		// color attachment (back)
+		VkAttachmentDescription colorAttachmentB{};
+		colorAttachmentB.format = swap.imageFormat;
+		colorAttachmentB.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachmentB.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachmentB.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachmentB.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachmentB.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachmentB.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachmentB.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-		VkAttachmentReference depthAttachmentRef{};
-		depthAttachmentRef.attachment = 1;
-		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+		VkAttachmentReference colorAttachmentRefB{};
+		colorAttachmentRefB.attachment = 1;
+		colorAttachmentRefB.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		// input depth attatchment to pass in the previous depth texture
-		VkAttachmentDescription inpDepthAttatchment{};
-		inpDepthAttatchment.format = depthFormat;
-		inpDepthAttatchment.samples = VK_SAMPLE_COUNT_1_BIT;
-		inpDepthAttatchment.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
-		inpDepthAttatchment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		inpDepthAttatchment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		inpDepthAttatchment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		inpDepthAttatchment.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-		inpDepthAttatchment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		// depth attachment (front)
+		VkAttachmentDescription depthAttachmentF{};
+		depthAttachmentF.format = depthFormat;
+		depthAttachmentF.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthAttachmentF.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachmentF.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depthAttachmentF.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthAttachmentF.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachmentF.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depthAttachmentF.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentReference inpDepthAttachmentRef{};
-		inpDepthAttachmentRef.attachment = 2;
-		inpDepthAttachmentRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		VkAttachmentReference depthAttachmentRefF{};
+		depthAttachmentRefF.attachment = 2;
+		depthAttachmentRefF.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		// create the subpass
-		VkSubpassDescription subpass{};
-		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 1;
-		subpass.pColorAttachments = &colorAttachmentRef;
-		subpass.pDepthStencilAttachment = &depthAttachmentRef;
-		subpass.inputAttachmentCount = 1;
-		subpass.pInputAttachments = &inpDepthAttachmentRef;
+		// depth attachment (back)
+		VkAttachmentDescription depthAttachmentB{};
+		depthAttachmentB.format = depthFormat;
+		depthAttachmentB.samples = VK_SAMPLE_COUNT_1_BIT;
+		depthAttachmentB.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		depthAttachmentB.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		depthAttachmentB.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		depthAttachmentB.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		depthAttachmentB.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		depthAttachmentB.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-		VkSubpassDependency dependency = {};
+		VkAttachmentReference depthAttachmentRefB{};
+		depthAttachmentRefB.attachment = 3;
+		depthAttachmentRefB.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+		// input depth attachment (front) to pass in the previous depth texture
+		VkAttachmentDescription inpDepthAttachmentF{};
+		inpDepthAttachmentF.format = depthFormat;
+		inpDepthAttachmentF.samples = VK_SAMPLE_COUNT_1_BIT;
+		inpDepthAttachmentF.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		inpDepthAttachmentF.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttachmentF.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		inpDepthAttachmentF.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttachmentF.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		inpDepthAttachmentF.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+		VkAttachmentReference inpDepthAttachmentFrontRef{};
+		inpDepthAttachmentFrontRef.attachment = 4;
+		inpDepthAttachmentFrontRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		// input depth attachment (back) to pass in the previous depth texture
+		VkAttachmentDescription inpDepthAttachmentB{};
+		inpDepthAttachmentB.format = depthFormat;
+		inpDepthAttachmentB.samples = VK_SAMPLE_COUNT_1_BIT;
+		inpDepthAttachmentB.loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		inpDepthAttachmentB.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttachmentB.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		inpDepthAttachmentB.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		inpDepthAttachmentB.initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		inpDepthAttachmentB.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+		VkAttachmentReference inpDepthAttachmentBackRef{};
+		inpDepthAttachmentBackRef.attachment = 5;
+		inpDepthAttachmentBackRef.layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+		// create the subpasses for the front and back peels
+		VkSubpassDescription subpassF{};
+		subpassF.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpassF.colorAttachmentCount = 1;
+		subpassF.pColorAttachments = &colorAttachmentRefF;
+		subpassF.pDepthStencilAttachment = &depthAttachmentRefF;
+		subpassF.inputAttachmentCount = 1;
+		subpassF.pInputAttachments = &inpDepthAttachmentFrontRef;
+
+		VkSubpassDescription subpassB{};
+		subpassB.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpassB.colorAttachmentCount = 1;
+		subpassB.pColorAttachments = &colorAttachmentRefB;
+		subpassB.pDepthStencilAttachment = &depthAttachmentRefB;
+		subpassB.inputAttachmentCount = 1;
+		subpassB.pInputAttachments = &inpDepthAttachmentBackRef;
+
+		std::array<VkSubpassDescription, 2> subpasses = { subpassF, subpassB };
+
+		VkSubpassDependency dependency{};
 		dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
 		dependency.dstSubpass = 0;
 		dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
@@ -3379,13 +3434,13 @@ private:
 		dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
 		// define the render pass
-		std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, depthAttachment, inpDepthAttatchment };
+		std::array<VkAttachmentDescription, 6> attachments = { colorAttachmentF, colorAttachmentB, depthAttachmentF, depthAttachmentB, inpDepthAttachmentF, inpDepthAttachmentB };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
 		renderPassInf.pAttachments = attachments.data();
-		renderPassInf.subpassCount = 1;
-		renderPassInf.pSubpasses = &subpass;
+		renderPassInf.subpassCount = static_cast<uint32_t>(subpasses.size());
+		renderPassInf.pSubpasses = subpasses.data();
 		renderPassInf.dependencyCount = 1;
 		renderPassInf.pDependencies = &dependency;
 		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &depthPeels.pipeline.renderPass);
@@ -4002,10 +4057,10 @@ private:
 		ImGui::End();
 	}
 
-	void createFB(VkFramebuffer& frameBuf, VkImageView IV, uint32_t width, uint32_t height) {
+	void createFB(VkRenderPass& renderPass, VkFramebuffer& frameBuf, VkImageView& IV, uint32_t width, uint32_t height) {
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = shadowMapPipeline.renderPass;
+		frameBufferInfo.renderPass = renderPass;
 		frameBufferInfo.attachmentCount = 1;
 		frameBufferInfo.pAttachments = &IV; // imageview
 		frameBufferInfo.width = width;
@@ -4017,13 +4072,27 @@ private:
 		}
 	}
 
+	void createFB(VkRenderPass& renderPass, VkFramebuffer& frameBuf, std::vector<VkImageView>& attachments, uint32_t width, uint32_t height) {
+		VkFramebufferCreateInfo frameBufferInfo{};
+		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		frameBufferInfo.renderPass = renderPass;
+		frameBufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+		frameBufferInfo.pAttachments = attachments.data();
+		frameBufferInfo.width = width;
+		frameBufferInfo.height = height;
+		frameBufferInfo.layers = 1;
+
+		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuf) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shadow framebuffer!");
+		}
+	}
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
 		shadowMapCommandBuffers.resize(lights.size());
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
 			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
-			createFB(lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
+			createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		VkCommandBufferAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
@@ -4037,26 +4106,15 @@ private:
 	}
 
 	void createDepthPeelCommandBuffers() { // create a depth peel command buffer for each peel
-		depthPeelCommandBuffers.resize(depthPeels.iterations);
+		const uint32_t fbCount = depthPeels.iterations * 2;
+		depthPeelCommandBuffers.resize(fbCount);
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(depthPeelCommandBuffers.size()), depthPeelCommandBuffers.data());
 
 		// create the framebuffers for the depth peels
-		for (auto& peel : depthPeels.front) {
-			if (peel.framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, peel.framebuffer, nullptr);
-			std::array<VkImageView, 3> attachments = { peel.color.imageView, peel.depth.imageView, depthPeels.input.imageView };
-
-			VkFramebufferCreateInfo framebufferInfo{};
-			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			framebufferInfo.renderPass = depthPeels.pipeline.renderPass;
-			framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size()); // color and depth
-			framebufferInfo.pAttachments = attachments.data();
-			framebufferInfo.width = swap.extent.width;
-			framebufferInfo.height = swap.extent.height;
-			framebufferInfo.layers = 1;
-
-			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &peel.framebuffer) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create depth peel framebuffer!");
-			}
+		for (size_t i = 0; i < depthPeels.iterations; i++) {
+			std::vector<VkImageView> attachments = { depthPeels.front[i].color.imageView, depthPeels.back[i].color.imageView, depthPeels.front[i].depth.imageView, depthPeels.back[i].depth.imageView, depthPeels.inpFrontDepth.imageView, depthPeels.inpBackDepth.imageView };
+			createFB(depthPeels.pipeline.renderPass, depthPeels.front[i].framebuffer, attachments, swap.extent.width, swap.extent.height);
+			createFB(depthPeels.pipeline.renderPass, depthPeels.back[i].framebuffer, attachments, swap.extent.width, swap.extent.height);
 		}
 
 		// create the command buffers
@@ -4064,7 +4122,7 @@ private:
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		allocInfo.commandPool = commandPool;
-		allocInfo.commandBufferCount = depthPeels.iterations;
+		allocInfo.commandBufferCount = fbCount;
 
 		if (vkAllocateCommandBuffers(device, &allocInfo, depthPeelCommandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
@@ -4170,14 +4228,17 @@ private:
 				throw std::runtime_error("failed to begin recording command buffer for depth peels!");
 			}
 
-			transitionImageLayout(VK_NULL_HANDLE, depthPeels.input.image, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.inpFrontDepth.image, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.inpBackDepth.image, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
 
 			// copy the depth buffer from the previous peel to the input image
 			if (i > 0) {
-				copyDepthPeelImg(depthPeels.front[i - 1].depth.image, depthPeels.input.image, depthPeelCommandBuffers[i]);
+				copyDepthPeelImg(depthPeels.front[i - 1].depth.image, depthPeels.inpFrontDepth.image, depthPeelCommandBuffers[i]);
+				copyDepthPeelImg(depthPeels.back[i - 1].depth.image, depthPeels.inpBackDepth.image, depthPeelCommandBuffers[i]);
 			}
 
-			transitionImageLayout(VK_NULL_HANDLE, depthPeels.input.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.inpFrontDepth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
+			transitionImageLayout(VK_NULL_HANDLE, depthPeels.inpBackDepth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 			// render pass
 			VkRenderPassBeginInfo renderPassInfo{};
@@ -4254,21 +4315,8 @@ private:
 
 	void createMainPassFramebuffers() {
 		// create the framebuffers for the main pass
-		std::array<VkImageView, 2> attachmentsD;
-		attachmentsD = { mainPassTexture.imageView, depthImage.imageView };
-
-		VkFramebufferCreateInfo framebufferInfo{};
-		framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		framebufferInfo.renderPass = mainPassPipeline.renderPass;
-		framebufferInfo.attachmentCount = static_cast<uint32_t>(attachmentsD.size());
-		framebufferInfo.pAttachments = attachmentsD.data();
-		framebufferInfo.width = swap.extent.width;
-		framebufferInfo.height = swap.extent.height;
-		framebufferInfo.layers = 1;
-
-		if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &mainPassFB) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create framebuffer for main pass!");
-		}
+		std::vector<VkImageView> attachmentsD = { mainPassTexture.imageView, depthImage.imageView };
+		createFB(mainPassPipeline.renderPass, mainPassFB, attachmentsD, swap.extent.width, swap.extent.height);
 	}
 
 	void createFramebuffersSC() {
@@ -4279,19 +4327,7 @@ private:
 
 		for (size_t i = 0; i < swap.imageViews.size(); ++i) {
 			attachment = { swap.imageViews[i] };
-
-			VkFramebufferCreateInfo framebufferInfo{};
-			framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-			framebufferInfo.renderPass = compositionPipelineData.renderPass;
-			framebufferInfo.attachmentCount = 1;
-			framebufferInfo.pAttachments = &attachment;
-			framebufferInfo.width = swap.extent.width;
-			framebufferInfo.height = swap.extent.height;
-			framebufferInfo.layers = 1;
-
-			if (vkCreateFramebuffer(device, &framebufferInfo, nullptr, &swap.framebuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create framebuffers for SC!");
-			}
+			createFB(compositionPipelineData.renderPass, swap.framebuffers[i], attachment, swap.extent.width, swap.extent.height);
 		}
 	}
 
