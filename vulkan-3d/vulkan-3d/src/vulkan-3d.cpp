@@ -399,19 +399,21 @@ private:
 		bool escPressedLastFrame = false; // unlock mouse
 	};
 
-	struct depthPeelFB {
+	struct depthPeelTex {
 		VkFramebuffer framebuffer;
 		Texture color;
 		Texture depth;
 	};
 
 	struct depthPeelingData {
-		std::vector<depthPeelFB> frameBuffers;
-		pipelineData pipeline;
-		uint32_t numPeels = 6;
-		size_t currentPeel = 0;
+		std::array<depthPeelTex, 2> front;
+		std::array<depthPeelTex, 2> back;
 
-		Texture input;
+		pipelineData pipeline;
+		const uint32_t iterations = 2;
+
+		Texture inpFrontDepth;
+		Texture inpBackDepth;
 	};
 
 	// window and rendering context
@@ -1483,12 +1485,29 @@ private:
 		createTextureImgView(depthImage, false, "depth");
 		createTS(depthImage, false, "depth");
 
-		// input depth image
-		createImage(depthPeels.input.image, depthPeels.input.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-		createTextureImgView(depthPeels.input, false, "depth");
+		// front input depth image
+		createImage(depthPeels.inpFrontDepth.image, depthPeels.inpFrontDepth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createTextureImgView(depthPeels.inpFrontDepth, false, "depth");
 
-		depthPeels.frameBuffers.resize(depthPeels.numPeels);
-		for (depthPeelFB& d : depthPeels.frameBuffers) {
+		// back input depth image
+		createImage(depthPeels.inpBackDepth.image, depthPeels.inpBackDepth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createTextureImgView(depthPeels.inpBackDepth, false, "depth");
+
+		// front outputs
+		for (depthPeelTex& d : depthPeels.front) {
+			// depth image
+			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+			createTextureImgView(d.depth, false, "depth");
+			createTS(d.depth, false, "depth");
+
+			// color image
+			createImage(d.color.image, d.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+			createTextureImgView(d.color, false, "swap");
+			createTS(d.color, false, "swap");
+		}
+
+		// back outputs
+		for (depthPeelTex& d : depthPeels.back) {
 			// depth image
 			createImage(d.depth.image, d.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 			createTextureImgView(d.depth, false, "depth");
@@ -1999,7 +2018,7 @@ private:
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // the previous depth texture
 
-		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels * 2, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
+		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.iterations * 2, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
 		descs.layouts[7] = createDSLayout(7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 texture
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
@@ -2009,14 +2028,14 @@ private:
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
 		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 1);
 
-		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.numPeels * 2);
+		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, depthPeels.iterations * 2);
 		descs.pools[7] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, depthPeels.numPeels * 2, 2 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 1, depthPeels.iterations * 2, 2 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2054,16 +2073,16 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeels.numPeels * 2);
-		for (size_t i = 0; i < depthPeels.numPeels; i++) {
+		std::vector<VkDescriptorImageInfo> depthPeelInfos(depthPeels.iterations * 2);
+		for (size_t i = 0; i < depthPeels.iterations; i++) {
 			depthPeelInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			depthPeelInfos[i].imageView = depthPeels.frameBuffers[i].color.imageView;
-			depthPeelInfos[i].sampler = depthPeels.frameBuffers[i].color.sampler;
+			depthPeelInfos[i].imageView = depthPeels.front[i].color.imageView;
+			depthPeelInfos[i].sampler = depthPeels.front[i].color.sampler;
 
-			size_t j = i + depthPeels.numPeels;
+			size_t j = i + depthPeels.iterations;
 			depthPeelInfos[j].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			depthPeelInfos[j].imageView = depthPeels.frameBuffers[i].depth.imageView;
-			depthPeelInfos[j].sampler = depthPeels.frameBuffers[i].depth.sampler;
+			depthPeelInfos[j].imageView = depthPeels.front[i].depth.imageView;
+			depthPeelInfos[j].sampler = depthPeels.front[i].depth.sampler;
 		}
 
 		std::vector<VkDescriptorImageInfo> mainPassImageInfo(2);
@@ -2144,7 +2163,7 @@ private:
 		descriptorWrites[6].dstBinding = 6;
 		descriptorWrites[6].dstArrayElement = 0;
 		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[6].descriptorCount = depthPeels.numPeels * 2;
+		descriptorWrites[6].descriptorCount = depthPeels.iterations * 2;
 		descriptorWrites[6].pImageInfo = depthPeelInfos.data();
 
 		descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -3870,8 +3889,8 @@ private:
 			renderPassInfo.pClearValues = clearValues.data();
 
 			transitionImageLayout(compCommandBuffers[i], depthImage.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-			for (size_t j = 0; j < depthPeels.numPeels; j++) {
-				transitionImageLayout(compCommandBuffers[i], depthPeels.frameBuffers[j].depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+			for (size_t j = 0; j < depthPeels.iterations; j++) {
+				transitionImageLayout(compCommandBuffers[i], depthPeels.front[j].depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 			}
 
 			vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -3882,7 +3901,7 @@ private:
 				int peelNum; // the number of depth peels
 			} pushConst;
 
-			pushConst.peelNum = depthPeels.numPeels;
+			pushConst.peelNum = depthPeels.iterations;
 			vkCmdPushConstants(compCommandBuffers[i], compositionPipelineData.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
 
 			vkCmdDraw(compCommandBuffers[i], 6, 1, 0, 0);
@@ -4000,11 +4019,11 @@ private:
 	}
 
 	void createDepthPeelCommandBuffers() { // create a depth peel command buffer for each peel
-		depthPeelCommandBuffers.resize(depthPeels.numPeels);
+		depthPeelCommandBuffers.resize(depthPeels.iterations);
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(depthPeelCommandBuffers.size()), depthPeelCommandBuffers.data());
 
 		// create the framebuffers for the depth peels
-		for (auto& peel : depthPeels.frameBuffers) {
+		for (auto& peel : depthPeels.front) {
 			if (peel.framebuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, peel.framebuffer, nullptr);
 			std::array<VkImageView, 3> attachments = { peel.color.imageView, peel.depth.imageView, depthPeels.input.imageView };
 
@@ -4027,7 +4046,7 @@ private:
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		allocInfo.commandPool = commandPool;
-		allocInfo.commandBufferCount = depthPeels.numPeels;
+		allocInfo.commandBufferCount = depthPeels.iterations;
 
 		if (vkAllocateCommandBuffers(device, &allocInfo, depthPeelCommandBuffers.data()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
@@ -4128,7 +4147,7 @@ private:
 		beginInfo.pInheritanceInfo = nullptr;
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f, 0} };
 
-		for (size_t i = 0; i < depthPeels.numPeels; i++) {
+		for (size_t i = 0; i < depthPeels.iterations; i++) {
 			if (vkBeginCommandBuffer(depthPeelCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording command buffer for depth peels!");
 			}
@@ -4137,7 +4156,7 @@ private:
 
 			// copy the depth buffer from the previous peel to the input image
 			if (i > 0) {
-				copyDepthPeelImg(depthPeels.frameBuffers[i - 1].depth.image, depthPeels.input.image, depthPeelCommandBuffers[i]);
+				copyDepthPeelImg(depthPeels.front[i - 1].depth.image, depthPeels.input.image, depthPeelCommandBuffers[i]);
 			}
 
 			transitionImageLayout(VK_NULL_HANDLE, depthPeels.input.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
@@ -4146,7 +4165,7 @@ private:
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = depthPeels.pipeline.renderPass;
-			renderPassInfo.framebuffer = depthPeels.frameBuffers[i].framebuffer;
+			renderPassInfo.framebuffer = depthPeels.front[i].framebuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { swap.extent.width, swap.extent.height };
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());;
@@ -4178,7 +4197,7 @@ private:
 					} pushConst;
 					pushConst.albedo = meshTexStartInd[p];
 					pushConst.peelIndex = static_cast<int>(i);
-					pushConst.numPeels = static_cast<int>(depthPeels.numPeels);
+					pushConst.numPeels = static_cast<int>(depthPeels.iterations);
 
 					vkCmdPushConstants(depthPeelCommandBuffers[i], depthPeels.pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
 
