@@ -154,6 +154,8 @@
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\sky.frag" />
     <None Include="shaders\sky.vert" />
+    <None Include="shaders\wboit.frag" />
+    <None Include="shaders\wboit.vert" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="ext\imgui\imconfig.h" />

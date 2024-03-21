@@ -16,7 +16,6 @@ public:
 		dml::vec2 tex; // texture coordinates u, v
 		dml::vec4 col; // color r, g, b, a
 		dml::vec3 normal; // normal vector x, y, z
-		float alpha;
 		dml::vec4 tangent;
 
 		// default constructor:
@@ -25,7 +24,6 @@ public:
 			tex(dml::vec2(0.0f, 0.0f)),
 			col(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),
 			normal(dml::vec3(0.0f, 0.0f, 0.0f)),
-			alpha(1.0f),
 			tangent(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f))
 		{}
 
@@ -40,7 +38,6 @@ public:
 			tex(texture),
 			col(color),
 			normal(normalVector),
-			alpha(alphaValue),
 			tangent(tang)
 		{}
 		bool operator==(const Vertex& other) const {
@@ -49,8 +46,7 @@ public:
 				tex == other.tex &&
 				col == other.col &&
 				normal == other.normal &&
-				tangent == other.tangent &&
-				std::abs(alpha - other.alpha) < epsilon;
+				tangent == other.tangent;
 		}
 	};
 
@@ -74,8 +70,6 @@ public:
 			seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-			seed ^= std::hash<float>()(vertex.alpha) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
 			seed ^= std::hash<float>()(vertex.tangent.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<float>()(vertex.tangent.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);

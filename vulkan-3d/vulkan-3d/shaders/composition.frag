@@ -17,6 +17,6 @@ void main() {
     vec4 mainColor = texture(mainPass[0], inUV);
     float mainDepth = texture(mainPass[1], inUV).r;
 
-    outColor = vec4(vec3(mainDepth), 1.0f);
+    outColor = mainColor;
 }
 

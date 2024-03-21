@@ -8,17 +8,16 @@
 
 layout(location = 0) in vec3 inPosition; 
 layout(location = 1) in vec4 inColor; 
-layout(location = 2) in float inAlpha;
-layout(location = 3) in vec2 inTexCoord;
-layout(location = 4) in vec3 inNormal;
-layout(location = 5) in vec4 inTangent;
+layout(location = 2) in vec2 inTexCoord;
+layout(location = 3) in vec3 inNormal;
+layout(location = 4) in vec4 inTangent;
 
 // per-instance data
-layout(location = 6) in vec4 model1;
-layout(location = 7) in vec4 model2;
-layout(location = 8) in vec4 model3;
-layout(location = 9) in vec4 model4;
-layout(location = 10) in uint toRender;
+layout(location = 5) in vec4 model1;
+layout(location = 6) in vec4 model2;
+layout(location = 7) in vec4 model3;
+layout(location = 8) in vec4 model4;
+layout(location = 9) in uint toRender;
 
 layout(location = 0) out vec4 fragColor;
 layout(location = 1) out vec2 outTexCoord;
