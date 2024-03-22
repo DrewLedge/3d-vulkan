@@ -102,10 +102,13 @@ float calcIntensity(float innerConeRads, float outerConeRads, float attenuation,
 	return clamp(intensity * attenuation, 0.0, 1.0);
 }
 
-vec4 calcLighting(bool discardTranslucent, bool fillTranslucent, float occlusionFactor) {
+vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFactor) {
 	vec4 color = albedo * fragColor;
 	if (discardTranslucent) {
-		if (color.a < 0.99) discard;
+		if (color.a < 0.98) discard;
+	}
+	if (discardOpaque) {
+		if (color.a >= 0.98) discard;
 	}
 
 	vec3 accumulated = vec3(0.0);
@@ -161,7 +164,7 @@ vec4 calcLighting(bool discardTranslucent, bool fillTranslucent, float occlusion
 
 	// final color calculation
 	vec3 ambient = vec3(occlusionFactor) * occlusion;
-	return vec4(accumulated + emissive + ambient, (fillTranslucent ? 1.0f : color.a));
+	return vec4(accumulated + emissive + ambient, color.a);
 }
 
 

@@ -405,7 +405,6 @@ private:
 
 		VkFramebuffer frameBuffer;
 		pipelineData pipeline;
-		VkCommandBuffer commandBuffer;
 	};
 
 	struct mainPassTex {
@@ -442,7 +441,7 @@ private:
 	VkCommandPool commandPool;
 	std::vector<VkCommandBuffer> mainPassCommandBuffers;
 	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
-	std::vector<VkCommandBuffer> depthPeelCommandBuffers;
+	VkCommandBuffer wboitCommandBuffer;
 	std::vector<VkCommandBuffer> compCommandBuffers;
 
 	// buffers and related memory
@@ -466,7 +465,7 @@ private:
 	VkSemaphore imageAvailableSemaphore;
 	VkSemaphore renderFinishedSemaphore;
 	VkSemaphore shadowSemaphore;
-	VkSemaphore depthPeelSemaphore;
+	VkSemaphore wboitSemaphore;
 	VkSemaphore compSemaphore;
 
 	// shader modules
@@ -3323,7 +3322,7 @@ private:
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &wboit.pipeline.graphicsPipeline);
 		if (pipelineResult != VK_SUCCESS) {
-			throw std::runtime_error("failed to create graphics pipeline for depth peels!");
+			throw std::runtime_error("failed to create graphics pipeline for WBOIT!");
 		}
 	}
 
@@ -3545,6 +3544,17 @@ private:
 		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
 		allocInf.commandBufferCount = (uint32_t)cmdBuffers.size(); //number of command buffers to allocate
 		if (vkAllocateCommandBuffers(device, &allocInf, cmdBuffers.data()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to allocate command buffers!");
+		}
+	}
+
+	void createSCCommandBuffers(VkCommandBuffer& cmdBuffer) {
+		VkCommandBufferAllocateInfo allocInf{};
+		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+		allocInf.commandPool = commandPool; //command pool to allocate from
+		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
+		allocInf.commandBufferCount = 1; //number of command buffers to allocate
+		if (vkAllocateCommandBuffers(device, &allocInf, &cmdBuffer) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate command buffers!");
 		}
 	}
@@ -3836,6 +3846,73 @@ private:
 		}
 	}
 
+	void recordWBOITCommandBuffers() {
+		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{0.0f} };
+		VkDescriptorSet descriptorSets[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+		VkDeviceSize offset[] = { 0, 0 };
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
+		if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
+			throw std::runtime_error("failed to begin recording command buffer!");
+		}
+
+		VkRenderPassBeginInfo renderPassInfo{};
+		renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+		renderPassInfo.renderPass = wboit.pipeline.renderPass;
+		renderPassInfo.framebuffer = wboit.frameBuffer;
+		renderPassInfo.renderArea.offset = { 0, 0 };
+		renderPassInfo.renderArea.extent = swap.extent;
+		renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+		renderPassInfo.pClearValues = clearValues.data();
+
+		vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
+
+		vkCmdBindPipeline(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboit.pipeline.graphicsPipeline);
+		vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboit.pipeline.layout, 0, 4, descriptorSets, 0, nullptr);
+		VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
+		VkBuffer indexBuffer = indBuffer;
+
+		// bind the vertex and instance buffers
+		vkCmdBindVertexBuffers(wboitCommandBuffer, 0, 2, vertexBuffersArray, offset);
+		vkCmdBindIndexBuffer(wboitCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+		uint32_t p = 0;
+		for (size_t j = 0; j < objects.size(); j++) {
+			uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
+			if (uniqueModelInd == j) { // only process unique models
+				// bitfield for which textures exist
+				int textureExistence = 0;
+				textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+				textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+				textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+				textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+				textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
+
+				struct {
+					int textureExist; // bitfield of which textures exist
+					int texIndex; // starting index of the textures in the texture array
+				} pushConst;
+
+				pushConst.textureExist = textureExistence;
+				pushConst.texIndex = meshTexStartInd[p];
+				vkCmdPushConstants(wboitCommandBuffer, wboit.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
+				size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
+				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+
+				vkCmdDrawIndexed(wboitCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
+					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+				p++;
+			}
+		}
+		vkCmdEndRenderPass(wboitCommandBuffer);
+		if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
+			throw std::runtime_error("failed to record command buffer!");
+		}
+	}
+
 	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
 		// set the pos and size of ther window
 		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
@@ -4083,9 +4160,9 @@ private:
 		if (resultShadowFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow finished semaphore!");
 		}
-		VkResult resultDepthPeelFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &depthPeelSemaphore);
-		if (resultDepthPeelFinished != VK_SUCCESS) {
-			throw std::runtime_error("failed to create depth peel finished semaphore!");
+		VkResult resultWBOITFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &wboitSemaphore);
+		if (resultWBOITFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create wboit finished semaphore!");
 		}
 		VkResult restultCompFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &compSemaphore);
 		if (restultCompFinished != VK_SUCCESS) {
@@ -4191,15 +4268,15 @@ private:
 		submitInfos[1].commandBufferCount = 1;
 		submitInfos[1].pCommandBuffers = &mainPassCommandBuffers[imageIndex];
 		submitInfos[1].signalSemaphoreCount = 1;
-		submitInfos[1].pSignalSemaphores = &depthPeelSemaphore;
+		submitInfos[1].pSignalSemaphores = &wboitSemaphore;
 
-		// depth peel pass submission
+		// wboit pass submission
 		submitInfos[2].sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfos[2].waitSemaphoreCount = 1;
-		submitInfos[2].pWaitSemaphores = &depthPeelSemaphore;
+		submitInfos[2].pWaitSemaphores = &wboitSemaphore;
 		submitInfos[2].pWaitDstStageMask = waitStages;
-		submitInfos[2].commandBufferCount = static_cast<uint32_t>(depthPeelCommandBuffers.size());
-		submitInfos[2].pCommandBuffers = depthPeelCommandBuffers.data();
+		submitInfos[2].commandBufferCount = 1;
+		submitInfos[2].pCommandBuffers = &wboitCommandBuffer;
 		submitInfos[2].signalSemaphoreCount = 1;
 		submitInfos[2].pSignalSemaphores = &compSemaphore;
 
@@ -4243,6 +4320,7 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
+		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
 	}
 
@@ -4417,6 +4495,7 @@ private:
 		createFramebuffersSC();
 		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
 		createSCCommandBuffers(mainPassCommandBuffers);
+		createSCCommandBuffers(wboitCommandBuffer);
 		createSCCommandBuffers(compCommandBuffers);
 		recordAllCommandBuffers();
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;

@@ -60,6 +60,6 @@ void main() {
     }
 
     getTextures();
-    outColor = calcLighting(true, true, 0.005f);
+    outColor = calcLighting(true, false, 0.005f);
 }
 
