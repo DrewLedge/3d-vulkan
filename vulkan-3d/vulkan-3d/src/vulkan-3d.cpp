@@ -1484,14 +1484,14 @@ private:
 		createTS(mainPassTextures.depth, false, "depth");
 
 		// weighted color image
-		createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 		createTextureImgView(wboit.weightedColor, false, "swap");
 		createTS(wboit.weightedColor, false, "swap");
 
 		// weighted alpha image
-		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R32_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-		createTextureImgView(wboit.weightedAlpha, false, "alpha");
-		createTS(wboit.weightedAlpha, false, "alpha");
+		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createTextureImgView(wboit.weightedAlpha, false, "swap");
+		createTS(wboit.weightedAlpha, false, "swap");
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
@@ -1990,20 +1990,20 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT); // main depth and main color texture
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 2 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 4 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2041,14 +2041,22 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::vector<VkDescriptorImageInfo> mainPassImageInfo(2);
-		mainPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		mainPassImageInfo[0].imageView = mainPassTextures.color.imageView;
-		mainPassImageInfo[0].sampler = mainPassTextures.color.sampler;
+		std::array<VkDescriptorImageInfo, 4> compositionPassImageInfo{};
+		compositionPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		compositionPassImageInfo[0].imageView = mainPassTextures.color.imageView;
+		compositionPassImageInfo[0].sampler = mainPassTextures.color.sampler;
 
-		mainPassImageInfo[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		mainPassImageInfo[1].imageView = mainPassTextures.depth.imageView;
-		mainPassImageInfo[1].sampler = mainPassTextures.depth.sampler;
+		compositionPassImageInfo[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		compositionPassImageInfo[1].imageView = mainPassTextures.depth.imageView;
+		compositionPassImageInfo[1].sampler = mainPassTextures.depth.sampler;
+
+		compositionPassImageInfo[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		compositionPassImageInfo[2].imageView = wboit.weightedColor.imageView;
+		compositionPassImageInfo[2].sampler = wboit.weightedColor.sampler;
+
+		compositionPassImageInfo[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		compositionPassImageInfo[3].imageView = wboit.weightedAlpha.imageView;
+		compositionPassImageInfo[3].sampler = wboit.weightedAlpha.sampler;
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -2107,8 +2115,8 @@ private:
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
 		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[5].descriptorCount = 2;
-		descriptorWrites[5].pImageInfo = mainPassImageInfo.data();
+		descriptorWrites[5].descriptorCount = 4;
+		descriptorWrites[5].pImageInfo = compositionPassImageInfo.data();
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -3257,7 +3265,7 @@ private:
 
 		// weighted alpha
 		VkAttachmentDescription alphaAttachment{};
-		alphaAttachment.format = VK_FORMAT_R32_SFLOAT;
+		alphaAttachment.format = swap.imageFormat;
 		alphaAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		alphaAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		alphaAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -3847,7 +3855,7 @@ private:
 	}
 
 	void recordWBOITCommandBuffers() {
-		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{0.0f} };
+		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f} };
 		VkDescriptorSet descriptorSets[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
 		VkDeviceSize offset[] = { 0, 0 };
 

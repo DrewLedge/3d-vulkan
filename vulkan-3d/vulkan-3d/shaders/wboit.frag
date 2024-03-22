@@ -45,7 +45,7 @@ layout(location = 8) flat in uint render; // if 0 render, if 1 don't render
 layout(location = 9) flat in uint bitfield;
 
 layout(location = 0) out vec4 outColor; 
-layout(location = 1) out float outAlpha; 
+layout(location = 1) out vec4 outAlpha; 
 
 vec4 albedo = vec4(0.0f);
 vec4 metallicRoughness = vec4(1.0f);
@@ -62,5 +62,5 @@ void main() {
 
     getTextures();
     outColor = calcLighting(false, true, 0.005f);
-    outAlpha = 0.5f;
+    outAlpha = vec4(vec3(outColor.a), 1.0);
 }
