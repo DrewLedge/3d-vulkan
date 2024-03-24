@@ -61,15 +61,14 @@ void main() {
     }
 
     getTextures();
-    outColor = vec4(0.0f);
-    outAlpha = vec4(0.0f);
 
     vec4 color = calcLighting(false, false, 0.005f); // calculate lighting on the fragment
+    if (color.a > 0.98) {
+        discard;
+    }
 
     // if the fragment is translucent, calculate the color and alpha value
-    if (color.a < 0.98) {
-        outColor = vec4(color.rgb * color.a, color.a);
-        outAlpha = vec4(vec3(color.a), 1.0f);
-    }
+    outColor = vec4(color.rgb * color.a, color.a);
+    outAlpha = vec4(vec3(color.a), 1.0f);
     gl_FragDepth = gl_FragCoord.z;
 }

@@ -3233,7 +3233,7 @@ private:
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth test
 		dStencil.depthWriteEnable = VK_TRUE; // write to the depth buffer
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+		dStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
 		dStencil.maxDepthBounds = 1.0f;
@@ -3242,11 +3242,11 @@ private:
 		VkPipelineColorBlendAttachmentState colorBA{};
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		colorBA.blendEnable = VK_TRUE;
-		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
 		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
 
 		std::array<VkPipelineColorBlendAttachmentState, 2> colorBAS = { colorBA, colorBA };
