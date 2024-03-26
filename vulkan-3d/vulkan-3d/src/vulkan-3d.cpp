@@ -402,7 +402,6 @@ private:
 	struct WBOITData { // weighted blended order independent transparency
 		Texture weightedColor;
 		Texture weightedAlpha;
-		Texture depth;
 
 		VkFramebuffer frameBuffer;
 		pipelineData pipeline;
@@ -1493,11 +1492,6 @@ private:
 		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 		createTextureImgView(wboit.weightedAlpha, false, "swap");
 		createTS(wboit.weightedAlpha, false, "swap");
-
-		// wboit depth image
-		createImage(wboit.depth.image, wboit.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		createTextureImgView(wboit.depth, false, "depth");
-		createTS(wboit.depth, false, "depth");
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
@@ -1984,7 +1978,7 @@ private:
 	}
 
 	void createDS() {
-		const uint8_t size = 6;
+		const uint8_t size = 7;
 		descs.sets.resize(size);
 		descs.layouts.resize(size);
 		descs.pools.resize(size);
@@ -1996,20 +1990,22 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
+		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for main pass depth
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
 		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 5);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3);
+		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 5 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 3, 1 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2047,26 +2043,23 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::array<VkDescriptorImageInfo, 5> compositionPassImageInfo{};
+		std::array<VkDescriptorImageInfo, 3> compositionPassImageInfo{};
 		compositionPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		compositionPassImageInfo[0].imageView = mainPassTextures.color.imageView;
 		compositionPassImageInfo[0].sampler = mainPassTextures.color.sampler;
 
 		compositionPassImageInfo[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[1].imageView = mainPassTextures.depth.imageView;
-		compositionPassImageInfo[1].sampler = mainPassTextures.depth.sampler;
+		compositionPassImageInfo[1].imageView = wboit.weightedColor.imageView;
+		compositionPassImageInfo[1].sampler = wboit.weightedColor.sampler;
 
 		compositionPassImageInfo[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[2].imageView = wboit.weightedColor.imageView;
-		compositionPassImageInfo[2].sampler = wboit.weightedColor.sampler;
+		compositionPassImageInfo[2].imageView = wboit.weightedAlpha.imageView;
+		compositionPassImageInfo[2].sampler = wboit.weightedAlpha.sampler;
 
-		compositionPassImageInfo[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[3].imageView = wboit.weightedAlpha.imageView;
-		compositionPassImageInfo[3].sampler = wboit.weightedAlpha.sampler;
-
-		compositionPassImageInfo[4].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[4].imageView = wboit.depth.imageView;
-		compositionPassImageInfo[4].sampler = wboit.depth.sampler;
+		VkDescriptorImageInfo mainPassDepthInfo{};
+		mainPassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		mainPassDepthInfo.imageView = mainPassTextures.depth.imageView;
+		mainPassDepthInfo.sampler = mainPassTextures.depth.sampler;
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -2125,8 +2118,16 @@ private:
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
 		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[5].descriptorCount = 5;
+		descriptorWrites[5].descriptorCount = 3;
 		descriptorWrites[5].pImageInfo = compositionPassImageInfo.data();
+
+		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		descriptorWrites[6].dstSet = descs.sets[6];
+		descriptorWrites[6].dstBinding = 6;
+		descriptorWrites[6].dstArrayElement = 0;
+		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
+		descriptorWrites[6].descriptorCount = 1;
+		descriptorWrites[6].pImageInfo = &mainPassDepthInfo;
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -3232,8 +3233,8 @@ private:
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth test
-		dStencil.depthWriteEnable = VK_TRUE; // write to the depth buffer
-		dStencil.depthCompareOp = VK_COMPARE_OP_ALWAYS;
+		dStencil.depthWriteEnable = VK_FALSE; //dont write to the depth buffer
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
 		dStencil.depthBoundsTestEnable = VK_FALSE;
 		dStencil.minDepthBounds = 0.0f;
 		dStencil.maxDepthBounds = 1.0f;
@@ -3288,29 +3289,14 @@ private:
 		alphaAttachmentRef.attachment = 1;
 		alphaAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		VkAttachmentDescription depthAttachment{};
-		depthAttachment.format = depthFormat;
-		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
-		VkAttachmentReference depthAttachmentRef{};
-		depthAttachmentRef.attachment = 2;
-		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-
 		std::array<VkAttachmentReference, 2> colorAttatchments = { colorAttachmentRef, alphaAttachmentRef };
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 2;
 		subpass.pColorAttachments = colorAttatchments.data();
-		subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
 		// define the render pass
-		std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, alphaAttachment, depthAttachment };
+		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, alphaAttachment };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
@@ -3327,7 +3313,7 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 2;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4], descs.layouts[6] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -3839,10 +3825,6 @@ private:
 			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 			renderPassInfo.pClearValues = clearValues.data();
 
-			transitionImageLayout(compCommandBuffers[i], mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-			transitionImageLayout(compCommandBuffers[i], wboit.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-
-
 			vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 			vkCmdBindPipeline(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.graphicsPipeline);
 			vkCmdBindDescriptorSets(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.layout, 0, 1, compDescs, 0, nullptr);
@@ -3876,7 +3858,7 @@ private:
 
 	void recordWBOITCommandBuffers() {
 		std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet descriptorSets[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+		VkDescriptorSet descriptorSets[] = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
 		VkDeviceSize offset[] = { 0, 0 };
 
 		VkCommandBufferBeginInfo beginInfo{};
@@ -3896,10 +3878,12 @@ private:
 		renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 		renderPassInfo.pClearValues = clearValues.data();
 
+		transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+
 		vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
 
 		vkCmdBindPipeline(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboit.pipeline.graphicsPipeline);
-		vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboit.pipeline.layout, 0, 4, descriptorSets, 0, nullptr);
+		vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboit.pipeline.layout, 0, 5, descriptorSets, 0, nullptr);
 		VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
 		VkBuffer indexBuffer = indBuffer;
 
@@ -4148,7 +4132,7 @@ private:
 
 	void createWBOITFB() {
 		// create the framebuffer for the wboit pass
-		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView, wboit.weightedAlpha.imageView, wboit.depth.imageView };
+		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView, wboit.weightedAlpha.imageView };
 		if (wboit.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, wboit.frameBuffer, nullptr);
 		createFB(wboit.pipeline.renderPass, wboit.frameBuffer, attachmentsD, swap.extent.width, swap.extent.height);
 	}

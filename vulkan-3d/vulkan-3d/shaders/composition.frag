@@ -11,15 +11,13 @@ layout(location = 0) out vec4 outColor;
 void main() {
     // get the color and depth from the main pass 
     vec4 mainColor = texture(textures[0], inUV);
-    float mainDepth = texture(textures[1], inUV).r;
 
-    // get the weighted color, depth and alpha from the wboit pass
-    vec4 weightedColor = texture(textures[2], inUV);
-    float weightedAlpha = texture(textures[3], inUV).r;
+    // get the weighted color and alpha from the wboit pass
+    vec4 weightedColor = texture(textures[1], inUV);
+    float weightedAlpha = texture(textures[2], inUV).g;
 
-    float wboitDepth = texture(textures[4], inUV).r;
+    vec3 blended = weightedColor.rgb / max(weightedAlpha, 1e-5);
 
-    //vec3 blended = weightedColor.rgb / max(weightedAlpha, 0.00001); // blend the weighted color and alpha
-    //outColor = vec4(mix(mainColor.rgb, blended, weightedAlpha), 1.0);
-    outColor = vec4(vec3(wboitDepth), 1.0);
+    // blend the main color with the blended color based on the weighted alpha
+    outColor = vec4(mix(mainColor.rgb, blended, weightedAlpha), 1.0);
 }

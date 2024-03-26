@@ -17,5 +17,12 @@ mat3 getTBN(vec4 tangent, mat4 model, vec3 normal) {
 	T = normalize(T - dot(T, N) * N); // re orthogonalize tangent
 	vec3 B = normalize(cross(N, T) * handedness);
 	return mat3(T, B, N);
+}
 
+float getNearPlane(mat4 proj) {
+	return -proj[3][2] / (proj[2][2] + 1.0);
+}
+
+float getFarPlane(mat4 proj) {
+	return -proj[3][2] / (proj[2][2] - 1.0);
 }

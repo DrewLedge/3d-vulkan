@@ -167,4 +167,9 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFa
 	return vec4(accumulated + emissive + ambient, color.a);
 }
 
+float linDepth(float depth, float near, float far) {
+	float z = depth * 2.0 - 1.0; // to ndc
+	return (2.0 * near * far) / (far + near - z * (far - near));
+}
+
 

@@ -27,6 +27,8 @@ layout(location = 4) out vec3 outViewDirection;
 layout(location = 5) out mat3 TBN;
 layout(location = 8) flat out uint render; // if 0 render, if 1 don't render
 layout(location = 9) flat out uint bitfield; // number of textures per model
+layout(location = 10) out float farPlane;
+layout(location = 11) out float nearPlane;
 
 layout(set = 3, binding = 4) uniform camBufferObject {
     mat4 view;
@@ -56,4 +58,7 @@ void main() {
     if (texIndex <= MAX_TEXTURES) outTexIndex = texIndex; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDirection = viewDir;
+
+    farPlane = getFarPlane(proj);
+    nearPlane = getNearPlane(proj);
 }

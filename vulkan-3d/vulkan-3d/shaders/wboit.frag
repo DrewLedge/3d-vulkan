@@ -7,6 +7,8 @@ layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
 layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
 
+layout(set = 4, binding = 6) uniform sampler2D depthSampler;
+
 struct formsVec3 { // custom structure to hold my vec3s
     float x;
     float y;
@@ -43,6 +45,8 @@ layout(location = 4) in vec3 inViewDir;
 layout(location = 5) in mat3 TBN;
 layout(location = 8) flat in uint render; // if 0 render, if 1 don't render
 layout(location = 9) flat in uint bitfield;
+layout(location = 10) in float farPlane;
+layout(location = 11) in float nearPlane;
 
 layout(location = 0) out vec4 outColor; 
 layout(location = 1) out vec4 outAlpha; 
@@ -54,6 +58,14 @@ vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 
 #include "includes/fragformulas.glsl"
+
+float getWeight(float z, float a) {
+    float af = pow(a + 0.01, 2.0); //alpha factor
+    float df = 1.0 / (1e-5 + pow(abs(z) / 10.0, 2.0) + pow(abs(z) / 200.0, 4.0)); // depth factor
+    
+    float weight = af * df;
+    return clamp(weight, 0.0, 2.0);
+}
 
 void main() {
     if (render == 1) {
@@ -67,8 +79,23 @@ void main() {
         discard;
     }
 
-    // if the fragment is translucent, calculate the color and alpha value
-    outColor = vec4(color.rgb * color.a, color.a);
-    outAlpha = vec4(vec3(color.a), 1.0f);
-    gl_FragDepth = gl_FragCoord.z;
+    // get the depth from the opaque texture
+    ivec2 texDimensions = textureSize(depthSampler, 0);
+    vec2 cords = gl_FragCoord.xy / texDimensions;
+    float oDepth = texture(depthSampler, cords).r;
+    oDepth = linDepth(oDepth, nearPlane, farPlane);
+
+    // get the depth of the fragment
+    float tDepth = gl_FragCoord.z;
+    tDepth = linDepth(tDepth, nearPlane, farPlane);
+
+    // if the transparent depth is greater than the opaque depth, discard
+    if (tDepth > oDepth) {
+        discard;
+    }
+    
+    // get the weight and output the color and alpha
+    float weight = getWeight(gl_FragCoord.z, color.a);
+    outColor = vec4(color.rgb * color.a * weight, color.a);
+    outAlpha = vec4(color.a * weight);
 }
