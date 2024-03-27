@@ -656,7 +656,6 @@ private:
 		VkInstanceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
 		newInfo.pApplicationInfo = &instanceInfo;
-
 		newInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
 		newInfo.ppEnabledExtensionNames = extensions.data();
 		newInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
@@ -1985,36 +1984,128 @@ private:
 		return descriptorPool;
 	}
 
+	template<typename InfoType>
+	VkWriteDescriptorSet createDSWrite(VkDescriptorSet& set, uint32_t binding, uint32_t arrayElem, VkDescriptorType type, std::vector<InfoType>& infos) {
+		VkWriteDescriptorSet d{};
+		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		d.dstSet = set;
+		d.dstBinding = binding;
+		d.dstArrayElement = arrayElem;
+		d.descriptorType = type;
+		d.descriptorCount = static_cast<uint32_t>(infos.size());
+
+		if constexpr (std::is_same_v<InfoType, VkDescriptorImageInfo>) { // if the info type is an image
+			d.pImageInfo = infos.data();
+		}
+		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
+			d.pBufferInfo = infos.data();
+		}
+		else {
+			static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		}
+
+		return d;
+	}
+
+	template<typename InfoType>
+	VkWriteDescriptorSet createDSWrite(VkDescriptorSet& set, uint32_t binding, uint32_t arrayElem, VkDescriptorType type, InfoType& info) {
+		VkWriteDescriptorSet d{};
+		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		d.dstSet = set;
+		d.dstBinding = binding;
+		d.dstArrayElement = arrayElem;
+		d.descriptorType = type;
+		d.descriptorCount = 1;
+
+		if constexpr (std::is_same_v<InfoType, VkDescriptorImageInfo>) { // if the info type is an image
+			d.pImageInfo = &info;
+		}
+		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
+			d.pBufferInfo = &info;
+		}
+		else {
+			static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		}
+
+		return d;
+	}
+
+	template<typename Stage>
+	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
+		descs.layouts[index] = createDSLayout(index, type, size, shaderStage);
+		descs.pools[index] = createDSPool(type, size);
+	}
+
 	void createDS() {
+		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
+
+		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
+		for (size_t i = 0; i < totalTextureCount; i++) {
+			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfos[i].imageView = allTextures[i].imageView;
+			imageInfos[i].sampler = allTextures[i].sampler;
+		}
+
+		VkDescriptorBufferInfo lightBufferInfo{};
+		lightBufferInfo.buffer = lightBuffer;
+		lightBufferInfo.offset = 0;
+		lightBufferInfo.range = sizeof(lightDataSSBO);
+
+		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
+		for (size_t i = 0; i < lights.size(); i++) {
+			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			shadowInfos[i].imageView = shadowMaps[i].imageView;
+			shadowInfos[i].sampler = shadowMaps[i].sampler;
+		}
+
+		VkDescriptorImageInfo skyboxInfo{};
+		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		skyboxInfo.imageView = skybox.cubemap.imageView;
+		skyboxInfo.sampler = skybox.cubemap.sampler;
+
+		VkDescriptorBufferInfo camMatBufferInfo{};
+		camMatBufferInfo.buffer = cam.buffer;
+		camMatBufferInfo.offset = 0;
+		camMatBufferInfo.range = sizeof(camUBO);
+
+		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(4);
+		std::array<VkImageView, 4> cImageViews = { mainPassTextures.color.imageView, wboit.weightedColor.imageView, wboit.weightedAlpha.imageView, skybox.out.imageView };
+		std::array<VkSampler, 4> cSamplers = { mainPassTextures.color.sampler, wboit.weightedColor.sampler, wboit.weightedAlpha.sampler, skybox.cubemap.sampler };
+
+		for (size_t i = 0; i < compositionPassImageInfo.size(); i++) {
+			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			compositionPassImageInfo[i].imageView = cImageViews[i];
+			compositionPassImageInfo[i].sampler = cSamplers[i];
+		}
+
+		VkDescriptorImageInfo mainPassDepthInfo{};
+		mainPassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		mainPassDepthInfo.imageView = mainPassTextures.depth.imageView;
+		mainPassDepthInfo.sampler = mainPassTextures.depth.sampler;
+
 		const uint8_t size = 7;
 		descs.sets.resize(size);
 		descs.layouts.resize(size);
 		descs.pools.resize(size);
+
+		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
+		uint32_t texCompSize = static_cast<uint32_t>(compositionPassImageInfo.size());
 
 		//initialize descriptor set layouts and pools
-		descs.layouts[0] = createDSLayout(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount), VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		descs.layouts[1] = createDSLayout(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT); // light data ssbo
-		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
-		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
-		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
-		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for main pass depth
-
-		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
-		descs.pools[1] = createDSPool(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1);
-		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
-		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
-		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4);
-		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
+		createDSLayoutPool(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
+		createDSLayoutPool(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)); // light data ssbo
+		createDSLayoutPool(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		createDSLayoutPool(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
+		createDSLayoutPool(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
+		createDSLayoutPool(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
+		createDSLayoutPool(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for main pass depth
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 4, 1 };
-
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, lightSize, 1, 1, texCompSize, 1 };
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
@@ -2031,115 +2122,14 @@ private:
 			}
 		}
 
-		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
-
-		VkDescriptorBufferInfo camMatBufferInfo{};
-		camMatBufferInfo.buffer = cam.buffer;
-		camMatBufferInfo.offset = 0;
-		camMatBufferInfo.range = sizeof(camUBO);
-
-		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
-		for (size_t i = 0; i < totalTextureCount; i++) {
-			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = allTextures[i].imageView;
-			imageInfos[i].sampler = allTextures[i].sampler;
-		}
-		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
-		for (size_t i = 0; i < lights.size(); i++) {
-			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = shadowMaps[i].imageView;
-			shadowInfos[i].sampler = shadowMaps[i].sampler;
-		}
-
-		std::array<VkDescriptorImageInfo, 4> compositionPassImageInfo{};
-		compositionPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[0].imageView = mainPassTextures.color.imageView;
-		compositionPassImageInfo[0].sampler = mainPassTextures.color.sampler;
-
-		compositionPassImageInfo[1].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[1].imageView = wboit.weightedColor.imageView;
-		compositionPassImageInfo[1].sampler = wboit.weightedColor.sampler;
-
-		compositionPassImageInfo[2].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[2].imageView = wboit.weightedAlpha.imageView;
-		compositionPassImageInfo[2].sampler = wboit.weightedAlpha.sampler;
-
-		compositionPassImageInfo[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		compositionPassImageInfo[3].imageView = skybox.out.imageView;
-		compositionPassImageInfo[3].sampler = skybox.out.sampler;
-
-		VkDescriptorImageInfo mainPassDepthInfo{};
-		mainPassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		mainPassDepthInfo.imageView = mainPassTextures.depth.imageView;
-		mainPassDepthInfo.sampler = mainPassTextures.depth.sampler;
-
-		VkDescriptorImageInfo skyboxInfo{};
-		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		skyboxInfo.imageView = skybox.cubemap.imageView;
-		skyboxInfo.sampler = skybox.cubemap.sampler;
-
-		VkDescriptorBufferInfo lightBufferInfo{};
-		lightBufferInfo.buffer = lightBuffer;
-		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = sizeof(lightDataSSBO);
-
-		std::array<VkWriteDescriptorSet, size> descriptorWrites{}; // vector to hold the info about the UBO and the texture sampler
-
-		descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[0].dstSet = descs.sets[0];
-		descriptorWrites[0].dstBinding = 0;
-		descriptorWrites[0].dstArrayElement = 0;
-		descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[0].descriptorCount = static_cast<uint32_t>(totalTextureCount);
-		descriptorWrites[0].pImageInfo = imageInfos.data();
-
-		descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[1].dstSet = descs.sets[1];
-		descriptorWrites[1].dstBinding = 1;
-		descriptorWrites[1].dstArrayElement = 0;
-		descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;//type=SSBO
-		descriptorWrites[1].descriptorCount = 1;
-		descriptorWrites[1].pBufferInfo = &lightBufferInfo;
-
-		descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[2].dstSet = descs.sets[2];
-		descriptorWrites[2].dstBinding = 2;
-		descriptorWrites[2].dstArrayElement = 0;
-		descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[2].descriptorCount = static_cast<uint32_t>(lights.size());
-		descriptorWrites[2].pImageInfo = shadowInfos.data();
-
-		descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[3].dstSet = descs.sets[3];
-		descriptorWrites[3].dstBinding = 3;
-		descriptorWrites[3].dstArrayElement = 0;
-		descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[3].descriptorCount = 1;
-		descriptorWrites[3].pImageInfo = &skyboxInfo;
-
-		descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[4].dstSet = descs.sets[4];
-		descriptorWrites[4].dstBinding = 4;
-		descriptorWrites[4].dstArrayElement = 0;
-		descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER; //type=ubo
-		descriptorWrites[4].descriptorCount = 1;
-		descriptorWrites[4].pBufferInfo = &camMatBufferInfo;
-
-		descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[5].dstSet = descs.sets[5];
-		descriptorWrites[5].dstBinding = 5;
-		descriptorWrites[5].dstArrayElement = 0;
-		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[5].descriptorCount = 4;
-		descriptorWrites[5].pImageInfo = compositionPassImageInfo.data();
-
-		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		descriptorWrites[6].dstSet = descs.sets[6];
-		descriptorWrites[6].dstBinding = 6;
-		descriptorWrites[6].dstArrayElement = 0;
-		descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[6].descriptorCount = 1;
-		descriptorWrites[6].pImageInfo = &mainPassDepthInfo;
+		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
+		descriptorWrites[0] = createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos);
+		descriptorWrites[1] = createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		descriptorWrites[2] = createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos);
+		descriptorWrites[3] = createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
+		descriptorWrites[4] = createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
+		descriptorWrites[5] = createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo);
+		descriptorWrites[6] = createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, mainPassDepthInfo);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
