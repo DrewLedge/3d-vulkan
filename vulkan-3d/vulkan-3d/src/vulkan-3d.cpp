@@ -340,7 +340,8 @@ private:
 	};
 
 	struct sBox { // skybox struct
-		Texture tex;
+		Texture cubemap;
+		Texture out;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
 		bufData bufferData; // buffer data for the skybox (vert offsets, etc)
@@ -1146,10 +1147,11 @@ private:
 	}
 
 	void loadSkybox(std::string path) {
-		skybox.tex.path = SKYBOX_DIR + path;
-		createTexturedCubemap(skybox.tex);
-		createTextureImgView(skybox.tex, false, "cube");
-		createTS(skybox.tex, false, "cube");
+		skybox.cubemap.path = SKYBOX_DIR + path;
+		createTexturedCubemap(skybox.cubemap);
+		createTextureImgView(skybox.cubemap, false, "cube");
+		createTS(skybox.cubemap, false, "cube");
+
 		skybox.bufferData.vertexOffset = 0;
 		skybox.bufferData.vertexCount = 8;
 		skybox.bufferData.indexOffset = 0;
@@ -1312,6 +1314,7 @@ private:
 						else {
 							vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 						}
+						//vertex.col.w = 0.6f;
 
 						// get handedness of the tangent
 						dml::vec3 t = tangents[index].xyz();
@@ -1474,24 +1477,30 @@ private:
 		depthFormat = findDepthFormat();
 
 		// main pass color image
-		createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 		createTextureImgView(mainPassTextures.color, false, "swap");
 		createTS(mainPassTextures.color, false, "swap");
+		transitionImageLayout(mainPassTextures.color.image, swap.imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 		// main pass depth image
-		createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 		createTextureImgView(mainPassTextures.depth, false, "depth");
 		createTS(mainPassTextures.depth, false, "depth");
 
 		// weighted color image
-		createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 		createTextureImgView(wboit.weightedColor, false, "swap");
 		createTS(wboit.weightedColor, false, "swap");
 
 		// weighted alpha image
-		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 		createTextureImgView(wboit.weightedAlpha, false, "swap");
 		createTS(wboit.weightedAlpha, false, "swap");
+
+		// skybox image (2d)
+		createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		createTextureImgView(skybox.out, false, "swap");
+		createTS(skybox.out, false, "swap");
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
@@ -1503,8 +1512,6 @@ private:
 	}
 
 	void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
-		bool temp = (commandBuffer == VK_NULL_HANDLE);
-
 		VkImageMemoryBarrier barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
 		barrier.oldLayout = oldLayout;
@@ -1579,14 +1586,13 @@ private:
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
-		if (temp) {
-			VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
-			vkCmdPipelineBarrier(tempCommandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
-			endSingleTimeCommands(tempCommandBuffer, commandPool);
-		}
-		else {
-			vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
-		}
+		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
+	}
+
+	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
+		VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
+		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
+		endSingleTimeCommands(tempCommandBuffer, commandPool);
 	}
 
 	void createImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers, bool cubeMap, VkImageUsageFlags usage) {
@@ -1990,7 +1996,7 @@ private:
 		descs.layouts[2] = createDSLayout(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		descs.layouts[3] = createDSLayout(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		descs.layouts[4] = createDSLayout(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
+		descs.layouts[5] = createDSLayout(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
 		descs.layouts[6] = createDSLayout(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for main pass depth
 
 		descs.pools[0] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, static_cast<uint32_t>(totalTextureCount));
@@ -1998,14 +2004,14 @@ private:
 		descs.pools[2] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize);
 		descs.pools[3] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1); // skybox
 		descs.pools[4] = createDSPool(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1);
-		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3);
+		descs.pools[5] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4);
 		descs.pools[6] = createDSPool(VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1);
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 3, 1 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(totalTextureCount), 1, lightSize, 1, 1, 4, 1 };
 
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
@@ -2043,7 +2049,7 @@ private:
 			shadowInfos[i].sampler = shadowMaps[i].sampler;
 		}
 
-		std::array<VkDescriptorImageInfo, 3> compositionPassImageInfo{};
+		std::array<VkDescriptorImageInfo, 4> compositionPassImageInfo{};
 		compositionPassImageInfo[0].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		compositionPassImageInfo[0].imageView = mainPassTextures.color.imageView;
 		compositionPassImageInfo[0].sampler = mainPassTextures.color.sampler;
@@ -2056,6 +2062,10 @@ private:
 		compositionPassImageInfo[2].imageView = wboit.weightedAlpha.imageView;
 		compositionPassImageInfo[2].sampler = wboit.weightedAlpha.sampler;
 
+		compositionPassImageInfo[3].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		compositionPassImageInfo[3].imageView = skybox.out.imageView;
+		compositionPassImageInfo[3].sampler = skybox.out.sampler;
+
 		VkDescriptorImageInfo mainPassDepthInfo{};
 		mainPassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		mainPassDepthInfo.imageView = mainPassTextures.depth.imageView;
@@ -2063,8 +2073,8 @@ private:
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		skyboxInfo.imageView = skybox.tex.imageView;
-		skyboxInfo.sampler = skybox.tex.sampler;
+		skyboxInfo.imageView = skybox.cubemap.imageView;
+		skyboxInfo.sampler = skybox.cubemap.sampler;
 
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
@@ -2118,7 +2128,7 @@ private:
 		descriptorWrites[5].dstBinding = 5;
 		descriptorWrites[5].dstArrayElement = 0;
 		descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER; //type=combined image sampler
-		descriptorWrites[5].descriptorCount = 3;
+		descriptorWrites[5].descriptorCount = 4;
 		descriptorWrites[5].pImageInfo = compositionPassImageInfo.data();
 
 		descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2366,7 +2376,7 @@ private:
 
 		createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-		transitionImageLayout(VK_NULL_HANDLE, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
 		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
@@ -2400,7 +2410,7 @@ private:
 		}
 		endSingleTimeCommands(copyCmdBuffer, commandPool);
 
-		transitionImageLayout(VK_NULL_HANDLE, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
+		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
 	}
@@ -3800,10 +3810,11 @@ private:
 			if (vkEndCommandBuffer(mainPassCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
+			copyImage(mainPassTextures.color.image, skybox.out.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, swap.imageFormat, swap.extent.width, swap.extent.height, true);
 		}
 	}
 
-	void recordCompCommandBuffers() { // WIP
+	void recordCompCommandBuffers() {
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 		VkDescriptorSet compDescs[] = { descs.sets[5] };
 
@@ -4092,26 +4103,32 @@ private:
 		}
 	}
 
-	// copy a depth image from one image to another
-	void copyDepthImage(VkImage& srcImage, VkImage& dstImage, VkCommandBuffer& commandBuffer, VkFormat format, uint32_t width, uint32_t height) {
-		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
-		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
+	// copy an image from one image to another
+	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkCommandBuffer& commandBuffer, VkFormat format, uint32_t width, uint32_t height, bool color) {
+		transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
+		transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
 
 		VkImageCopy copy{};
-		copy.srcSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		VkImageAspectFlagBits aspect = color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+		copy.srcSubresource.aspectMask = aspect;
 		copy.srcSubresource.mipLevel = 0;
 		copy.srcSubresource.baseArrayLayer = 0;
 		copy.srcSubresource.layerCount = 1;
-		copy.dstSubresource.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+		copy.dstSubresource.aspectMask = aspect;
 		copy.dstSubresource.mipLevel = 0;
 		copy.dstSubresource.baseArrayLayer = 0;
 		copy.dstSubresource.layerCount = 1;
 		copy.extent = { width, height, 1 };
 
 		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL, 1, 1, 0);
-		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, 1, 1, 0);
+		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
+		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+	}
 
+	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkFormat format, uint32_t width, uint32_t height, bool color) {
+		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
+		endSingleTimeCommands(commandBuffer, commandPool);
 	}
 
 	void createSkyboxBufferData() {
@@ -4205,6 +4222,8 @@ private:
 
 		freeTexture(wboit.weightedColor);
 		freeTexture(wboit.weightedAlpha);
+
+		freeTexture(skybox.out);
 
 		cleanupSwapChain();
 		createSC();

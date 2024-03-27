@@ -172,4 +172,9 @@ float linDepth(float depth, float near, float far) {
 	return (2.0 * near * far) / (far + near - z * (far - near));
 }
 
+vec2 getTexCords(sampler2D tex) {
+	ivec2 texDimensions = textureSize(tex, 0);
+	return gl_FragCoord.xy / texDimensions;
+}
+
 

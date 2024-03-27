@@ -16,6 +16,10 @@ void main() {
     vec4 weightedColor = texture(textures[1], inUV);
     float weightedAlpha = texture(textures[2], inUV).g;
 
+    vec4 skyboxColor = texture(textures[3], inUV);
+    float factor = pow(weightedAlpha, 2.0) * 0.1;
+    weightedColor = mix(weightedColor, skyboxColor, factor);
+
     vec3 blended = weightedColor.rgb / max(weightedAlpha, 1e-5);
 
     // blend the main color with the blended color based on the weighted alpha

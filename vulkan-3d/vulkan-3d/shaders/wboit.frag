@@ -80,8 +80,7 @@ void main() {
     }
 
     // get the depth from the opaque texture
-    ivec2 texDimensions = textureSize(depthSampler, 0);
-    vec2 cords = gl_FragCoord.xy / texDimensions;
+    vec2 cords = getTexCords(depthSampler);
     float oDepth = texture(depthSampler, cords).r;
     oDepth = linDepth(oDepth, nearPlane, farPlane);
 
