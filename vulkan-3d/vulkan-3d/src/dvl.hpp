@@ -2,12 +2,6 @@
 // Designed to work with Vulkan and GLTF 2.0
 
 #pragma once
-#include "dml.hpp"
-#include <unordered_map>
-#include <unordered_set>
-#include <set>
-#ifndef DVL_H
-#define DVL_H
 
 class dvl {
 public:
@@ -132,6 +126,3 @@ public:
 		}
 	}
 };
-
-#endif
-;

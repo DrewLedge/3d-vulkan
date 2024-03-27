@@ -4,6 +4,8 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 #include "../ext/tiny_gltf.h" // load .obj and .mtl files
 #include "../ext/stb_image_resize.h"
+
+// headers
 #include "dml.hpp"
 #include "dvl.hpp"
 #include <imgui.h>
@@ -3853,7 +3855,7 @@ private:
 			drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
 
 			float w = ImGui::CalcTextSize(fpsText.c_str()).x;
-			float x = static_cast<float>(swap.extent.width / 2) + w + 20.0;
+			float x = static_cast<float>(swap.extent.width / 2) + w + 20.0f;
 			drawText(objText, x, 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
 
 			// render the imgui frame and draw imgui's commands into the command buffer:

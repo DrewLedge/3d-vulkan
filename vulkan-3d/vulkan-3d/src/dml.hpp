@@ -2,17 +2,10 @@
 
 #pragma once
 #include <iostream>
-#ifndef DLM_H
-#define DLM_H
+
 const float PI = acos(-1.0f);
 class dml {
 public:
-	int rng(int m, int mm);
-	struct gen {
-		static float getPercent(const float value, const float max) {
-			return (value / max) * 100.0f;
-		}
-	};
 	struct vec3 {
 		float x, y, z;
 		vec3() : x(0.0f), y(0.0f), z(0.0f) {}
@@ -781,6 +774,3 @@ public:
 		return result;
 	}
 };
-
-#endif
-;
