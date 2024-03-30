@@ -124,5 +124,6 @@
     </ClInclude>
     <ClInclude Include="src\dvl.hpp" />
     <ClInclude Include="src\dml.hpp" />
+    <ClInclude Include="src\utils.hpp" />
   </ItemGroup>
 </Project>

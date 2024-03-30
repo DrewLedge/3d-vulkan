@@ -165,6 +165,7 @@
     <ClInclude Include="ext\imgui\imgui_internal.h" />
     <ClInclude Include="src\dml.hpp" />
     <ClInclude Include="src\dvl.hpp" />
+    <ClInclude Include="src\utils.hpp" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
