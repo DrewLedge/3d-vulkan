@@ -11,6 +11,7 @@ layout(set = 0, binding = 3) uniform samplerCube cubeMap;
 
 void main() {
     outColor = texture(cubeMap, fragPos.xyz);
+    outColor.rgb *= 0.01;
 }
 
 

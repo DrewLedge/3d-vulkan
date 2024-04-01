@@ -9,6 +9,7 @@
 #include "dml.hpp"
 #include "dvl.hpp"
 #include "utils.hpp"
+#include "vkhelper.hpp"
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
@@ -97,7 +98,10 @@ struct camData {
 	}
 };
 
+// globals
 camData cam;
+VkDevice device;
+VkQueue graphicsQueue;
 
 class Engine {
 public:
@@ -423,9 +427,7 @@ private:
 	VkSurfaceKHR surface;
 	VkInstance instance;
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-	VkDevice device;
 	VkQueue presentQueue;
-	VkQueue graphicsQueue;
 	keyPressObj keyPO;
 
 	// swap chain and framebuffers
@@ -1582,9 +1584,9 @@ private:
 	}
 
 	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
-		VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
+		VkCommandBuffer tempCommandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
-		endSingleTimeCommands(tempCommandBuffer, commandPool);
+		vkhelper::endSingleTimeCommands(tempCommandBuffer, commandPool);
 	}
 
 	void createImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers, bool cubeMap, VkImageUsageFlags usage) {
@@ -2360,7 +2362,7 @@ private:
 		createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
 		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
-		VkCommandBuffer copyCmdBuffer = beginSingleTimeCommands(commandPool);
+		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = {
@@ -2391,7 +2393,7 @@ private:
 
 			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
-		endSingleTimeCommands(copyCmdBuffer, commandPool);
+		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool);
 
 		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
@@ -2424,7 +2426,7 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 }; //gets the 2d image extent
 
-			VkCommandBuffer tempBuffer = beginSingleTimeCommands(commandPool);
+			VkCommandBuffer tempBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
 			transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
 			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
@@ -2463,36 +2465,10 @@ private:
 				transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
 			}
 
-			endSingleTimeCommands(tempBuffer, commandPool);
+			vkhelper::endSingleTimeCommands(tempBuffer, commandPool);
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}
-	}
-
-	VkCommandBuffer beginSingleTimeCommands(VkCommandPool cPool) {
-		VkCommandBufferAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //specifies if the command buffer is primary or secondary
-		allocInfo.commandPool = cPool;
-		allocInfo.commandBufferCount = 1;
-		VkCommandBuffer commandBuffer;
-		vkAllocateCommandBuffers(device, &allocInfo, &commandBuffer);
-		VkCommandBufferBeginInfo beginInfo{};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
-		vkBeginCommandBuffer(commandBuffer, &beginInfo);
-		return commandBuffer;
-	}
-
-	void endSingleTimeCommands(VkCommandBuffer cBuffer, VkCommandPool cPool) {
-		vkEndCommandBuffer(cBuffer);
-		VkSubmitInfo submitInfo{};
-		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = &cBuffer;
-		vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
-		vkQueueWaitIdle(graphicsQueue); //wait for the queue to be idle
-		vkFreeCommandBuffers(device, cPool, 1, &cBuffer); //free the command buffer
 	}
 
 	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
@@ -2501,6 +2477,7 @@ private:
 		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
 		assert(err == 0); //if true, continue, if false, throw error
 	}
+
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
@@ -3509,9 +3486,9 @@ private:
 
 		// upload fonts, etc:
 		VkCommandPool guiCommandPool = createCommandPool();
-		VkCommandBuffer guiCommandBuffer = beginSingleTimeCommands(guiCommandPool);
+		VkCommandBuffer guiCommandBuffer = vkhelper::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
-		endSingleTimeCommands(guiCommandBuffer, guiCommandPool);
+		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 
@@ -3543,25 +3520,11 @@ private:
 
 	void createSCCommandBuffers(std::vector<VkCommandBuffer>& cmdBuffers) {
 		cmdBuffers.resize(swap.images.size());  //resize based on swap chain images size
-		VkCommandBufferAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInf.commandPool = commandPool; //command pool to allocate from
-		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
-		allocInf.commandBufferCount = (uint32_t)cmdBuffers.size(); //number of command buffers to allocate
-		if (vkAllocateCommandBuffers(device, &allocInf, cmdBuffers.data()) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate command buffers!");
-		}
+		cmdBuffers = vkhelper::allocateCommandBuffers(commandPool, swap.images.size());
 	}
 
 	void createSCCommandBuffers(VkCommandBuffer& cmdBuffer) {
-		VkCommandBufferAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInf.commandPool = commandPool; //command pool to allocate from
-		allocInf.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY; //primary or secondary command buffer
-		allocInf.commandBufferCount = 1; //number of command buffers to allocate
-		if (vkAllocateCommandBuffers(device, &allocInf, &cmdBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate command buffers!");
-		}
+		cmdBuffer = vkhelper::allocateCommandBuffers(commandPool);
 	}
 
 	uint32_t findMemoryType(uint32_t tFilter, VkMemoryPropertyFlags prop) { //find the memory type based on the type filter and properties
@@ -4037,52 +4000,14 @@ private:
 		ImGui::End();
 	}
 
-	void createFB(VkRenderPass& renderPass, VkFramebuffer& frameBuf, VkImageView& IV, uint32_t width, uint32_t height) {
-		VkFramebufferCreateInfo frameBufferInfo{};
-		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = renderPass;
-		frameBufferInfo.attachmentCount = 1;
-		frameBufferInfo.pAttachments = &IV; // imageview
-		frameBufferInfo.width = width;
-		frameBufferInfo.height = height;
-		frameBufferInfo.layers = 1;
-
-		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuf) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shadow framebuffer!");
-		}
-	}
-
-	void createFB(VkRenderPass& renderPass, VkFramebuffer& frameBuf, std::vector<VkImageView>& attachments, uint32_t width, uint32_t height) {
-		VkFramebufferCreateInfo frameBufferInfo{};
-		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = renderPass;
-		frameBufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		frameBufferInfo.pAttachments = attachments.data();
-		frameBufferInfo.width = width;
-		frameBufferInfo.height = height;
-		frameBufferInfo.layers = 1;
-
-		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuf) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shadow framebuffer!");
-		}
-	}
-
 	void createShadowCommandBuffers() { // create a command buffer for each light
 		shadowMapCommandBuffers.resize(lights.size());
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
 			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
-			createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
+			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
-		VkCommandBufferAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-		allocInfo.commandPool = commandPool;
-		allocInfo.commandBufferCount = static_cast<uint32_t>(lights.size());
-
-		if (vkAllocateCommandBuffers(device, &allocInfo, shadowMapCommandBuffers.data()) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate command buffers!");
-		}
+		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
 	}
 
 	// copy an image from one image to another
@@ -4108,9 +4033,9 @@ private:
 	}
 
 	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkFormat format, uint32_t width, uint32_t height, bool color) {
-		VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
-		endSingleTimeCommands(commandBuffer, commandPool);
+		vkhelper::endSingleTimeCommands(commandBuffer, commandPool);
 	}
 
 	void createSkyboxBufferData() {
@@ -4133,14 +4058,14 @@ private:
 		// create the framebuffer for the wboit pass
 		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView, wboit.weightedAlpha.imageView };
 		if (wboit.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, wboit.frameBuffer, nullptr);
-		createFB(wboit.pipeline.renderPass, wboit.frameBuffer, attachmentsD, swap.extent.width, swap.extent.height);
+		vkhelper::createFB(wboit.pipeline.renderPass, wboit.frameBuffer, attachmentsD, swap.extent.width, swap.extent.height);
 	}
 
 	void createMainPassFramebuffers() {
 		// create the framebuffers for the main pass
 		std::vector<VkImageView> attachmentsD = { mainPassTextures.color.imageView, mainPassTextures.depth.imageView };
 		if (mainPassFB != VK_NULL_HANDLE) vkDestroyFramebuffer(device, mainPassFB, nullptr);
-		createFB(mainPassPipeline.renderPass, mainPassFB, attachmentsD, swap.extent.width, swap.extent.height);
+		vkhelper::createFB(mainPassPipeline.renderPass, mainPassFB, attachmentsD, swap.extent.width, swap.extent.height);
 	}
 
 	void createFramebuffersSC() {
@@ -4152,7 +4077,7 @@ private:
 		for (size_t i = 0; i < swap.imageViews.size(); ++i) {
 			attachment = { swap.imageViews[i] };
 			if (swap.framebuffers[i] != VK_NULL_HANDLE) vkDestroyFramebuffer(device, swap.framebuffers[i], nullptr);
-			createFB(compositionPipelineData.renderPass, swap.framebuffers[i], attachment, swap.extent.width, swap.extent.height);
+			vkhelper::createFB(compositionPipelineData.renderPass, swap.framebuffers[i], attachment, swap.extent.width, swap.extent.height);
 		}
 	}
 
@@ -4328,15 +4253,15 @@ private:
 		}
 	}
 
-	void recordAllCommandBuffers() { // record the main and shadow command buffers
-		auto start = utils::now();
+	void recordAllCommandBuffers() { // record every command buffer
+		//auto start = utils::now();
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		auto durationMc = utils::duration<microseconds>(start);
-		auto durationMs = utils::duration<milliseconds>(start);
+		//auto durationMc = utils::duration<microseconds>(start);
+		//auto durationMs = utils::duration<milliseconds>(start);
 
-		utils::sep();
-		utils::printDuration(durationMc);
-		utils::printDuration(durationMs);
+		//utils::sep();
+		//utils::printDuration(durationMc);
+		//utils::printDuration(durationMs);
 
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
@@ -4499,7 +4424,7 @@ private:
 		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
 		setupTextures();
 		setupShadowMaps(); // create the inital textures for the shadow maps
-		loadSkybox("overcast-skies.hdr");
+		loadSkybox("night-sky.hdr");
 		createSkyboxBufferData();
 		setupModelMatInstanceBuffer();
 		setupDescriptorSets(); //setup and create all the descriptor sets
