@@ -102,6 +102,7 @@ struct camData {
 camData cam;
 VkDevice device;
 VkQueue graphicsQueue;
+VkPhysicalDevice physicalDevice;
 
 class Engine {
 public:
@@ -426,7 +427,6 @@ private:
 	GLFWwindow* window;
 	VkSurfaceKHR surface;
 	VkInstance instance;
-	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
 	VkQueue presentQueue;
 	keyPressObj keyPO;
 
@@ -1143,8 +1143,8 @@ private:
 	void loadSkybox(std::string path) {
 		skybox.cubemap.path = SKYBOX_DIR + path;
 		createTexturedCubemap(skybox.cubemap);
-		createTextureImgView(skybox.cubemap, false, "cube");
-		createTS(skybox.cubemap, false, "cube");
+		vkhelper::createImageView(skybox.cubemap, "cube");
+		vkhelper::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, "cube");
 
 		skybox.bufferData.vertexOffset = 0;
 		skybox.bufferData.vertexCount = 8;
@@ -1430,32 +1430,37 @@ private:
 					//also create mipmaps for every texture
 					if (object->material.baseColor.found) {
 						createTexturedImage(object->material.baseColor, true);
-						createTextureImgView(object->material.baseColor, true);
-						createTS(object->material.baseColor, true);
+						vkhelper::createImageView(object->material.baseColor);
+						vkhelper::createSampler(object->material.baseColor.sampler, object->material.baseColor.mipLevels);
+
 					}
 
 					if (object->material.metallicRoughness.found) {
 						createTexturedImage(object->material.metallicRoughness, true, "metallic");
-						createTextureImgView(object->material.metallicRoughness, true, "metallic");
-						createTS(object->material.metallicRoughness, true, "metallic");
+						vkhelper::createImageView(object->material.metallicRoughness, "metallic");
+						vkhelper::createSampler(object->material.metallicRoughness.sampler, object->material.metallicRoughness.mipLevels);
+
 					}
 
 					if (object->material.normalMap.found) {
 						createTexturedImage(object->material.normalMap, true, "norm");
-						createTextureImgView(object->material.normalMap, true, "norm");
-						createTS(object->material.normalMap, true, "norm");
+						vkhelper::createImageView(object->material.normalMap, "norm");
+						vkhelper::createSampler(object->material.normalMap.sampler, object->material.normalMap.mipLevels);
+
 					}
 
 					if (object->material.emissiveMap.found) {
 						createTexturedImage(object->material.emissiveMap, true, "emissive");
-						createTextureImgView(object->material.emissiveMap, true, "emissive");
-						createTS(object->material.emissiveMap, true, "emissive");
+						vkhelper::createImageView(object->material.emissiveMap, "emissive");
+						vkhelper::createSampler(object->material.emissiveMap.sampler, object->material.emissiveMap.mipLevels);
+
 					}
 
 					if (object->material.occlusionMap.found) {
 						createTexturedImage(object->material.occlusionMap, true, "occlusion");
-						createTextureImgView(object->material.occlusionMap, true, "occlusion");
-						createTS(object->material.occlusionMap, true, "occlusion");
+						vkhelper::createImageView(object->material.occlusionMap, "occlusion");
+						vkhelper::createSampler(object->material.occlusionMap.sampler, object->material.occlusionMap.mipLevels);
+
 					}
 				}
 				}).name("load_texture");
@@ -1471,157 +1476,38 @@ private:
 		depthFormat = findDepthFormat();
 
 		// main pass color image
-		createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-		createTextureImgView(mainPassTextures.color, false, "swap");
-		createTS(mainPassTextures.color, false, "swap");
-		transitionImageLayout(mainPassTextures.color.image, swap.imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+		vkhelper::createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+		vkhelper::createImageView(mainPassTextures.color, swap.imageFormat);
+		vkhelper::createSampler(mainPassTextures.color.sampler, mainPassTextures.color.mipLevels);
+		vkhelper::transitionImageLayout(commandPool, mainPassTextures.color.image, swap.imageFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 		// main pass depth image
-		createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		createTextureImgView(mainPassTextures.depth, false, "depth");
-		createTS(mainPassTextures.depth, false, "depth");
+		vkhelper::createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(mainPassTextures.depth, "depth");
+		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, "depth");
 
 		// weighted color image
-		createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		createTextureImgView(wboit.weightedColor, false, "swap");
-		createTS(wboit.weightedColor, false, "swap");
+		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(wboit.weightedColor, swap.imageFormat);
+		vkhelper::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
 
 		// weighted alpha image
-		createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		createTextureImgView(wboit.weightedAlpha, false, "swap");
-		createTS(wboit.weightedAlpha, false, "swap");
+		vkhelper::createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(wboit.weightedAlpha, swap.imageFormat);
+		vkhelper::createSampler(wboit.weightedAlpha.sampler, wboit.weightedAlpha.mipLevels);
 
 		// skybox image (2d)
-		createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-		createTextureImgView(skybox.out, false, "swap");
-		createTS(skybox.out, false, "swap");
+		vkhelper::createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+		vkhelper::createImageView(skybox.out, swap.imageFormat);
+		vkhelper::createSampler(skybox.out.sampler, skybox.out.mipLevels);
 	}
 
 	void setupShadowMaps() { // initialize the shadow maps for each light
 		for (size_t i = 0; i < lights.size(); i++) {
-			createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-			createTextureImgView(lights[i]->shadowMapData, false, "depth");
-			createTS(lights[i]->shadowMapData, false, "depth");
+			vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+			vkhelper::createImageView(lights[i]->shadowMapData, "depth");
+			vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, "depth");
 		}
-	}
-
-	void transitionImageLayout(VkCommandBuffer commandBuffer, VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
-		VkImageMemoryBarrier barrier{};
-		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-		barrier.oldLayout = oldLayout;
-		barrier.newLayout = newLayout;
-		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = image;
-		if (format == VK_FORMAT_D32_SFLOAT) { // if the format is a depth format
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		}
-		else {
-			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		barrier.subresourceRange.baseMipLevel = baseMip;
-		barrier.subresourceRange.levelCount = levelCount;
-		barrier.subresourceRange.baseArrayLayer = 0;
-		barrier.subresourceRange.layerCount = layerCount;
-
-		// earliest stage in the pipeline that will wait on the barrier to be passed
-		VkPipelineStageFlags sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-		VkPipelineStageFlags destinationStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-
-		if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL) {
-			if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
-				barrier.srcAccessMask = 0;
-				barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-				sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-				destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			}
-			else {
-				barrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-				destinationStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			}
-		}
-		else if (newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
-			if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-				barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-				sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-				destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-			}
-			else {
-				barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-				barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-				sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-				destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-			}
-		}
-		else if (newLayout == VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			destinationStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-		}
-		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
-			barrier.srcAccessMask = 0;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-			sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		}
-		else if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL) {
-			barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
-		}
-		else if (newLayout == VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL) {
-			barrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-			barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
-		}
-		else {
-			throw std::invalid_argument("Unsupported layout transition!");
-		}
-		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
-	}
-
-	void transitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout, uint32_t layerCount, uint32_t levelCount, uint32_t baseMip) {
-		VkCommandBuffer tempCommandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
-		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
-		vkhelper::endSingleTimeCommands(tempCommandBuffer, commandPool);
-	}
-
-	void createImage(VkImage& image, VkDeviceMemory& imageMemory, uint32_t width, uint32_t height, VkFormat format, uint32_t mipLevels, uint32_t arrayLayers, bool cubeMap, VkImageUsageFlags usage) {
-		VkImageCreateInfo imageInfo{};
-		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
-		imageInfo.imageType = VK_IMAGE_TYPE_2D;
-		imageInfo.extent.width = width;
-		imageInfo.extent.height = height;
-		imageInfo.extent.depth = 1;
-		imageInfo.arrayLayers = arrayLayers;
-		imageInfo.mipLevels = mipLevels;
-		imageInfo.format = format;
-		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		imageInfo.usage = usage;
-		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
-		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		if (cubeMap) imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-
-		if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create color image!");
-		}
-
-		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, image, &memRequirements);
-		VkMemoryAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInfo.allocationSize = memRequirements.size;
-		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-
-		if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate color image memory!");
-		}
-
-		vkBindImageMemory(device, image, imageMemory, 0);
 	}
 
 	void createSCImageViews() { //create the image views for the swap chain images
@@ -1680,7 +1566,7 @@ private:
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocateInfo.memoryTypeIndex = vkhelper::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &instanceBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the instance buffer!");
@@ -1713,7 +1599,7 @@ private:
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocateInfo.memoryTypeIndex = vkhelper::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &cam.bufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
@@ -1743,7 +1629,7 @@ private:
 		VkMemoryAllocateInfo allocInfo = {};
 		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInfo.allocationSize = memRequirements.size;
-		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocInfo.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 		vkAllocateMemory(device, &allocInfo, nullptr, &lightBufferMem);
 
@@ -2144,94 +2030,6 @@ private:
 		createDS(); //create the descriptor set
 	}
 
-	template<typename T>
-	void createTS(T& tex, bool doMipmap, std::string type = "tex") {
-		VkSamplerCreateInfo samplerInf{};
-		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
-		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
-		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
-		samplerInf.maxAnisotropy = 16;
-		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
-		samplerInf.unnormalizedCoordinates = VK_FALSE;
-		if (type == "depth") {
-			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerInf.compareEnable = VK_TRUE;
-			samplerInf.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-			samplerInf.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		}
-		if (type == "cube") {
-			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerInf.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // prevent seams at the edges
-		}
-		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
-		samplerInf.minLod = 0.0f;
-		samplerInf.maxLod = doMipmap ? static_cast<float>(tex.mipLevels) : 1;
-		if (vkCreateSampler(device, &samplerInf, nullptr, &tex.sampler) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture sampler!");
-		}
-	}
-
-	template<typename T>
-	void createTextureImgView(T& tex, bool doMipmap, std::string type = "base") {
-		VkImageViewCreateInfo viewInf{};
-		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInf.image = tex.image;
-		viewInf.subresourceRange.baseArrayLayer = 0;
-		viewInf.subresourceRange.layerCount = 1;
-		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		if (type == "depth") {
-			viewInf.format = VK_FORMAT_D32_SFLOAT;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		}
-		else if (type == "norm") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "base") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for base texture
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "swap") {
-			viewInf.format = swap.imageFormat; // format of the swap chain
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "metallic") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "emissive") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "occlusion") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "cube") {
-			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
-			viewInf.subresourceRange.layerCount = 6;
-		}
-		else if (type == "alpha") {
-			viewInf.format = VK_FORMAT_R32_SFLOAT;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else {
-			throw std::invalid_argument("Invalid texture type!");
-		}
-		viewInf.subresourceRange.baseMipLevel = 0;
-		viewInf.subresourceRange.levelCount = doMipmap ? tex.mipLevels - viewInf.subresourceRange.baseMipLevel : 1; //miplevel is influenced by the base 
-		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create texture image view!");
-		}
-	}
-
 	void getGLTFImageData(const tinygltf::Image& gltfImage, Texture& t, unsigned char*& imgData) {
 		int width = gltfImage.width; // Set the texture's width, height, and channels
 		int height = gltfImage.height;
@@ -2321,7 +2119,7 @@ private:
 		VkMemoryAllocateInfo allocInf{};
 		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocInf.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 		if (vkAllocateMemory(device, &allocInf, nullptr, &tex.stagingBufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate staging buffer memory!");
 		}
@@ -2359,9 +2157,9 @@ private:
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
 		}
 
-		createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
+		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
 		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
@@ -2395,7 +2193,7 @@ private:
 		}
 		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool);
 
-		transitionImageLayout(tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
+		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
 	}
@@ -2412,7 +2210,7 @@ private:
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
 
 			VkFormat imgFormat = type == "base" ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
-			createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
 			// initialize img and barrier data before buffer copy:
 			VkBufferImageCopy region{};
@@ -2428,14 +2226,14 @@ private:
 
 			VkCommandBuffer tempBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
-			transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
+			vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
 			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
 			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
-					transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
+					vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
 
 					if (j < tex.mipLevels - 1) {
 						VkImageBlit blit{};
@@ -2454,7 +2252,7 @@ private:
 						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
-					transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
+					vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
 
 					//for the next mip level, divide the width and height by 2, unless they are already 1
 					if (mipWidth > 1) mipWidth /= 2;
@@ -2462,7 +2260,7 @@ private:
 				}
 			}
 			else {
-				transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
+				vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
 			}
 
 			vkhelper::endSingleTimeCommands(tempBuffer, commandPool);
@@ -3527,17 +3325,6 @@ private:
 		cmdBuffer = vkhelper::allocateCommandBuffers(commandPool);
 	}
 
-	uint32_t findMemoryType(uint32_t tFilter, VkMemoryPropertyFlags prop) { //find the memory type based on the type filter and properties
-		VkPhysicalDeviceMemoryProperties memP; //struct to hold memory properties
-		vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memP); //get the memory properties for the physical device
-		for (uint32_t i = 0; i < memP.memoryTypeCount; i++) { //loop through the memory types
-			if ((tFilter & (1 << i)) && (memP.memoryTypes[i].propertyFlags & prop) == prop) { //if the memory type is suitable
-				return i; //return the index of the memory type
-			}
-		}
-		throw std::runtime_error("failed to find suitable memory type!");
-	}
-
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->modelHash < b->modelHash; });
 
@@ -3613,7 +3400,7 @@ private:
 		VkMemoryAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInfo.allocationSize = memRequirements.size;
-		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocInfo.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
 
 		if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate buffer memory!");
@@ -3847,7 +3634,7 @@ private:
 		renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 		renderPassInfo.pClearValues = clearValues.data();
 
-		transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+		vkhelper::transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 		vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
 
@@ -4012,8 +3799,8 @@ private:
 
 	// copy an image from one image to another
 	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkCommandBuffer& commandBuffer, VkFormat format, uint32_t width, uint32_t height, bool color) {
-		transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
-		transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
+		vkhelper::transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
+		vkhelper::transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
 
 		VkImageCopy copy{};
 		VkImageAspectFlagBits aspect = color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
@@ -4028,8 +3815,8 @@ private:
 		copy.extent = { width, height, 1 };
 
 		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
-		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+		vkhelper::transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
+		vkhelper::transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 	}
 
 	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkFormat format, uint32_t width, uint32_t height, bool color) {
