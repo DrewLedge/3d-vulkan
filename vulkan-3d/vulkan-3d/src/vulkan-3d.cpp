@@ -1549,98 +1549,26 @@ private:
 		return shaderModule;
 	}
 
-	void setupModelMatInstanceBuffer() {
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(modelMatInstanceData);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	void setupBuffers() {
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(modelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(camUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData, sizeof(lightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &instanceBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create instance buffer!");
-		}
+		// skybox buffer data
+		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 
-		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, instanceBuffer, &memoryRequirements);
+		char* vertexData;
+		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(dml::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
+		memcpy(vertexData, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount);
+		vkUnmapMemory(device, skybox.vertBufferMem);
 
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = vkhelper::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &instanceBufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for the instance buffer!");
-		}
-
-		vkBindBufferMemory(device, instanceBuffer, instanceBufferMem, 0);
-
-		// once memory is bound, map and fill it
-		void* data;
-		vkMapMemory(device, instanceBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &objInstanceData, bufferCreateInfo.size);
-		vkUnmapMemory(device, instanceBufferMem);
+		char* indexData;
+		vkMapMemory(device, skybox.indBufferMem, 0, sizeof(uint32_t) * skybox.bufferData.indexCount, 0, reinterpret_cast<void**>(&indexData));
+		memcpy(indexData, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount);
+		vkUnmapMemory(device, skybox.indBufferMem);
 	}
-
-
-	void setupCamMatUBO() { // ubo containing the cameras matricies (view and projection)
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(camUBO);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE; // will only be used by one queue family
-
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &cam.buffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create matrix SSBO for camera!");
-		}
-
-		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, cam.buffer, &memoryRequirements);
-
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = vkhelper::findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &cam.bufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for the matrix SSBO!");
-		}
-
-		vkBindBufferMemory(device, cam.buffer, cam.bufferMem, 0);
-
-		// once memory is bound, map and fill it
-		void* data;
-		vkMapMemory(device, cam.bufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &camMatData, bufferCreateInfo.size);
-		vkUnmapMemory(device, cam.bufferMem);
-	}
-
-	void setupLights() {
-		VkBufferCreateInfo bufferCreateInfo = {};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = sizeof(lightDataSSBO);
-		bufferCreateInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		vkCreateBuffer(device, &bufferCreateInfo, nullptr, &lightBuffer);
-
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, lightBuffer, &memRequirements);
-
-		VkMemoryAllocateInfo allocInfo = {};
-		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInfo.allocationSize = memRequirements.size;
-		allocInfo.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-		vkAllocateMemory(device, &allocInfo, nullptr, &lightBufferMem);
-
-		vkBindBufferMemory(device, lightBuffer, lightBufferMem, 0);
-
-		void* data;
-		vkMapMemory(device, lightBufferMem, 0, bufferCreateInfo.size, 0, &data);
-		memcpy(data, &lightData, bufferCreateInfo.size);
-		vkUnmapMemory(device, lightBufferMem);
-	}
-
 
 	void printVec3(const dml::vec3& vector) {
 		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
@@ -2024,8 +1952,6 @@ private:
 		}
 		if (initial) {
 			getAllTextures();
-			setupCamMatUBO(); //create the camera matrix UBO
-			setupLights();
 		}
 		createDS(); //create the descriptor set
 	}
@@ -2096,47 +2022,14 @@ private:
 	void createStagingBuffer(Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
-		VkDeviceSize imageSize;
-		if (cubeMap) {
-			uint32_t faceWidth = tex.width / 4;
-			uint32_t faceHeight = tex.height / 3;
-			VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
-			imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
-		}
-		else {
-			imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
-		}
-		bufferInf.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInf.size = imageSize;
-		bufferInf.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-		bufferInf.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		if (vkCreateBuffer(device, &bufferInf, nullptr, &tex.stagingBuffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create staging buffer!");
-		}
-		// get mem requirements;
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, tex.stagingBuffer, &memRequirements);
-		VkMemoryAllocateInfo allocInf{};
-		allocInf.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInf.allocationSize = memRequirements.size;
-		allocInf.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (vkAllocateMemory(device, &allocInf, nullptr, &tex.stagingBufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate staging buffer memory!");
-		}
+		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
-		// bind the memory to the buffer:
-		vkBindBufferMemory(device, tex.stagingBuffer, tex.stagingBufferMem, 0);
-		void* data;
-		if (vkMapMemory(device, tex.stagingBufferMem, 0, imageSize, 0, &data) != VK_SUCCESS) {
-			throw std::runtime_error("failed to map staging buffer memory!");
-		}
 		if (cubeMap) {
-			memcpy(data, skyboxData, imageSize);
+			vkhelper::createBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 		}
 		else {
-			memcpy(data, imageData, imageSize);
+			vkhelper::createBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 		}
-		vkUnmapMemory(device, tex.stagingBufferMem);
 	}
 
 	void createTexturedCubemap(Texture& tex) {
@@ -3348,13 +3241,13 @@ private:
 		}
 
 		// create and map the vertex buffer
-		createBuffer(totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, vertBuffer, vertBufferMem); // create the combined vertex buffer
+		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT); // create the combined vertex buffer
 		char* vertexData;
 		vkMapMemory(device, vertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
-		createBuffer(totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, indBuffer, indBufferMem); // create the combined index buffer
+		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT); // create the combined index buffer
 		char* indexData;
 		vkMapMemory(device, indBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
@@ -3380,33 +3273,6 @@ private:
 		}
 		vkUnmapMemory(device, vertBufferMem);
 		vkUnmapMemory(device, indBufferMem);
-	}
-
-
-	void createBuffer(VkDeviceSize size, VkBufferUsageFlags usage, VkBuffer& buffer, VkDeviceMemory& bufferMemory) {
-		VkBufferCreateInfo bufferInfo{};
-		bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferInfo.size = size;
-		bufferInfo.usage = usage;
-		bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		if (vkCreateBuffer(device, &bufferInfo, nullptr, &buffer) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create buffer!");
-		}
-
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(device, buffer, &memRequirements);
-
-		VkMemoryAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocInfo.allocationSize = memRequirements.size;
-		allocInfo.memoryTypeIndex = vkhelper::findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-		if (vkAllocateMemory(device, &allocInfo, nullptr, &bufferMemory) != VK_SUCCESS) {
-			throw std::runtime_error("failed to allocate buffer memory!");
-		}
-
-		vkBindBufferMemory(device, buffer, bufferMemory, 0);
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
@@ -3608,7 +3474,7 @@ private:
 			if (vkEndCommandBuffer(mainPassCommandBuffers[i]) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record command buffer!");
 			}
-			copyImage(mainPassTextures.color.image, skybox.out.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, swap.imageFormat, swap.extent.width, swap.extent.height, true);
+			vkhelper::copyImage(commandPool, mainPassTextures.color.image, skybox.out.image, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, swap.imageFormat, swap.extent.width, swap.extent.height, true);
 		}
 	}
 
@@ -3795,50 +3661,6 @@ private:
 			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
-	}
-
-	// copy an image from one image to another
-	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkCommandBuffer& commandBuffer, VkFormat format, uint32_t width, uint32_t height, bool color) {
-		vkhelper::transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
-		vkhelper::transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
-
-		VkImageCopy copy{};
-		VkImageAspectFlagBits aspect = color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
-		copy.srcSubresource.aspectMask = aspect;
-		copy.srcSubresource.mipLevel = 0;
-		copy.srcSubresource.baseArrayLayer = 0;
-		copy.srcSubresource.layerCount = 1;
-		copy.dstSubresource.aspectMask = aspect;
-		copy.dstSubresource.mipLevel = 0;
-		copy.dstSubresource.baseArrayLayer = 0;
-		copy.dstSubresource.layerCount = 1;
-		copy.extent = { width, height, 1 };
-
-		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-		vkhelper::transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
-		vkhelper::transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-	}
-
-	void copyImage(VkImage& srcImage, VkImage& dstImage, VkImageLayout srcStart, VkImageLayout dstStart, VkImageLayout dstAfter, VkFormat format, uint32_t width, uint32_t height, bool color) {
-		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
-		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool);
-	}
-
-	void createSkyboxBufferData() {
-		createBuffer(sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, skybox.vertBuffer, skybox.vertBufferMem);
-
-		char* vertexData;
-		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(dml::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
-		memcpy(vertexData, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount);
-		vkUnmapMemory(device, skybox.vertBufferMem);
-
-		createBuffer(sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT, skybox.indBuffer, skybox.indBufferMem);
-
-		char* indexData;
-		vkMapMemory(device, skybox.indBufferMem, 0, sizeof(uint32_t) * skybox.bufferData.indexCount, 0, reinterpret_cast<void**>(&indexData));
-		memcpy(indexData, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount);
-		vkUnmapMemory(device, skybox.indBufferMem);
 	}
 
 	void createWBOITFB() {
@@ -4212,8 +4034,7 @@ private:
 		setupTextures();
 		setupShadowMaps(); // create the inital textures for the shadow maps
 		loadSkybox("night-sky.hdr");
-		createSkyboxBufferData();
-		setupModelMatInstanceBuffer();
+		setupBuffers();
 		setupDescriptorSets(); //setup and create all the descriptor sets
 		createGraphicsPipeline();
 		createCompositionPipeline();

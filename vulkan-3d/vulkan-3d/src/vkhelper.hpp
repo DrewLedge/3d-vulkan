@@ -24,9 +24,92 @@ public:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
+	template<typename ObjType>
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = size;
+		bufferCreateInfo.usage = usage;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		// create the buffer
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create buffer!");
+		}
+
+		// get the memory requirements for the buffer
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+
+		// allocate mem for the buffer
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for the buffer!");
+		}
+
+		// bind the memory to the buffer
+		if (vkBindBufferMemory(device, buffer, bufferMem, 0) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to bind memory to buffer!");
+		}
+
+		// once memory is bound, map and fill it
+		void* data;
+		if (vkMapMemory(device, bufferMem, 0, bufferCreateInfo.size, 0, &data) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to map memory for buffer!");
+		}
+
+		// check if the object is trivally copyable
+		if constexpr (std::is_trivially_copyable_v<ObjType>) {
+			// create a copy of the object and memcpy from the copy to make it so it operates in a seperate instance
+			ObjType copy = object;
+			memcpy(data, copy, bufferCreateInfo.size);
+		}
+		// if the object isnt trivially copyable
+		else {
+			memcpy(data, &object, bufferCreateInfo.size);
+		}
+		vkUnmapMemory(device, bufferMem);
+	}
+
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
+		VkBufferCreateInfo bufferCreateInfo{};
+		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+		bufferCreateInfo.size = size;
+		bufferCreateInfo.usage = usage;
+		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+		// create the buffer
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create buffer!");
+		}
+
+		// get the memory requirements for the buffer
+		VkMemoryRequirements memoryRequirements;
+		vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+
+		// allocate mem for the buffer
+		VkMemoryAllocateInfo allocateInfo{};
+		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+		allocateInfo.allocationSize = memoryRequirements.size;
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate memory for the buffer!");
+		}
+
+		// bind the memory to the buffer
+		if (vkBindBufferMemory(device, buffer, bufferMem, 0) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to bind memory to buffer!");
+		}
+	}
+
 	// ------------------ IMAGES ------------------ //
-	static void transitionImageLayout(const VkCommandBuffer& commandBuffer, const VkImage& image, const VkFormat& format, const VkImageLayout& oldLayout,
-		const VkImageLayout& newLayout, const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
+	static void transitionImageLayout(const VkCommandBuffer& commandBuffer, const VkImage& image, const VkFormat format, const VkImageLayout oldLayout,
+		const VkImageLayout newLayout, const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 
 		VkImageMemoryBarrier barrier{};
 		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -105,7 +188,7 @@ public:
 		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
 	}
 
-	static void transitionImageLayout(const VkCommandPool& cPool, const VkImage& image, const VkFormat& format, const VkImageLayout& oldLayout, const VkImageLayout& newLayout,
+	static void transitionImageLayout(const VkCommandPool& cPool, const VkImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
 		const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 		VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(cPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
@@ -180,8 +263,8 @@ public:
 		}
 	}
 
-	template<typename T>
-	static void createImageView(T& tex, const std::string type = "base") {
+	template<typename Texture>
+	static void createImageView(Texture& tex, const std::string type = "base") {
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
@@ -234,8 +317,8 @@ public:
 		}
 	}
 
-	template<typename T>
-	static void createImageView(T& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
+	template<typename Texture>
+	static void createImageView(Texture& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
@@ -251,6 +334,34 @@ public:
 		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture image view! (swap)");
 		}
+	}
+
+	// copy an image from one image to another
+	static void copyImage(VkImage& srcImage, VkImage& dstImage, const VkImageLayout& srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkCommandBuffer& commandBuffer, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+		transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
+		transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
+
+		VkImageCopy copy{};
+		VkImageAspectFlagBits aspect = color ? VK_IMAGE_ASPECT_COLOR_BIT : VK_IMAGE_ASPECT_DEPTH_BIT;
+		copy.srcSubresource.aspectMask = aspect;
+		copy.srcSubresource.mipLevel = 0;
+		copy.srcSubresource.baseArrayLayer = 0;
+		copy.srcSubresource.layerCount = 1;
+		copy.dstSubresource.aspectMask = aspect;
+		copy.dstSubresource.mipLevel = 0;
+		copy.dstSubresource.baseArrayLayer = 0;
+		copy.dstSubresource.layerCount = 1;
+		copy.extent = { width, height, 1 };
+
+		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
+		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+	}
+
+	static void copyImage(const VkCommandPool& cPool, VkImage& srcImage, VkImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+		VkCommandBuffer commandBuffer = beginSingleTimeCommands(cPool);
+		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
+		endSingleTimeCommands(commandBuffer, cPool);
 	}
 
 
