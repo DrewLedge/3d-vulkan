@@ -69,15 +69,26 @@ struct camData {
 	float lastY;
 	bool locked;
 
-	camData() {
-		camPos = { 0.0f, 0.0f, 0.0f };
-		quat = { 0.0f, 0.0f, 0.0f, 1.0f };
-		rightAngle = 0.0f;
-		upAngle = 0.0f;
-		lastX = 0.0f;
-		lastY = 0.0f;
-		locked = true;
-	}
+	float fov;
+	float nearP;
+	float farP;
+
+	camData()
+		: camPos(0.0f, 0.0f, 0.0f),
+		quat(0.0f, 0.0f, 0.0f, 1.0f),
+		upAngle(0.0f),
+		rightAngle(0.0f),
+		projectionMatrix(),
+		viewMatrix(),
+		buffer(VK_NULL_HANDLE),
+		bufferMem(VK_NULL_HANDLE),
+		lastX(0.0f),
+		lastY(0.0f),
+		locked(true),
+		fov(60.0f),
+		nearP(0.1f),
+		farP(1000.0f)
+	{}
 
 	dml::mat4 getOrientation() const {
 		const float dr = PI / 180.0f;
@@ -317,6 +328,10 @@ private:
 		float constantAttenuation;
 		float linearAttenuation;
 		float quadraticAttenuation;
+
+		lightCords() {
+			memset(this, 0, sizeof(lightCords)); //memset everything to 0
+		}
 	};
 
 	struct lightDataSSBO {
@@ -328,6 +343,12 @@ private:
 	struct modelMat {
 		dml::mat4 model;
 		uint32_t render;
+
+		modelMat()
+			: model(),
+			render(true)
+		{}
+
 	};
 	struct modelMatInstanceData {
 		modelMat object[MAX_MODELS];
@@ -362,17 +383,26 @@ private:
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
-		sBox() {
-			indices = {
+		sBox()
+			: cubemap(),
+			out(),
+			pipelineLayout(VK_NULL_HANDLE),
+			pipeline(VK_NULL_HANDLE),
+			bufferData(),
+			vertBuffer(VK_NULL_HANDLE),
+			vertBufferMem(VK_NULL_HANDLE),
+			indBuffer(VK_NULL_HANDLE),
+			indBufferMem(VK_NULL_HANDLE),
+
+			indices{
 				0, 1, 2, 2, 3, 0,
 				7, 6, 5, 5, 4, 7,
 				4, 5, 1, 1, 0, 4,
 				3, 2, 6, 6, 7, 3,
 				4, 0, 3, 3, 7, 4,
 				1, 5, 6, 6, 2, 1
-			};
-
-			vertices = {
+			},
+			vertices{
 				{-1.0f,  1.0f,  1.0f},
 				{-1.0f, -1.0f,  1.0f},
 				{ 1.0f, -1.0f,  1.0f},
@@ -381,8 +411,8 @@ private:
 				{-1.0f, -1.0f, -1.0f},
 				{ 1.0f, -1.0f, -1.0f},
 				{ 1.0f,  1.0f, -1.0f}
-			};
-		}
+			}
+		{}
 	};
 	struct descriptorSetObject {
 		std::vector<VkDescriptorSetLayout> layouts;
@@ -404,6 +434,16 @@ private:
 		std::vector<VkImageView> imageViews;
 		uint32_t imageCount;
 		std::vector<VkFramebuffer> framebuffers;
+
+		swapChainData()
+			: swapChain(VK_NULL_HANDLE),
+			images(),
+			imageFormat(VK_FORMAT_UNDEFINED),
+			extent(),
+			imageViews(),
+			imageCount(0),
+			framebuffers()
+		{}
 	};
 
 	struct keyPressObj { // prevent a certain key from being held down
@@ -413,9 +453,15 @@ private:
 	struct WBOITData { // weighted blended order independent transparency
 		Texture weightedColor;
 		Texture weightedAlpha;
-
 		VkFramebuffer frameBuffer;
 		pipelineData pipeline;
+
+		WBOITData()
+			: weightedColor(),
+			weightedAlpha(),
+			frameBuffer(VK_NULL_HANDLE),
+			pipeline()
+		{}
 	};
 
 	struct mainPassTex {
@@ -423,83 +469,95 @@ private:
 		Texture color;
 	};
 
+	struct SCsupportDetails { // struct to hold the swap chain details
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector<VkSurfaceFormatKHR> formats;
+		std::vector<VkPresentModeKHR> presentModes;
+
+		SCsupportDetails()
+			: capabilities(),
+			formats(),
+			presentModes()
+		{}
+	};
+
 	// window and rendering context
-	GLFWwindow* window;
-	VkSurfaceKHR surface;
-	VkInstance instance;
-	VkQueue presentQueue;
-	keyPressObj keyPO;
+	GLFWwindow* window = nullptr;
+	VkSurfaceKHR surface = VK_NULL_HANDLE;
+	VkInstance instance = VK_NULL_HANDLE;
+	VkQueue presentQueue = VK_NULL_HANDLE;
+	keyPressObj keyPO = {};
 
 	// swap chain and framebuffers
-	swapChainData swap;
+	swapChainData swap = {};
 	size_t currentFrame = 0;
 
 	// viewport config
 	VkViewport vp{};
 
 	// rendering pipeline data
-	pipelineData mainPassPipeline;
-	VkFramebuffer mainPassFB;
-	mainPassTex mainPassTextures;
+	pipelineData mainPassPipeline = {};
+	VkFramebuffer mainPassFB = VK_NULL_HANDLE;
+	mainPassTex mainPassTextures = {};
 
-	pipelineData shadowMapPipeline;
-	pipelineData compositionPipelineData;
+	pipelineData shadowMapPipeline = {};
+	pipelineData compositionPipelineData = {};
 
 	// command buffers and command pool
-	VkCommandPool commandPool;
+	VkCommandPool commandPool = VK_NULL_HANDLE;
 	std::vector<VkCommandBuffer> mainPassCommandBuffers;
 	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
-	VkCommandBuffer wboitCommandBuffer;
+	VkCommandBuffer wboitCommandBuffer = VK_NULL_HANDLE;
 	std::vector<VkCommandBuffer> compCommandBuffers;
 
 	// buffers and related memory
-	VkBuffer vertBuffer;
-	VkDeviceMemory vertBufferMem;
+	VkBuffer vertBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory vertBufferMem = VK_NULL_HANDLE;
 
-	VkBuffer indBuffer;
-	VkDeviceMemory indBufferMem;
+	VkBuffer indBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory indBufferMem = VK_NULL_HANDLE;
 
-	VkBuffer instanceBuffer;
-	VkDeviceMemory instanceBufferMem;
+	VkBuffer instanceBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory instanceBufferMem = VK_NULL_HANDLE;
 
-	VkBuffer lightBuffer;
-	VkDeviceMemory lightBufferMem;
+	VkBuffer lightBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory lightBufferMem = VK_NULL_HANDLE;
 
-	VkBuffer sceneIndexBuffer;
-	VkDeviceMemory sceneIndexBufferMem;
+	VkBuffer sceneIndexBuffer = VK_NULL_HANDLE;
+	VkDeviceMemory sceneIndexBufferMem = VK_NULL_HANDLE;
 
 	// synchronization primitives
 	std::vector<VkFence> inFlightFences;
-	VkSemaphore imageAvailableSemaphore;
-	VkSemaphore renderFinishedSemaphore;
-	VkSemaphore shadowSemaphore;
-	VkSemaphore wboitSemaphore;
-	VkSemaphore compSemaphore;
+	VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
+	VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
+	VkSemaphore shadowSemaphore = VK_NULL_HANDLE;
+	VkSemaphore wboitSemaphore = VK_NULL_HANDLE;
+	VkSemaphore compSemaphore = VK_NULL_HANDLE;
 
 	// shader modules
-	VkShaderModule fragShaderModule;
-	VkShaderModule vertShaderModule;
+	VkShaderModule fragShaderModule = VK_NULL_HANDLE;
+	VkShaderModule vertShaderModule = VK_NULL_HANDLE;
 
 	// depth buffering
-	VkFormat depthFormat;
-	WBOITData wboit;
+	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+	WBOITData wboit = {};
 
 	// descriptor sets and pools
-	descriptorSetObject descs;
-	VkDescriptorSetLayout imguiDescriptorSetLayout;
-	VkDescriptorPool imguiDescriptorPool;
+	descriptorSetObject descs = {};
+	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
+	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
 
 	// scene data and objects
 	std::vector<bufData> bufferData;
 	std::vector<std::unique_ptr<model>> objects;
 	std::vector<std::unique_ptr<model>> originalObjects;
 	std::vector<uint32_t> playerModels;
-	modelMatInstanceData objInstanceData;
-	camUBO camMatData;
-	lightDataSSBO lightData;
+	modelMatInstanceData objInstanceData = {};
+	camUBO camMatData = {};
+	lightDataSSBO lightData = {};
 	std::vector<std::unique_ptr<light>> lights;
-	shadowMapProportionsObject shadowProps;
-	uint32_t modelIndex; // index of where vertecies are loaded to
+	shadowMapProportionsObject shadowProps = {};
+	uint32_t modelIndex = 0; // index of where vertecies are loaded to
 
 	std::unordered_map<size_t, size_t> uniqueModelIndex;
 	std::unordered_map<size_t, size_t> modelHashToBufferIndex;
@@ -508,18 +566,18 @@ private:
 	std::vector<Texture> allTextures;
 	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
-	unsigned char* imageData;
+	unsigned char* imageData = nullptr;
 
 	// skybox data
-	float* skyboxData;
-	sBox skybox;
+	float* skyboxData = nullptr;
+	sBox skybox = {};
 
 	// font data
-	ImFont* font_small;
-	ImFont* font_large;
+	ImFont* font_small = nullptr;
+	ImFont* font_large = nullptr;
 
 	// performance metrics
-	uint32_t fps;
+	uint32_t fps = 0;
 	double lastFrame = 0.0;
 
 	// mutexes for multithreading
@@ -540,17 +598,6 @@ private:
 		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
 
 	}
-	const std::vector<const char*> validationLayers = {
-	"VK_LAYER_KHRONOS_validation"
-	};
-
-	void debugStruct(model stru) {
-		utils::sep();
-		std::cout << "model: " << stru.pathObj << std::endl;
-		std::cout << "vertices: " << stru.vertices.size() << std::endl;
-		std::cout << "indices: " << stru.indices.size() << std::endl;
-		utils::sep();
-	}
 
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
 		loadModel(scale, pos, rotation, MODEL_DIR + path);
@@ -569,6 +616,7 @@ private:
 		l.outerConeAngle = 10.0f;
 		lights.push_back(std::make_unique<light>(l));
 	}
+
 	void setPlayer(uint16_t i) {
 		auto p = std::make_unique<model>(*objects[i]);
 		p->player = true;
@@ -645,6 +693,10 @@ private:
 
 		extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
 		extensions.push_back(VK_KHR_GET_PHYSICAL_DEVICE_PROPERTIES_2_EXTENSION_NAME);
+
+		const std::vector<const char*> validationLayers = {
+			"VK_LAYER_KHRONOS_validation"
+		};
 
 		VkInstanceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -885,11 +937,6 @@ private:
 		return indices.presentComplete(); //checks if the queue families have all been searched and if the present family has been found
 	}
 
-	struct SCsupportDetails { // struct to hold the swap chain details
-		VkSurfaceCapabilitiesKHR capabilities;
-		std::vector<VkSurfaceFormatKHR> formats;
-		std::vector<VkPresentModeKHR> presentModes;
-	};
 	SCsupportDetails querySCsupport(VkPhysicalDevice device) { //takes in the physical device and outputs the swap chain details
 		SCsupportDetails details;
 		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); //get the surface capabilities. an example of a surface capability is the minimum and maximum number of images in the swap chain
@@ -1474,6 +1521,7 @@ private:
 
 	void setupTextures() {
 		depthFormat = findDepthFormat();
+		static bool init = true;
 
 		// main pass color image
 		vkhelper::createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
@@ -1500,13 +1548,15 @@ private:
 		vkhelper::createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
 		vkhelper::createImageView(skybox.out, swap.imageFormat);
 		vkhelper::createSampler(skybox.out.sampler, skybox.out.mipLevels);
-	}
 
-	void setupShadowMaps() { // initialize the shadow maps for each light
-		for (size_t i = 0; i < lights.size(); i++) {
-			vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-			vkhelper::createImageView(lights[i]->shadowMapData, "depth");
-			vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, "depth");
+		// shadowmaps
+		if (init) {
+			for (size_t i = 0; i < lights.size(); i++) {
+				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+				vkhelper::createImageView(lights[i]->shadowMapData, "depth");
+				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, "depth");
+			}
+			init = false;
 		}
 	}
 
@@ -1570,18 +1620,9 @@ private:
 		vkUnmapMemory(device, skybox.indBufferMem);
 	}
 
-	void printVec3(const dml::vec3& vector) {
-		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << "}" << std::endl;
-	}
-
-	void printVec4(const dml::vec4& vector) {
-		std::cout << "{" << vector.x << ", " << vector.y << ", " << vector.z << ", " << vector.w << "}" << std::endl;
-	}
-
 	void calcCameraMats() {
 		cam.viewMatrix = cam.getViewMatrix();
-		cam.projectionMatrix = dml::projection(60.0f, swap.extent.width / static_cast<float>(swap.extent.height), 0.1f, 1000.0f);
-
+		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
 	}
 
 	void calcShadowMats(light& l) {
@@ -3154,6 +3195,15 @@ private:
 		}
 	}
 
+
+	void setupPipelines(bool shadow) {
+		createGraphicsPipeline();
+		createCompositionPipeline();
+		createSkyboxPipeline();
+		if (shadow) createShadowPipeline();
+		createWBOITPipeline();
+	}
+
 	void imguiSetup() {
 		// descriptor set creation for the gui:
 		guiDSLayout();
@@ -3216,6 +3266,24 @@ private:
 
 	void createSCCommandBuffers(VkCommandBuffer& cmdBuffer) {
 		cmdBuffer = vkhelper::allocateCommandBuffers(commandPool);
+	}
+
+	void createShadowCommandBuffers() { // create a command buffer for each light
+		shadowMapCommandBuffers.resize(lights.size());
+		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
+		for (size_t i = 0; i < lights.size(); i++) {
+			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
+			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
+		}
+		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
+	}
+
+	void createCommandBuffers() {
+		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
+		createSCCommandBuffers(mainPassCommandBuffers);
+		createSCCommandBuffers(wboitCommandBuffer);
+		createSCCommandBuffers(compCommandBuffers);
+
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
@@ -3653,16 +3721,6 @@ private:
 		ImGui::End();
 	}
 
-	void createShadowCommandBuffers() { // create a command buffer for each light
-		shadowMapCommandBuffers.resize(lights.size());
-		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
-		for (size_t i = 0; i < lights.size(); i++) {
-			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
-			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
-		}
-		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
-	}
-
 	void createWBOITFB() {
 		// create the framebuffer for the wboit pass
 		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView, wboit.weightedAlpha.imageView };
@@ -3688,6 +3746,12 @@ private:
 			if (swap.framebuffers[i] != VK_NULL_HANDLE) vkDestroyFramebuffer(device, swap.framebuffers[i], nullptr);
 			vkhelper::createFB(compositionPipelineData.renderPass, swap.framebuffers[i], attachment, swap.extent.width, swap.extent.height);
 		}
+	}
+
+	void createFrameBuffers() {
+		createMainPassFramebuffers();
+		createWBOITFB();
+		createFramebuffersSC();
 	}
 
 	void createSemaphores() {
@@ -3748,15 +3812,10 @@ private:
 		setupDescriptorSets(false);
 
 		// create the pipelines
-		createGraphicsPipeline();
-		createCompositionPipeline();
-		createSkyboxPipeline();
-		createWBOITPipeline();
+		setupPipelines(false);
 
 		// create the framebuffers
-		createMainPassFramebuffers();
-		createWBOITFB();
-		createFramebuffersSC();
+		createFrameBuffers();
 
 		recordAllCommandBuffers();
 		initializeMouseInput(true);
@@ -4019,6 +4078,7 @@ private:
 	}
 
 	void initVulkan() { //initializes Vulkan functions
+		// initialize Vulkan components
 		createInstance();
 		createSurface();
 		pickDevice();
@@ -4027,29 +4087,26 @@ private:
 		createSC(); //create swap chain
 		setupFences();
 		createSemaphores();
+
 		commandPool = createCommandPool();
 		initializeMouseInput(true);
 		loadUniqueObjects();
-		createModelBuffers(); //create the vertex and index buffers for the models (put them into 1)
+
+		// create buffers and textures
+		createModelBuffers();
 		setupTextures();
-		setupShadowMaps(); // create the inital textures for the shadow maps
 		loadSkybox("night-sky.hdr");
 		setupBuffers();
-		setupDescriptorSets(); //setup and create all the descriptor sets
-		createGraphicsPipeline();
-		createCompositionPipeline();
-		createSkyboxPipeline();
-		createShadowPipeline(); // pipeline for my shadow maps
-		createWBOITPipeline();
+
+		// setup the descriptorsets and pipelines
+		setupDescriptorSets();
+		setupPipelines(true);
 		imguiSetup();
-		updateUBO(); // populate the matrix data for the lights and objects (and put them into their designated buffer)
-		createMainPassFramebuffers();
-		createWBOITFB();
-		createFramebuffersSC();
-		createShadowCommandBuffers(); // creates the command buffers and also 1 framebuffer for each light source
-		createSCCommandBuffers(mainPassCommandBuffers);
-		createSCCommandBuffers(wboitCommandBuffer);
-		createSCCommandBuffers(compCommandBuffers);
+		updateUBO();
+
+		// setup the framebuffers and command buffers
+		createFrameBuffers();
+		createCommandBuffers();
 		recordAllCommandBuffers();
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
 	}
@@ -4098,29 +4155,6 @@ private:
 		glfwDestroyWindow(window);
 		glfwTerminate();
 	}
-
-	//TODO: 
-	// 1. clean up code (done)
-	// 2. set up the physical and logical devices. (done)
-	// 3. create a swap chain to present images to the screen (done)
-	// 4. create graphics pipeline to render the triangle (done)
-	// 5. commandbuffers (done)
-	// 6. framebuffers (done)
-	// 7. semaphores (done)
-	// 8. vertex drawing and defining the vertex buffer (done)
-	// 10. draw frame function (done)
-	// 11. draw triangle (done)
-	// 12. moving objects (done)
-	// 13. fences (done)
-	// 14. texture image (done)
-	// 15. texture sampler (done)
-	// 16. descriptor sett (done)
-	// 17. convert to 3d  (done)
-	// 18. mip mapping and optimizations (done)
-	// 19. lighting (done)
-	// 20. shadows (done)
-	// 22. skybox (done)
-	// 23. cleanup codebase (done)
 };
 int main() {
 	Engine app;
