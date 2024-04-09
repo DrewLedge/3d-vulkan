@@ -74,10 +74,7 @@ void main() {
 
     getTextures();
 
-    vec4 color = calcLighting(false, false, 0.005f); // calculate lighting on the fragment
-    if (color.a > 0.98) {
-        discard;
-    }
+    vec4 color = calcLighting(false, true, 0.005f); // calculate lighting on the fragment
 
     // get the depth from the opaque texture
     vec2 cords = getTexCords(depthSampler);
