@@ -52,7 +52,7 @@ const std::string FONT_DIR = "assets/fonts/";
 
 bool rtSupported = false; // a bool if raytracing is supported on the device
 
-struct camData {
+struct CamData {
 	dml::vec3 camPos; //x, y, z
 	dml::vec4 quat;
 	float upAngle;
@@ -73,7 +73,7 @@ struct camData {
 	float nearP;
 	float farP;
 
-	camData()
+	CamData()
 		: camPos(0.0f, 0.0f, 0.0f),
 		quat(0.0f, 0.0f, 0.0f, 1.0f),
 		upAngle(0.0f),
@@ -110,7 +110,7 @@ struct camData {
 };
 
 // globals
-camData cam;
+CamData cam;
 VkDevice device;
 VkQueue graphicsQueue;
 VkPhysicalDevice physicalDevice;
@@ -121,153 +121,9 @@ public:
 		initWindow();
 		initVulkan();
 		mainLoop();
-		cleanup();
 	}
 private:
-	struct Texture {
-		VkSampler sampler;
-		VkImage image;
-		VkDeviceMemory memory;
-		VkImageView imageView;
-		std::string path;
-		uint32_t mipLevels;
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMem;
-		tinygltf::Image gltfImage;
-		bool found;
-		uint16_t width;
-		uint16_t height;
-
-		Texture()
-			: sampler(VK_NULL_HANDLE),
-			image(VK_NULL_HANDLE),
-			memory(VK_NULL_HANDLE),
-			imageView(VK_NULL_HANDLE),
-			path(""),
-			mipLevels(1),
-			stagingBuffer(VK_NULL_HANDLE),
-			stagingBufferMem(VK_NULL_HANDLE),
-			gltfImage(),
-			found(false),
-			width(1024),
-			height(1024)
-		{}
-
-		bool operator==(const Texture& other) const {
-			return sampler == other.sampler
-				&& image == other.image
-				&& memory == other.memory
-				&& imageView == other.imageView
-				&& path == other.path
-				&& mipLevels == other.mipLevels
-				&& stagingBuffer == other.stagingBuffer
-				&& stagingBufferMem == other.stagingBufferMem
-				&& width == other.width
-				&& height == other.height;
-
-		}
-	};
-
-	struct texHash {
-		size_t operator()(const Texture& tex) const {
-			size_t seed = 0;
-			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-			return seed;
-		}
-	};
-
-	struct Materials {
-		Texture metallicRoughness;
-		Texture baseColor;
-		Texture normalMap;
-		Texture occlusionMap;
-		Texture emissiveMap;
-	};
-	struct model {
-		Materials material; //used to store all the textures/materials of the model
-		std::vector<dvl::Vertex> vertices;
-		std::vector<uint32_t> indices;
-		std::string pathObj; // i.e "models/cube.obj"
-
-		dml::vec3 position;  // position of the model
-		dml::vec4 rotation;  // rotation of the model in quaternions
-		dml::vec3 scale;     // scale of the model
-		dml::mat4 modelMatrix;
-
-		size_t textureCount; // number of textures in the model
-		size_t texIndex; // where in the texture array the textures of the model start
-
-		bool startObj; // wether is loaded at the start of the program or not
-		bool player; // if the object is treated as a player model or not
-
-		size_t modelHash;
-		std::string name;
-
-		// default constructor
-		model()
-			: material(),
-			vertices(),
-			indices(),
-			pathObj(""),
-			position(dml::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
-			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
-			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
-			modelMatrix(),
-			textureCount(0),
-			texIndex(0),
-			startObj(true),
-			player(false),
-			modelHash(),
-			name("")
-		{}
-
-		// copy constructor
-		model(const model& other)
-			: material(other.material),
-			vertices(other.vertices),
-			indices(other.indices),
-			pathObj(other.pathObj),
-			position(other.position),
-			rotation(other.rotation),
-			scale(other.scale),
-			modelMatrix(other.modelMatrix),
-			textureCount(other.textureCount),
-			texIndex(other.texIndex),
-			startObj(other.startObj),
-			player(other.player),
-			modelHash(other.modelHash),
-			name(other.name) {
-		}
-	};
-	struct shadowMapDataObject {
-		VkImage image;
-		VkImageView imageView;
-		VkSampler sampler;
-		VkFramebuffer frameBuffer;
-		uint32_t mipLevels; // placeholder (not used)
-		VkDeviceMemory memory;
-
-		shadowMapDataObject() {
-			image = VK_NULL_HANDLE;
-			imageView = VK_NULL_HANDLE;
-			sampler = VK_NULL_HANDLE;
-			frameBuffer = VK_NULL_HANDLE;
-			mipLevels = 0;
-			memory = VK_NULL_HANDLE;
-		}
-	};
-
-	struct light { // spotlight
+	struct Light { // spotlight
 		dml::vec3 pos;
 		dml::vec3 col;
 		dml::vec3 target;
@@ -279,10 +135,12 @@ private:
 		float constantAttenuation;
 		float linearAttenuation;
 		float quadraticAttenuation;
-		shadowMapDataObject shadowMapData;
+		dvl::Texture shadowMapData;
+		VkFramebuffer frameBuffer;
+
 
 		// default constructor
-		light()
+		Light()
 			: pos(dml::vec3(0.0f, 0.0f, 0.0f)),
 			col(dml::vec3(1.0f, 1.0f, 1.0f)),
 			target(dml::vec3(0.0f, 0.0f, 0.0f)),
@@ -294,11 +152,12 @@ private:
 			constantAttenuation(1.0f),
 			linearAttenuation(0.1f),
 			quadraticAttenuation(0.032f),
-			shadowMapData() {
+			shadowMapData(),
+			frameBuffer(VK_NULL_HANDLE) {
 		}
 
 		// copy constructor
-		light(const light& other)
+		Light(const Light& other)
 			: pos(other.pos),
 			col(other.col),
 			target(other.target),
@@ -310,15 +169,16 @@ private:
 			constantAttenuation(other.constantAttenuation),
 			linearAttenuation(other.linearAttenuation),
 			quadraticAttenuation(other.quadraticAttenuation),
-			shadowMapData(other.shadowMapData) {
+			shadowMapData(other.shadowMapData),
+			frameBuffer(other.frameBuffer) {
 		}
 	};
-	struct lightMatrixUBO {
+	struct LightMatrix {
 		dml::mat4 view;
 		dml::mat4 proj;
 	};
 
-	struct lightCords {
+	struct LightData {
 		dml::vec3 pos;
 		dml::vec3 col;
 		dml::vec3 target;
@@ -329,53 +189,53 @@ private:
 		float linearAttenuation;
 		float quadraticAttenuation;
 
-		lightCords() {
-			memset(this, 0, sizeof(lightCords)); //memset everything to 0
+		LightData() {
+			memset(this, 0, sizeof(LightData)); //memset everything to 0
 		}
 	};
 
-	struct lightDataSSBO {
-		lightMatrixUBO lightsMatricies[20]; // max 20 lights
-		lightCords lightCords[20]; // max 20 lights
+	struct LightDataSSBO {
+		LightMatrix lightsMatricies[20]; // max 20 lights
+		LightData lightCords[20]; // max 20 lights
 	};
 
 
-	struct modelMat {
+	struct ModelMat {
 		dml::mat4 model;
 		uint32_t render;
 
-		modelMat()
+		ModelMat()
 			: model(),
 			render(true)
 		{}
 
 	};
-	struct modelMatInstanceData {
-		modelMat object[MAX_MODELS];
+	struct ModelMatInstanceData {
+		ModelMat object[MAX_MODELS];
 	};
-	struct camUBO {
+	struct CamUBO {
 		dml::mat4 view;
 		dml::mat4 proj;
 	};
 
-	struct shadowMapProportionsObject {
+	struct ShadowMapDim {
 		uint32_t mapWidth = 2048;
 		uint32_t mapHeight = 2048;
 	};
 
-	struct bufData {
+	struct BufData {
 		uint32_t vertexOffset;
 		uint32_t vertexCount;
 		uint32_t indexOffset;
 		uint32_t indexCount;
 	};
 
-	struct sBox { // skybox struct
-		Texture cubemap;
-		Texture out;
+	struct SkyboxObject { // skybox struct
+		dvl::Texture cubemap;
+		dvl::Texture out;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
-		bufData bufferData; // buffer data for the skybox (vert offsets, etc)
+		BufData bufferData; // buffer data for the skybox (vert offsets, etc)
 		VkBuffer vertBuffer;
 		VkDeviceMemory vertBufferMem;
 		VkBuffer indBuffer;
@@ -383,7 +243,7 @@ private:
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
-		sBox()
+		SkyboxObject()
 			: cubemap(),
 			out(),
 			pipelineLayout(VK_NULL_HANDLE),
@@ -414,19 +274,19 @@ private:
 			}
 		{}
 	};
-	struct descriptorSetObject {
+	struct DSObject {
 		std::vector<VkDescriptorSetLayout> layouts;
 		std::vector<VkDescriptorSet> sets;
 		std::vector<VkDescriptorPool> pools;
 	};
 
-	struct pipelineData {
+	struct PipelineData {
 		VkRenderPass renderPass;
 		VkPipelineLayout layout;
 		VkPipeline graphicsPipeline;
 	};
 
-	struct swapChainData {
+	struct SCData {
 		VkSwapchainKHR swapChain;
 		std::vector<VkImage> images;
 		VkFormat imageFormat;
@@ -435,7 +295,7 @@ private:
 		uint32_t imageCount;
 		std::vector<VkFramebuffer> framebuffers;
 
-		swapChainData()
+		SCData()
 			: swapChain(VK_NULL_HANDLE),
 			images(),
 			imageFormat(VK_FORMAT_UNDEFINED),
@@ -446,15 +306,15 @@ private:
 		{}
 	};
 
-	struct keyPressObj { // prevent a certain key from being held down
+	struct KeyPressObject { // prevent a certain key from being held down
 		bool escPressedLastFrame = false; // unlock mouse
 	};
 
 	struct WBOITData { // weighted blended order independent transparency
-		Texture weightedColor;
-		Texture weightedAlpha;
+		dvl::Texture weightedColor;
+		dvl::Texture weightedAlpha;
 		VkFramebuffer frameBuffer;
-		pipelineData pipeline;
+		PipelineData pipeline;
 
 		WBOITData()
 			: weightedColor(),
@@ -464,9 +324,9 @@ private:
 		{}
 	};
 
-	struct mainPassTex {
-		Texture depth;
-		Texture color;
+	struct MainPassTex {
+		dvl::Texture depth;
+		dvl::Texture color;
 	};
 
 	struct SCsupportDetails { // struct to hold the swap chain details
@@ -486,22 +346,22 @@ private:
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue presentQueue = VK_NULL_HANDLE;
-	keyPressObj keyPO = {};
+	KeyPressObject keyPO = {};
 
 	// swap chain and framebuffers
-	swapChainData swap = {};
+	SCData swap = {};
 	size_t currentFrame = 0;
 
 	// viewport config
 	VkViewport vp{};
 
 	// rendering pipeline data
-	pipelineData mainPassPipeline = {};
+	PipelineData mainPassPipeline = {};
 	VkFramebuffer mainPassFB = VK_NULL_HANDLE;
-	mainPassTex mainPassTextures = {};
+	MainPassTex mainPassTextures = {};
 
-	pipelineData shadowMapPipeline = {};
-	pipelineData compositionPipelineData = {};
+	PipelineData shadowMapPipeline = {};
+	PipelineData compositionPipelineData = {};
 
 	// command buffers and command pool
 	VkCommandPool commandPool = VK_NULL_HANDLE;
@@ -543,34 +403,34 @@ private:
 	WBOITData wboit = {};
 
 	// descriptor sets and pools
-	descriptorSetObject descs = {};
+	DSObject descs = {};
 	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
 	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
 
 	// scene data and objects
-	std::vector<bufData> bufferData;
-	std::vector<std::unique_ptr<model>> objects;
-	std::vector<std::unique_ptr<model>> originalObjects;
+	std::vector<BufData> bufferData;
+	std::vector<std::unique_ptr<dvl::Model>> objects;
+	std::vector<std::unique_ptr<dvl::Model>> originalObjects;
 	std::vector<uint32_t> playerModels;
-	modelMatInstanceData objInstanceData = {};
-	camUBO camMatData = {};
-	lightDataSSBO lightData = {};
-	std::vector<std::unique_ptr<light>> lights;
-	shadowMapProportionsObject shadowProps = {};
+	ModelMatInstanceData objInstanceData = {};
+	CamUBO camMatData = {};
+	LightDataSSBO lightData = {};
+	std::vector<std::unique_ptr<Light>> lights;
+	ShadowMapDim shadowProps = {};
 	uint32_t modelIndex = 0; // index of where vertecies are loaded to
 
 	std::unordered_map<size_t, size_t> uniqueModelIndex;
 	std::unordered_map<size_t, size_t> modelHashToBufferIndex;
 
 	// textures and materials
-	std::vector<Texture> allTextures;
+	std::vector<dvl::Texture> allTextures;
 	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
 	unsigned char* imageData = nullptr;
 
 	// skybox data
 	float* skyboxData = nullptr;
-	sBox skybox = {};
+	SkyboxObject skybox = {};
 
 	// font data
 	ImFont* font_small = nullptr;
@@ -604,7 +464,7 @@ private:
 	}
 
 	void createLight(dml::vec3 pos, dml::vec3 color, float intensity, dml::vec3 t) {
-		light l;
+		Light l;
 		l.col = color;
 		l.pos = pos;
 		l.baseIntensity = intensity;
@@ -614,11 +474,11 @@ private:
 		l.quadraticAttenuation = 0.032f;
 		l.innerConeAngle = 6.6f;
 		l.outerConeAngle = 10.0f;
-		lights.push_back(std::make_unique<light>(l));
+		lights.push_back(std::make_unique<Light>(l));
 	}
 
 	void setPlayer(uint16_t i) {
-		auto p = std::make_unique<model>(*objects[i]);
+		auto p = std::make_unique<dvl::Model>(*objects[i]);
 		p->player = true;
 		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
 		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
@@ -641,7 +501,7 @@ private:
 		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
 
 		for (auto& obj : objects) {
-			originalObjects.push_back(std::make_unique<model>(*obj));
+			originalObjects.push_back(std::make_unique<dvl::Model>(*obj));
 		}
 
 		setPlayer(1);
@@ -1128,7 +988,7 @@ private:
 		return -1; // not found
 	}
 
-	dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, model& m) {
+	dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, dvl::Model& m) {
 		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
 		dml::mat4 modelMatrix;
 
@@ -1251,9 +1111,9 @@ private:
 		auto loadModelTask = taskFlow.emplace([&]() {
 			// loop over each mesh (object)
 			for (const auto& mesh : gltfModel.meshes) {
-				model newObject;
+				dvl::Model newObject;
 
-				std::unordered_map<dvl::Vertex, uint32_t, dvl::vertHash> uniqueVertices;
+				std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
 				std::vector<dvl::Vertex> tempVertices;
 				std::vector<uint32_t> tempIndices;
 
@@ -1378,7 +1238,7 @@ private:
 					}
 					if (primitive.material >= 0) { // if the primitive has a material
 						auto& material = gltfModel.materials[primitive.material];
-						Materials texture;
+						dvl::Material texture;
 
 						// base color texture
 						if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
@@ -1462,7 +1322,7 @@ private:
 
 				// add newObject to global objects list
 				modelMtx.lock();
-				objects.push_back(std::make_unique<model>(newObject));
+				objects.push_back(std::make_unique<dvl::Model>(newObject));
 				modelMtx.unlock();
 
 				modelIndex++;
@@ -1600,9 +1460,9 @@ private:
 	}
 
 	void setupBuffers() {
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(modelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(camUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData, sizeof(lightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData, sizeof(LightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 		// skybox buffer data
 		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -1625,7 +1485,7 @@ private:
 		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
 	}
 
-	void calcShadowMats(light& l) {
+	void calcShadowMats(Light& l) {
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 0.01f, farPlane = 100.0f;
@@ -1642,7 +1502,7 @@ private:
 	void updateUBO() {
 		// calc matrixes for lights
 		for (size_t i = 0; i < lights.size(); i++) {
-			light& l = *lights[i];
+			Light& l = *lights[i];
 			calcShadowMats(l);
 			memcpy(&lightData.lightsMatricies[i].proj, &lights[i]->proj, sizeof(lights[i]->proj));
 			memcpy(&lightData.lightsMatricies[i].view, &lights[i]->view, sizeof(lights[i]->view));
@@ -1686,7 +1546,7 @@ private:
 		vkUnmapMemory(device, instanceBufferMem);
 	}
 
-	void copyLightToLightCords(const light& src, lightCords& dest) {
+	void copyLightToLightCords(const Light& src, LightData& dest) {
 		memcpy(&dest.pos, &src.pos, sizeof(dml::vec3));
 		memcpy(&dest.col, &src.col, sizeof(dml::vec3));
 		memcpy(&dest.target, &src.target, sizeof(dml::vec3));
@@ -1732,7 +1592,7 @@ private:
 		}
 	}
 
-	std::vector<Texture> getAllTextures() {
+	std::vector<dvl::Texture> getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -1771,8 +1631,8 @@ private:
 		return allTextures;
 	}
 
-	std::vector<shadowMapDataObject> getAllShadowMaps() {
-		std::vector<shadowMapDataObject>allMaps;
+	std::vector<dvl::Texture> getAllShadowMaps() {
+		std::vector<dvl::Texture>allMaps;
 		allMaps.reserve(lights.size());
 		for (const auto& light : lights) {
 			allMaps.push_back(light->shadowMapData);
@@ -1787,7 +1647,7 @@ private:
 	}
 
 	void createDS() {
-		std::vector<shadowMapDataObject> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
+		std::vector<dvl::Texture> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
 
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
@@ -1799,7 +1659,7 @@ private:
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
 		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = sizeof(lightDataSSBO);
+		lightBufferInfo.range = sizeof(LightDataSSBO);
 
 		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {
@@ -1816,7 +1676,7 @@ private:
 		VkDescriptorBufferInfo camMatBufferInfo{};
 		camMatBufferInfo.buffer = cam.buffer;
 		camMatBufferInfo.offset = 0;
-		camMatBufferInfo.range = sizeof(camUBO);
+		camMatBufferInfo.range = sizeof(CamUBO);
 
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(4);
 		std::array<VkImageView, 4> cImageViews = { mainPassTextures.color.imageView, wboit.weightedColor.imageView, wboit.weightedAlpha.imageView, skybox.out.imageView };
@@ -1899,7 +1759,7 @@ private:
 		createDS(); //create the descriptor set
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage, Texture& t, unsigned char*& imgData) {
+	void getGLTFImageData(const tinygltf::Image& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
 		int width = gltfImage.width; // Set the texture's width, height, and channels
 		int height = gltfImage.height;
 		int channels = gltfImage.component;
@@ -1950,7 +1810,7 @@ private:
 		}
 	}
 
-	void getImageDataHDR(std::string path, Texture& t, float*& imgData) {
+	void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
 		int texWidth, texHeight, texChannels;
 		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R32G32B32A32_SFLOAT format
 		t.width = texWidth;
@@ -1962,7 +1822,7 @@ private:
 	}
 
 
-	void createStagingBuffer(Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void createStagingBuffer(dvl::Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
@@ -1975,7 +1835,7 @@ private:
 		}
 	}
 
-	void createTexturedCubemap(Texture& tex) {
+	void createTexturedCubemap(dvl::Texture& tex) {
 		getImageDataHDR(tex.path, tex, skyboxData);
 		if (skyboxData == nullptr) {
 			throw std::runtime_error("failed to load image data!");
@@ -2034,7 +1894,7 @@ private:
 		skyboxData = nullptr;
 	}
 
-	void createTexturedImage(Texture& tex, bool doMipmap, std::string type = "base") {
+	void createTexturedImage(dvl::Texture& tex, bool doMipmap, std::string type = "base") {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path, imageData);
@@ -2138,7 +1998,7 @@ private:
 
 		VkVertexInputBindingDescription instanceBindDesc{};
 		instanceBindDesc.binding = 1;
-		instanceBindDesc.stride = sizeof(modelMat);
+		instanceBindDesc.stride = sizeof(ModelMat);
 		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
 		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -2182,13 +2042,13 @@ private:
 			attrDesc[index].binding = 1;
 			attrDesc[index].location = index;
 			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
+			attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
 		}
 
 		attrDesc[9].binding = 1;
 		attrDesc[9].location = 9;
 		attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-		attrDesc[9].offset = offsetof(modelMat, render);
+		attrDesc[9].offset = offsetof(ModelMat, render);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2418,7 +2278,7 @@ private:
 
 		VkVertexInputBindingDescription instanceBindDesc{};
 		instanceBindDesc.binding = 1;
-		instanceBindDesc.stride = sizeof(modelMat);
+		instanceBindDesc.stride = sizeof(ModelMat);
 		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
 		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -2439,7 +2299,7 @@ private:
 			attrDesc[index].binding = 1;
 			attrDesc[index].location = index;
 			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
+			attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
 		}
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -2738,7 +2598,7 @@ private:
 
 		VkVertexInputBindingDescription instanceBindDesc{};
 		instanceBindDesc.binding = 1;
-		instanceBindDesc.stride = sizeof(modelMat);
+		instanceBindDesc.stride = sizeof(ModelMat);
 		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
 		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -2782,13 +2642,13 @@ private:
 			attrDesc[index].binding = 1;
 			attrDesc[index].location = index;
 			attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-			attrDesc[index].offset = offsetof(modelMat, model) + sizeof(float) * 4 * i;
+			attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
 		}
 
 		attrDesc[9].binding = 1;
 		attrDesc[9].location = 9;
 		attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-		attrDesc[9].offset = offsetof(modelMat, render);
+		attrDesc[9].offset = offsetof(ModelMat, render);
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -3174,8 +3034,8 @@ private:
 		shadowMapCommandBuffers.resize(lights.size());
 		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(shadowMapCommandBuffers.size()), shadowMapCommandBuffers.data());
 		for (size_t i = 0; i < lights.size(); i++) {
-			if (lights[i]->shadowMapData.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->shadowMapData.frameBuffer, nullptr);
-			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->shadowMapData.frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
+			if (lights[i]->frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->frameBuffer, nullptr);
+			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView, shadowProps.mapWidth, shadowProps.mapHeight);
 		}
 		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
 	}
@@ -3246,7 +3106,7 @@ private:
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<model>(*originalObjects[object]);
+		auto m = std::make_unique<dvl::Model>(*originalObjects[object]);
 
 		m->scale = scale;
 		m->position = pos;
@@ -3293,14 +3153,6 @@ private:
 		vkFreeMemory(device, indBufferMem, nullptr);
 		createModelBuffers();
 	}
-	void cleanupDS() {
-		for (size_t i = 0; i < descs.pools.size(); i++) {
-			vkDestroyDescriptorPool(device, descs.pools[i], nullptr);
-		}
-		for (size_t i = 0; i < descs.layouts.size(); i++) {
-			vkDestroyDescriptorSetLayout(device, descs.layouts[i], nullptr);
-		}
-	}
 
 	void recordShadowCommandBuffers() {
 		VkCommandBufferBeginInfo beginInfo{};
@@ -3320,7 +3172,7 @@ private:
 			VkRenderPassBeginInfo renderPassInfo{};
 			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 			renderPassInfo.renderPass = shadowMapPipeline.renderPass;
-			renderPassInfo.framebuffer = lights[i]->shadowMapData.frameBuffer;
+			renderPassInfo.framebuffer = lights[i]->frameBuffer;
 			renderPassInfo.renderArea.offset = { 0, 0 };
 			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
 			renderPassInfo.clearValueCount = 1;
@@ -3680,7 +3532,7 @@ private:
 			throw std::runtime_error("failed to create composition finished semaphore!");
 		}
 	}
-	void freeTexture(Texture& t) {
+	void freeTexture(dvl::Texture& t) {
 		vkDestroyImageView(device, t.imageView, nullptr);
 		vkDestroySampler(device, t.sampler, nullptr);
 		vkDestroyImage(device, t.image, nullptr);
@@ -3706,11 +3558,18 @@ private:
 
 		freeTexture(skybox.out);
 
-		cleanupSwapChain();
+		cleanupSC();
 		createSC();
 		createSCImageViews();
 		setupTextures();
-		cleanupDS();
+
+		for (VkDescriptorPool& pool : descs.pools) {
+			vkDestroyDescriptorPool(device, pool, nullptr);
+		}
+		for (VkDescriptorSetLayout& layout : descs.layouts) {
+			vkDestroyDescriptorSetLayout(device, layout, nullptr);
+		}
+
 		setupDescriptorSets(false);
 
 		// create the pipelines
@@ -3723,7 +3582,7 @@ private:
 		initializeMouseInput(true);
 	}
 
-	void cleanupSwapChain() {
+	void cleanupSC() {
 		for (auto framebuffer : swap.framebuffers) {
 			vkDestroyFramebuffer(device, framebuffer, nullptr);
 		}
@@ -3735,7 +3594,6 @@ private:
 		}
 		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
 	}
-
 
 	void drawFrame() { // draw frame function
 		uint32_t imageIndex;
@@ -4011,51 +3869,6 @@ private:
 		createCommandBuffers();
 		recordAllCommandBuffers();
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
-	}
-
-	void cleanup() { //FIX
-		// destroy resources in reverse order of creation
-		vkDestroySemaphore(device, renderFinishedSemaphore, nullptr);
-		vkDestroySemaphore(device, imageAvailableSemaphore, nullptr);
-		vkDestroySemaphore(device, shadowSemaphore, nullptr);
-		for (size_t i = 0; i < 3; i++) {
-			vkDestroyFence(device, inFlightFences[i], nullptr);
-		}
-		for (auto frameBuffer : swap.framebuffers) {
-			vkDestroyFramebuffer(device, frameBuffer, nullptr);
-		}
-		vkFreeCommandBuffers(device, commandPool, static_cast<uint32_t>(mainPassCommandBuffers.size()), mainPassCommandBuffers.data());
-		vkDestroyCommandPool(device, commandPool, nullptr);
-		vkDestroyShaderModule(device, vertShaderModule, nullptr);
-		vkDestroyShaderModule(device, fragShaderModule, nullptr);
-		cleanupDS();
-		vkDestroyPipeline(device, mainPassPipeline.graphicsPipeline, nullptr);
-		vkDestroyPipelineLayout(device, mainPassPipeline.layout, nullptr);
-		vkDestroyRenderPass(device, mainPassPipeline.renderPass, nullptr);
-		ImGui_ImplVulkan_Shutdown();
-		ImGui_ImplGlfw_Shutdown();
-		ImGui::DestroyContext();
-
-		// clean up vertex buffer and its memory
-		vkDestroyBuffer(device, vertBuffer, nullptr);
-		vkFreeMemory(device, vertBufferMem, nullptr);
-		vkDestroyBuffer(device, indBuffer, nullptr);
-		vkFreeMemory(device, indBufferMem, nullptr);
-		vkDestroyBuffer(device, skybox.vertBuffer, nullptr);
-		vkFreeMemory(device, skybox.vertBufferMem, nullptr);
-		vkDestroyBuffer(device, skybox.indBuffer, nullptr);
-		vkFreeMemory(device, skybox.indBufferMem, nullptr);
-
-		for (auto imageView : swap.imageViews) {
-			vkDestroyImageView(device, imageView, nullptr);
-		}
-
-		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
-		vkDestroySurfaceKHR(instance, surface, nullptr);
-		vkDestroyDevice(device, nullptr);
-		vkDestroyInstance(instance, nullptr);
-		glfwDestroyWindow(window);
-		glfwTerminate();
 	}
 };
 int main() {

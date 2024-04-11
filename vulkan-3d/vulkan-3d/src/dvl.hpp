@@ -1,6 +1,7 @@
 // Drew's Vertex Library (DVL)
 // Designed to work with Vulkan and GLTF 2.0
 
+#include <vulkan/vulkan.h>
 #pragma once
 
 class dvl {
@@ -44,7 +45,7 @@ public:
 		}
 	};
 
-	struct vertHash {
+	struct VertHash {
 		size_t operator()(const Vertex& vertex) const {
 			size_t seed = 0;
 
@@ -71,6 +72,133 @@ public:
 			seed ^= std::hash<float>()(vertex.tangent.w) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
 			return seed;
+		}
+	};
+
+	struct Texture {
+		VkSampler sampler;
+		VkImage image;
+		VkDeviceMemory memory;
+		VkImageView imageView;
+		std::string path;
+		uint32_t mipLevels;
+		VkBuffer stagingBuffer;
+		VkDeviceMemory stagingBufferMem;
+		tinygltf::Image gltfImage;
+		bool found;
+		uint16_t width;
+		uint16_t height;
+
+		Texture()
+			: sampler(VK_NULL_HANDLE),
+			image(VK_NULL_HANDLE),
+			memory(VK_NULL_HANDLE),
+			imageView(VK_NULL_HANDLE),
+			path(""),
+			mipLevels(1),
+			stagingBuffer(VK_NULL_HANDLE),
+			stagingBufferMem(VK_NULL_HANDLE),
+			gltfImage(),
+			found(false),
+			width(1024),
+			height(1024)
+		{}
+
+		bool operator==(const Texture& other) const {
+			return sampler == other.sampler
+				&& image == other.image
+				&& memory == other.memory
+				&& imageView == other.imageView
+				&& path == other.path
+				&& mipLevels == other.mipLevels
+				&& stagingBuffer == other.stagingBuffer
+				&& stagingBufferMem == other.stagingBufferMem
+				&& width == other.width
+				&& height == other.height;
+
+		}
+	};
+
+	struct TexHash {
+		size_t operator()(const Texture& tex) const {
+			size_t seed = 0;
+			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+
+			return seed;
+		}
+	};
+
+	struct Material {
+		Texture metallicRoughness;
+		Texture baseColor;
+		Texture normalMap;
+		Texture occlusionMap;
+		Texture emissiveMap;
+	};
+
+	struct Model {
+		Material material; //used to store all the textures/materials of the model
+		std::vector<dvl::Vertex> vertices;
+		std::vector<uint32_t> indices;
+		std::string pathObj; // i.e "models/cube.obj"
+
+		dml::vec3 position;  // position of the model
+		dml::vec4 rotation;  // rotation of the model in quaternions
+		dml::vec3 scale;     // scale of the model
+		dml::mat4 modelMatrix;
+
+		size_t textureCount; // number of textures in the model
+		size_t texIndex; // where in the texture array the textures of the model start
+
+		bool startObj; // wether is loaded at the start of the program or not
+		bool player; // if the object is treated as a player model or not
+
+		size_t modelHash;
+		std::string name;
+
+		// default constructor
+		Model()
+			: material(),
+			vertices(),
+			indices(),
+			pathObj(""),
+			position(dml::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
+			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
+			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
+			modelMatrix(),
+			textureCount(0),
+			texIndex(0),
+			startObj(true),
+			player(false),
+			modelHash(),
+			name("")
+		{}
+
+		// copy constructor
+		Model(const Model& other)
+			: material(other.material),
+			vertices(other.vertices),
+			indices(other.indices),
+			pathObj(other.pathObj),
+			position(other.position),
+			rotation(other.rotation),
+			scale(other.scale),
+			modelMatrix(other.modelMatrix),
+			textureCount(other.textureCount),
+			texIndex(other.texIndex),
+			startObj(other.startObj),
+			player(other.player),
+			modelHash(other.modelHash),
+			name(other.name) {
 		}
 	};
 
