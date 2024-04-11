@@ -445,4 +445,103 @@ public:
 		}
 		return commandBuffers;
 	}
+
+	// ------------------ DESCRIPTOR SETS ------------------ //
+	static VkDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags) {
+		VkDescriptorSetLayoutBinding binding{};
+		binding.binding = bindingIndex;
+		binding.descriptorType = type;
+		binding.descriptorCount = descriptorCount;
+		binding.stageFlags = stageFlags;
+
+		VkDescriptorBindingFlagsEXT bindingFlags = 0;
+		//if the descriptor count is variable, set the flag
+		if (descriptorCount > 1) {
+			bindingFlags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+		}
+
+		VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo{};
+		bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
+		bindingFlagsInfo.bindingCount = 1;
+		bindingFlagsInfo.pBindingFlags = &bindingFlags; // if 0, no flags are set
+
+		VkDescriptorSetLayoutCreateInfo layoutInfo{};
+		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		layoutInfo.pNext = &bindingFlagsInfo; // bindingFlagsInfo is added to the pNext chain
+		layoutInfo.bindingCount = 1;
+		layoutInfo.pBindings = &binding;
+
+		VkDescriptorSetLayout descriptorSetLayout;
+		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create descriptor set layout!");
+		}
+
+		return descriptorSetLayout;
+	}
+
+	static VkDescriptorPool createDSPool(const VkDescriptorType& type, const uint32_t descriptorCount) {
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = type;
+		poolSize.descriptorCount = descriptorCount;
+
+		VkDescriptorPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+		poolInfo.poolSizeCount = 1;
+		poolInfo.pPoolSizes = &poolSize;
+		poolInfo.maxSets = 1;
+
+		VkDescriptorPool descriptorPool;
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create descriptor pool!");
+		}
+
+		return descriptorPool;
+	}
+
+	template<typename InfoType>
+	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const std::vector<InfoType>& infos) {
+		VkWriteDescriptorSet d{};
+		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		d.dstSet = set;
+		d.dstBinding = binding;
+		d.dstArrayElement = arrayElem;
+		d.descriptorType = type;
+		d.descriptorCount = static_cast<uint32_t>(infos.size());
+
+		if constexpr (std::is_same_v<InfoType, VkDescriptorImageInfo>) { // if the info type is an image
+			d.pImageInfo = infos.data();
+		}
+		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
+			d.pBufferInfo = infos.data();
+		}
+		else {
+			static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		}
+
+		return d;
+	}
+
+	template<typename InfoType>
+	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
+		VkWriteDescriptorSet d{};
+		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+		d.dstSet = set;
+		d.dstBinding = binding;
+		d.dstArrayElement = arrayElem;
+		d.descriptorType = type;
+		d.descriptorCount = 1;
+
+		if constexpr (std::is_same_v<InfoType, VkDescriptorImageInfo>) { // if the info type is an image
+			d.pImageInfo = &info;
+		}
+		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
+			d.pBufferInfo = &info;
+		}
+		else {
+			static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		}
+
+		return d;
+	}
 };
