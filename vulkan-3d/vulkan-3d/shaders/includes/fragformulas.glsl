@@ -101,17 +101,6 @@ void getTextures() {
 	}
 }
 
-float calcIntensity(float innerConeRads, float outerConeRads, float attenuation, float theta) {
-	float intensity;
-	if (theta > cos(innerConeRads)) {
-		intensity = 1.0;
-	}
-	else {
-		intensity = (theta - cos(outerConeRads)) / (cos(innerConeRads) - cos(outerConeRads));
-	}
-	return clamp(intensity * attenuation, 0.0, 1.0);
-}
-
 vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFactor) {
 	vec4 color = albedo * fragColor;
 	if (discardTranslucent && color.a < 0.98) discard;
@@ -135,33 +124,35 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFa
 		float quadAttenuation = lights[i].quadraticAttenuation;
 
 		// convert light struct to vec3s to use them in calculations
-		vec3 lightPos = vec3(lights[i].pos.x, lights[i].pos.y, lights[i].pos.z); // in world space
-		vec3 targetVec = vec3(lights[i].targetVec.x, lights[i].targetVec.y, lights[i].targetVec.z);
+		vec3 lightPos = lights[i].pos.xyz;
+		vec3 targetVec = lights[i].targetVec.xyz;
+		vec3 lightColor = lights[i].color.xyz;
+
 		vec3 spotDirection = normalize(lightPos - targetVec);
 		vec3 fragToLightDir = normalize(lightPos - inFragPos);
 		float theta = dot(spotDirection, fragToLightDir);
-		vec3 lightColor = vec3(lights[i].color.x, lights[i].color.y, lights[i].color.z);
 
 		// spotlight cutoff
-		if (theta <= cos(outerConeRads)) continue;
 		if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
+			float blend = smoothstep(cos(outerConeRads), cos(innerConeRads), theta);
+
 			// attenuation calculation
 			float lightDistance = distance(lightPos, inFragPos);
 			float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
-			if (attenuation < 0.005) continue;
+			if (attenuation < 0.01) continue;
 
 			// get the shadow factor
 			vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
 			float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
-			if (shadowFactor < 0.03) continue;
+			if (shadowFactor < 0.01) continue;
 
 			// get the intensity
-			float intensity = calcIntensity(innerConeRads, outerConeRads, attenuation, theta);
-			if (intensity < 0.03) continue;
+			float intensity = lights[i].intensity * blend * attenuation;
+			if (intensity < 0.01) continue;
 
 			// cook-torrance specular lighting
 			vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
-			accumulated += (lightColor * brdf * intensity) * shadowFactor;
+			accumulated += (lightColor * brdf * intensity * blend) * shadowFactor;
 		}
 	}
 

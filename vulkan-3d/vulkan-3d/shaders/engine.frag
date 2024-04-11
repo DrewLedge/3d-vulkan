@@ -7,21 +7,15 @@ layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
 layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
 
-struct formsVec3 { // custom structure to hold my vec3s
-    float x;
-    float y;
-    float z;
-};
-
 struct lightMatrix {
     mat4 viewMatrix;
     mat4 projectionMatrix;
 };
 
 struct lightData {
-    formsVec3 pos;
-    formsVec3 color;
-    formsVec3 targetVec;
+    vec4 pos;
+    vec4 color;
+    vec4 targetVec;
     float intensity;
 	float innerConeAngle; // in degrees
 	float outerConeAngle; // in degrees
