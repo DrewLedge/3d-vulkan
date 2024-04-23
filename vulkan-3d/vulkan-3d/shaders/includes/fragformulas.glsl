@@ -1,9 +1,5 @@
 #define PI 3.141592653589793238
 
-float toRads(float degree) {
-	return degree * 0.01745329251;
-}
-
 // get the PCF shadow factor (used for softer shadows)
 float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {
 	int halfSize = kernelSize / 2;
@@ -73,11 +69,11 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float rou
 }
 
 void getTextures() {
-	bool albedoExists = (bitfield & 1) != 0;
-	bool metallicRoughnessExists = (bitfield & 2) != 0;
-	bool normalExists = (bitfield & 4) != 0;
-	bool emissiveExists = (bitfield & 8) != 0;
-	bool occlusionExists = (bitfield & 16) != 0;
+	bool albedoExists = (inBitfield & 1) != 0;
+	bool metallicRoughnessExists = (inBitfield & 2) != 0;
+	bool normalExists = (inBitfield & 4) != 0;
+	bool emissiveExists = (inBitfield & 8) != 0;
+	bool occlusionExists = (inBitfield & 16) != 0;
 
 	uint nextTexture = inTexIndex;
 	albedo = texture(texSamplers[nextTexture], inTexCoord);
@@ -89,7 +85,7 @@ void getTextures() {
 	}
 	if (normalExists) {
 		normal = (texture(texSamplers[nextTexture], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
-		normal = normalize(TBN * normal);
+		normal = normalize(inTBN * normal);
 		nextTexture += 1;
 	}
 	if (emissiveExists) {
@@ -102,7 +98,7 @@ void getTextures() {
 }
 
 vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFactor) {
-	vec4 color = albedo * fragColor;
+	vec4 color = albedo * inFragColor;
 	if (discardTranslucent && color.a < 0.98) discard;
 	if (discardOpaque && color.a >= 0.98) discard;
 
@@ -117,8 +113,8 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFa
 		mat4 lightView = lightMatricies[i].viewMatrix;
 		mat4 lightProj = lightMatricies[i].projectionMatrix;
 
-		float innerConeRads = toRads(lights[i].innerConeAngle);
-		float outerConeRads = toRads(lights[i].outerConeAngle);
+		float innerConeRads = radians(lights[i].innerConeAngle);
+		float outerConeRads = radians(lights[i].outerConeAngle);
 		float constAttenuation = lights[i].constantAttenuation;
 		float linAttenuation = lights[i].linearAttenuation;
 		float quadAttenuation = lights[i].quadraticAttenuation;

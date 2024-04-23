@@ -5,17 +5,23 @@
 
 layout (location = 0) in vec3 inPosition;
 
-// individual rows of the instanced model matrix
-layout(location = 1) in vec4 model1;
-layout(location = 2) in vec4 model2;
-layout(location = 3) in vec4 model3;
-layout(location = 4) in vec4 model4;
+layout(location = 0) out vec3 outLightPos;
+layout(location = 1) out vec3 outLightTarget;
+layout(location = 2) out vec3 outFragPos;
+layout(location = 3) out float outConeRadsCos;
 
-struct lightMatrix {
+
+// individual rows of the instanced model matrix
+layout(location = 1) in vec4 inModel1;
+layout(location = 2) in vec4 inModel2;
+layout(location = 3) in vec4 inModel3;
+layout(location = 4) in vec4 inModel4;
+
+struct LightMatrix {
     mat4 viewMatrix;
     mat4 projectionMatrix;
 };
-struct lightData {
+struct LightData {
     vec4 pos;
     vec4 color;
     vec4 targetVec;
@@ -28,8 +34,8 @@ struct lightData {
 };
 
 layout (set=0, binding = 1) buffer LightBuffer {
-	lightMatrix lightMatricies[20]; // are used in the shader
-    lightData lights[20]; // not used in this shader but needed because of the descriptor set and binding consistancy
+	LightMatrix lightMatricies[20];
+    LightData lights[20];
 };
 
 layout(push_constant) uniform PC {
@@ -38,12 +44,19 @@ layout(push_constant) uniform PC {
 } pc;
 
 void main() {
+    int index = pc.lightIndex;
+
     // fetch matrices
-    mat4 lightView = lightMatricies[pc.lightIndex].viewMatrix;
-    mat4 lightProj = lightMatricies[pc.lightIndex].projectionMatrix;
-    mat4 model = mat4(model1, model2, model3, model4); // model matrix of the model
+    mat4 lightView = lightMatricies[index].viewMatrix;
+    mat4 lightProj = lightMatricies[index].projectionMatrix;
+    mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
 
     gl_Position = getPos(lightProj, lightView, model, inPosition); // transform position
+
+    outLightPos = lights[index].pos.xyz;
+    outLightTarget = lights[index].targetVec.xyz;
+    outFragPos = vec3(model * vec4(inPosition, 1.0));
+    outConeRadsCos = cos(radians(lights[index].outerConeAngle));
 }
 
 
