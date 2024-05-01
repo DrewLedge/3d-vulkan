@@ -17,11 +17,10 @@ layout(location = 2) in vec4 inModel2;
 layout(location = 3) in vec4 inModel3;
 layout(location = 4) in vec4 inModel4;
 
-struct LightMatrix {
-    mat4 viewMatrix;
-    mat4 projectionMatrix;
-};
 struct LightData {
+    mat4 view;
+    mat4 proj;
+
     vec4 pos;
     vec4 color;
     vec4 targetVec;
@@ -34,8 +33,7 @@ struct LightData {
 };
 
 layout (set=0, binding = 1) buffer LightBuffer {
-	LightMatrix lightMatricies[20];
-    LightData lights[20];
+    LightData lights[];
 };
 
 layout(push_constant) uniform PC {
@@ -47,11 +45,9 @@ void main() {
     int index = pc.lightIndex;
 
     // fetch matrices
-    mat4 lightView = lightMatricies[index].viewMatrix;
-    mat4 lightProj = lightMatricies[index].projectionMatrix;
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
 
-    gl_Position = getPos(lightProj, lightView, model, inPosition); // transform position
+    gl_Position = getPos(lights[index].proj, lights[index].view, model, inPosition); // transform position
 
     outLightPos = lights[index].pos.xyz;
     outLightTarget = lights[index].targetVec.xyz;

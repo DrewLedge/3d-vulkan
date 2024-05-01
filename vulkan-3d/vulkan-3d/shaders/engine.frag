@@ -17,12 +17,10 @@ layout(location = 9) flat in uint inBitfield;
 
 layout(location = 0) out vec4 outColor; 
 
-struct LightMatrix {
-    mat4 viewMatrix;
-    mat4 projectionMatrix;
-};
-
 struct LightData {
+    mat4 view;
+    mat4 proj;
+
     vec4 pos;
     vec4 color;
     vec4 targetVec;
@@ -35,8 +33,7 @@ struct LightData {
 };
 
 layout (set=1, binding = 1) buffer LightBuffer {
-	LightMatrix lightMatricies[20];
-    LightData lights[20];
+    LightData lights[];
 };
 
 vec4 albedo = vec4(0.0f);

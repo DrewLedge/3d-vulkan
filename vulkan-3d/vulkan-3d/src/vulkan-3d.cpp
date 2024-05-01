@@ -39,7 +39,6 @@
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
-#define MAX_TEXTURES 4000 // temp max num of textures and models (used for passing data to shaders)
 #define MAX_MODELS 1200
 
 #define SCREEN_WIDTH 3200
@@ -178,7 +177,10 @@ private:
 		dml::mat4 proj;
 	};
 
-	struct LightData {
+	struct LightDataObject {
+		dml::mat4 view;
+		dml::mat4 proj;
+
 		dml::vec3 pos;
 		dml::vec3 col;
 		dml::vec3 target;
@@ -189,16 +191,15 @@ private:
 		float linearAttenuation;
 		float quadraticAttenuation;
 
-		LightData() {
-			memset(this, 0, sizeof(LightData)); //memset everything to 0
+		LightDataObject() {
+			memset(this, 0, sizeof(LightDataObject)); //memset everything to 0
 		}
 	};
 
 	struct LightDataSSBO {
-		LightMatrix lightsMatricies[20]; // max 20 lights
-		LightData lightCords[20]; // max 20 lights
+		std::vector<LightDataObject> lightCords;
+		size_t memSize;
 	};
-
 
 	struct ModelMat {
 		dml::mat4 model;
@@ -1462,7 +1463,11 @@ private:
 	void setupBuffers() {
 		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
 		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData, sizeof(LightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+		lightData.lightCords.resize(lights.size());
+		lightData.memSize = lights.size() * sizeof(LightDataObject);
+
+		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
 		// skybox buffer data
 		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -1504,13 +1509,12 @@ private:
 		for (size_t i = 0; i < lights.size(); i++) {
 			Light& l = *lights[i];
 			calcShadowMats(l);
-			memcpy(&lightData.lightsMatricies[i].proj, &lights[i]->proj, sizeof(lights[i]->proj));
-			memcpy(&lightData.lightsMatricies[i].view, &lights[i]->view, sizeof(lights[i]->view));
 			copyLightToLightCords(l, lightData.lightCords[i]);
 		}
+
 		void* lData;
-		vkMapMemory(device, lightBufferMem, 0, sizeof(lightData), 0, &lData);
-		memcpy(lData, &lightData, sizeof(lightData));
+		vkMapMemory(device, lightBufferMem, 0, lightData.memSize, 0, &lData);
+		memcpy(lData, lightData.lightCords.data(), lightData.memSize);
 		vkUnmapMemory(device, lightBufferMem);
 
 		// calc matricies for camera
@@ -1546,7 +1550,10 @@ private:
 		vkUnmapMemory(device, instanceBufferMem);
 	}
 
-	void copyLightToLightCords(const Light& src, LightData& dest) {
+	void copyLightToLightCords(const Light& src, LightDataObject& dest) {
+		memcpy(&dest.view, &src.view, sizeof(dml::mat4));
+		memcpy(&dest.proj, &src.proj, sizeof(dml::mat4));
+
 		memcpy(&dest.pos, &src.pos, sizeof(dml::vec3));
 		memcpy(&dest.col, &src.col, sizeof(dml::vec3));
 		memcpy(&dest.target, &src.target, sizeof(dml::vec3));
@@ -1659,7 +1666,7 @@ private:
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
 		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = sizeof(LightDataSSBO);
+		lightBufferInfo.range = lightData.memSize;
 
 		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
 		for (size_t i = 0; i < lights.size(); i++) {

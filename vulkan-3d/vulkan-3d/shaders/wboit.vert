@@ -55,7 +55,7 @@ void main() {
 
     outFragColor = inColor;
     outTexCoord = inTexCoord;
-    if (texIndex <= MAX_TEXTURES) outTexIndex = texIndex; // pass the texture index to the fragment shader
+    outTexIndex = texIndex; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDirection = viewDir;
 

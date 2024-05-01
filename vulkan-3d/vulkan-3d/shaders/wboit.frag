@@ -9,12 +9,10 @@ layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
 
 layout(set = 4, binding = 6) uniform sampler2D depthSampler;
 
-struct LightMatrix {
-    mat4 viewMatrix;
-    mat4 projectionMatrix;
-};
-
 struct LightData {
+    mat4 view;
+    mat4 proj;
+
     vec4 pos;
     vec4 color;
     vec4 targetVec;
@@ -27,8 +25,7 @@ struct LightData {
 };
 
 layout (set=1, binding = 1) buffer LightBuffer {
-	LightMatrix lightMatricies[20];
-    LightData lights[20];
+    LightData lights[];
 };
 
 layout(location = 0) in vec4 inFragColor;

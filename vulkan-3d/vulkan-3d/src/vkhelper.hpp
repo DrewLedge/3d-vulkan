@@ -24,57 +24,6 @@ public:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	template<typename ObjType>
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
-		VkBufferCreateInfo bufferCreateInfo{};
-		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-		bufferCreateInfo.size = size;
-		bufferCreateInfo.usage = usage;
-		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-		// create the buffer
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create buffer!");
-		}
-
-		// get the memory requirements for the buffer
-		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
-
-		// allocate mem for the buffer
-		VkMemoryAllocateInfo allocateInfo{};
-		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to allocate memory for the buffer!");
-		}
-
-		// bind the memory to the buffer
-		if (vkBindBufferMemory(device, buffer, bufferMem, 0) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to bind memory to buffer!");
-		}
-
-		// once memory is bound, map and fill it
-		void* data;
-		if (vkMapMemory(device, bufferMem, 0, bufferCreateInfo.size, 0, &data) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to map memory for buffer!");
-		}
-
-		// check if the object is trivally copyable
-		if constexpr (std::is_trivially_copyable_v<ObjType>) {
-			// create a copy of the object and memcpy from the copy to make it so it operates in a seperate instance
-			ObjType copy = object;
-			memcpy(data, copy, bufferCreateInfo.size);
-		}
-		// if the object isnt trivially copyable
-		else {
-			memcpy(data, &object, bufferCreateInfo.size);
-		}
-		vkUnmapMemory(device, bufferMem);
-	}
-
 	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -105,6 +54,27 @@ public:
 		if (vkBindBufferMemory(device, buffer, bufferMem, 0) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to bind memory to buffer!");
 		}
+	}
+
+	template<typename ObjType>
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
+		createBuffer(buffer, bufferMem, size, usage);
+
+		// once memory is bound, map and fill it
+		void* data;
+		if (vkMapMemory(device, bufferMem, 0, size, 0, &data) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to map memory for buffer!");
+		}
+
+		// check if the object is trivally copyable
+		if constexpr (std::is_trivially_copyable_v<ObjType>) {
+			memcpy(data, object, size);
+		}
+		// if the object isnt trivially copyable
+		else {
+			memcpy(data, &object, size);
+		}
+		vkUnmapMemory(device, bufferMem);
 	}
 
 	// ------------------ IMAGES ------------------ //

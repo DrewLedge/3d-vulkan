@@ -110,9 +110,6 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFa
 	for (int i = 0; i < lights.length(); i++) { // spotlight
 		if (lights[i].intensity == 0.0) continue;
 
-		mat4 lightView = lightMatricies[i].viewMatrix;
-		mat4 lightProj = lightMatricies[i].projectionMatrix;
-
 		float innerConeRads = radians(lights[i].innerConeAngle);
 		float outerConeRads = radians(lights[i].outerConeAngle);
 		float constAttenuation = lights[i].constantAttenuation;
@@ -138,7 +135,7 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque, float occlusionFa
 			if (attenuation < 0.01) continue;
 
 			// get the shadow factor
-			vec4 fragPosLightSpace = lightProj * lightView * vec4(inFragPos, 1.0);
+			vec4 fragPosLightSpace = lights[i].proj * lights[i].view * vec4(inFragPos, 1.0);
 			float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
 			if (shadowFactor < 0.01) continue;
 

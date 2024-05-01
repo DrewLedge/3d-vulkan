@@ -2,8 +2,6 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define MAX_TEXTURES 4000 // this number must be the same as in the main code!!!
-
 #include "includes/vertformulas.glsl"
 
 layout(location = 0) in vec3 inPosition; 
@@ -53,7 +51,7 @@ void main() {
 
     outFragColor = inColor;
     outTexCoord = inTexCoord;
-    if (texIndex <= MAX_TEXTURES) outTexIndex = texIndex; // pass the texture index to the fragment shader
+    outTexIndex = texIndex; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDirection = viewDir;
 }
