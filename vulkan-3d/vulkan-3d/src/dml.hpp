@@ -3,9 +3,18 @@
 #pragma once
 #include <iostream>
 
-const float PI = acos(-1.0f);
+#define PI 3.14159265359
+#define DEG_TO_RAD 0.01745329251
+#define RAD_TO_DEG 57.2957795131
+
 class dml {
 public:
+	struct vec3;
+	struct vec2;
+	struct vec4;
+	struct mat4;
+
+
 	struct alignas(16) vec3 {
 		float x, y, z;
 		vec3() : x(0.0f), y(0.0f), z(0.0f) {}
@@ -86,7 +95,7 @@ public:
 			return *this;
 		}
 
-		bool operator==(const dml::vec3& other) const {
+		bool operator==(const vec3& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
 				std::abs(y - other.y) < epsilon &&
@@ -116,7 +125,7 @@ public:
 			os << "(" << v.x << ", " << v.y << ")";
 			return os;
 		}
-		bool operator==(const dml::vec2& other) const {
+		bool operator==(const vec2& other) const {
 			const float epsilon = 0.00001f;
 			return std::abs(x - other.x) < epsilon &&
 				std::abs(y - other.y) < epsilon;
@@ -136,9 +145,6 @@ public:
 
 		vec2 operator*(const vec2& other) const {
 			return vec2(x * other.x, y * other.y);
-		}
-		vec2 crossProd(const vec2& other) const {
-			return vec2(x * other.y, y * other.x);
 		}
 		float length() const {
 			return std::sqrt(x * x + y * y);
@@ -213,15 +219,12 @@ public:
 			return *this;
 		}
 		vec4 operator*(const vec4& other) const {
-			float x1 = x, y1 = y, z1 = z, w1 = w;
-			float x2 = other.x, y2 = other.y, z2 = other.z, w2 = other.w;
-
-			return vec4(
-				w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2, // x
-				w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2, // y
-				w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2, // z
-				w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2 // w
-			);
+			vec4 result;
+			result.x = w * other.x + x * other.w + y * other.z - z * other.y;
+			result.y = w * other.y - x * other.z + y * other.w + z * other.x;
+			result.z = w * other.z + x * other.y - y * other.x + z * other.w;
+			result.w = w * other.w - x * other.x - y * other.y - z * other.z;
+			return result;
 		}
 
 		float& operator[](size_t index) {
@@ -391,8 +394,8 @@ public:
 	// ------------------ VECTOR3 FORMULAS ------------------ //
 	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
 		// convert pitch and yaw from degrees to radians
-		float pitch = rotation.x * (PI / 180.0f); // x rot
-		float yaw = rotation.y * (PI / 180.0f); // y rot
+		float pitch = radians(rotation.x); // x rot
+		float yaw = radians(rotation.y); // y rot
 
 		vec3 direction;
 		direction.x = cos(yaw) * cos(pitch);
@@ -423,21 +426,15 @@ public:
 		return cross(right, forward);
 	}
 
-	static vec3 toRads(const vec3& v) {
-		return vec3(
-			v.x * PI / 180.0f,
-			v.y * PI / 180.0f,
-			v.z * PI / 180.0f
-		);
+	static vec3 radians(const vec3& v) {
+		return v * DEG_TO_RAD;
 	}
-
-	static float toDeg(const float radian) {
-		return radian * (180.0f / PI);
+	static float radians(const float degree) {
+		return degree * DEG_TO_RAD;
 	}
-	static float toRad(const float degree) {
-		return degree * (PI / 180.0f);
+	static float degrees(const float radian) {
+		return radian * RAD_TO_DEG;
 	}
-
 	static vec3 cross(const vec3& a, const vec3& b) {
 		return vec3(
 			a.y * b.z - a.z * b.y,
@@ -463,7 +460,52 @@ public:
 		return vec3(v.x / length, v.y / length, v.z / length);
 	}
 
+	static vec3 quatToDir(const vec4& quat) {
+		mat4 o = rotateQ(quat).transpose();
+		return o * vec3(0.0f, 0.0f, -1.0f);
+	}
+
 	// ------------------ VECTOR4 FORMULAS ------------------ //
+	static vec4 quatCast(const mat4& mat) {
+		float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
+		vec4 quaternion;
+
+		if (trace > 0.0f) { // if trace is positive
+			float s = sqrt(trace + 1.0f); // compute scale factor
+			quaternion.w = s * 0.5f; // quaternion scale part
+			s = 0.5f / s;
+
+			// get the quaternion vector parts
+			quaternion.x = (mat.m[2][1] - mat.m[1][2]) * s;
+			quaternion.y = (mat.m[0][2] - mat.m[2][0]) * s;
+			quaternion.z = (mat.m[1][0] - mat.m[0][1]) * s;
+		}
+		else { // if trace is negative
+			int i = 0;
+
+			// find the greatest diagonal element to ensure better stability when computing square root
+			if (mat.m[1][1] > mat.m[0][0]) i = 1;
+			if (mat.m[2][2] > mat.m[i][i]) i = 2;
+			int j = (i + 1) % 3;
+			int k = (i + 2) % 3;
+
+			float s = sqrt(mat.m[i][i] - mat.m[j][j] - mat.m[k][k] + 1.0f);
+			quaternion[i] = s * 0.5f; // quaternion scale part
+			s = 0.5f / s;
+
+			// get the quaternion vector parts
+			quaternion.w = (mat.m[k][j] - mat.m[j][k]) * s;
+			quaternion[j] = (mat.m[j][i] + mat.m[i][j]) * s;
+			quaternion[k] = (mat.m[k][i] + mat.m[i][k]) * s;
+		}
+		// normalize the quaternion
+		float length = sqrt(quaternion.w * quaternion.w + quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z);
+		quaternion /= length;
+
+		// return the calculated quaternion
+		return quaternion;
+	}
+
 	static vec4 targetToQ(const vec3& position, const vec3& target) {
 		vec3 up = { 0.0f, 1.0f, 0.0f };
 		mat4 l = lookAt(target, position, up);
@@ -512,46 +554,6 @@ public:
 		return result;
 	}
 
-	static vec4 quatCast(const mat4& mat) {
-		float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
-		vec4 quaternion;
-
-		if (trace > 0.0f) { // if trace is positive
-			float s = sqrt(trace + 1.0f); // compute scale factor
-			quaternion.w = s * 0.5f; // quaternion scale part
-			s = 0.5f / s;
-
-			// get the quaternion vector parts
-			quaternion.x = (mat.m[2][1] - mat.m[1][2]) * s;
-			quaternion.y = (mat.m[0][2] - mat.m[2][0]) * s;
-			quaternion.z = (mat.m[1][0] - mat.m[0][1]) * s;
-		}
-		else { // if trace is negative
-			int i = 0;
-
-			// find the greatest diagonal element to ensure better stability when computing square root
-			if (mat.m[1][1] > mat.m[0][0]) i = 1;
-			if (mat.m[2][2] > mat.m[i][i]) i = 2;
-			int j = (i + 1) % 3;
-			int k = (i + 2) % 3;
-
-			float s = sqrt(mat.m[i][i] - mat.m[j][j] - mat.m[k][k] + 1.0f);
-			quaternion[i] = s * 0.5f; // quaternion scale part
-			s = 0.5f / s;
-
-			// get the quaternion vector parts
-			quaternion.w = (mat.m[k][j] - mat.m[j][k]) * s;
-			quaternion[j] = (mat.m[j][i] + mat.m[i][j]) * s;
-			quaternion[k] = (mat.m[k][i] + mat.m[i][k]) * s;
-		}
-		// normalize the quaternion
-		float length = sqrt(quaternion.w * quaternion.w + quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z);
-		quaternion /= length;
-
-		// return the calculated quaternion
-		return quaternion;
-	}
-
 	static mat4 translate(const vec3 t) {
 		mat4 result;
 		result.m[3][0] = t.x;
@@ -569,9 +571,9 @@ public:
 	}
 	static mat4 rotate(const vec3 s) {
 		mat4 result;
-		float radX = s.x * (PI / 180.0f); // convert to radians
-		float radY = s.y * (PI / 180.0f);
-		float radZ = s.z * (PI / 180.0f);
+		float radX = radians(s.x);
+		float radY = radians(s.y);
+		float radZ = radians(s.z);
 
 		mat4 rotX;
 		rotX.m[1][1] = cosf(radX);
@@ -596,7 +598,6 @@ public:
 	}
 
 	static mat4 rotateQ(const vec4 q) { // quaternian rotation
-		// help from: https://en.wikipedia.org/wiki/Quaternions_and_spatial_rotation
 		mat4 result;
 
 		float w = q.w;
@@ -629,7 +630,7 @@ public:
 
 	static mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
 		mat4 result(0);
-		float fovRad = fov * (PI / 180.0f);
+		float fovRad = radians(fov);
 		float tanHalf = tan(fovRad * 0.5f);
 
 		// column major
@@ -643,7 +644,7 @@ public:
 		return result;
 	}
 	static mat4 spotPerspective(float verticalFov, float aspectRatio, float n, float f) {
-		float fovRad = verticalFov * 2.0f * PI / 360.0f; // convert to radians
+		float fovRad = radians(verticalFov);
 		float focalLength = 1.0f / tan(fovRad / 2.0f);
 		float x = focalLength / aspectRatio;
 		float y = -focalLength;
@@ -727,18 +728,13 @@ public:
 		return rotation * translation;
 	}
 
-
-
 	static vec3 getCamWorldPos(const mat4& viewMat) {
 		mat4 invView = inverseMatrix(viewMat);
 		vec3 cameraWorldPosition(invView.m[0][3], invView.m[1][3], invView.m[2][3]);
 		return cameraWorldPosition;
 	}
 
-	static mat4 lookAt(const vec3& eye, const vec3& target, vec3& inputUpVector) {
-		vec3 f = normalize((target - eye)); // forward vector
-		vec3 r = normalize(cross(f, inputUpVector)); // right vector
-		vec3 u = normalize(cross(r, f)); // up vector
+	static mat4 lookAt(const vec3& eye, const vec3& f, const vec3& r, const vec3& u) {
 		mat4 result;
 
 		result.m[0][0] = r.x;
@@ -759,6 +755,13 @@ public:
 
 		result.m[3][3] = 1.0f;
 		return result;
+	}
+
+	static mat4 lookAt(const vec3& eye, const vec3& target, vec3& upVec) {
+		vec3 f = normalize((target - eye)); // forward vector
+		vec3 r = normalize(cross(f, upVec)); // right vector
+		vec3 u = normalize(cross(r, f)); // up vector
+		return lookAt(eye, f, r, u);
 	}
 
 	static mat4 gltfToMat4(const std::vector<double>& vec) {

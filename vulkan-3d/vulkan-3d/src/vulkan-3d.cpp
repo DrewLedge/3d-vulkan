@@ -89,22 +89,14 @@ struct CamData {
 		farP(1000.0f)
 	{}
 
-	dml::mat4 getOrientation() const {
-		const float dr = PI / 180.0f;
-		dml::vec4 yRot = dml::angleAxis(upAngle * dr, dml::vec3(1, 0, 0));
-		dml::vec4 xRot = dml::angleAxis(rightAngle * dr, dml::vec3(0, 1, 0));
-		dml::vec4 q = yRot * xRot;
-
-		return dml::rotateQ(q).transpose(); // convert the quaternion to a rotation matrix
-	}
-
-	dml::vec3 getLookPoint() const {
-		return camPos + getOrientation() * dml::vec3(0, 0, -1);
-	}
-
 	dml::mat4 getViewMatrix() {
-		const float dr = PI / 180.0f;
-		return dml::viewMatrix(camPos, upAngle * dr, rightAngle * dr);
+		return dml::viewMatrix(camPos, dml::radians(upAngle), dml::radians(rightAngle));
+	}
+
+	void updateQuaternion() {
+		dml::vec4 yRot = dml::angleAxis(dml::radians(upAngle), dml::vec3(1, 0, 0));
+		dml::vec4 xRot = dml::angleAxis(dml::radians(rightAngle), dml::vec3(0, 1, 0));
+		quat = yRot * xRot;
 	}
 };
 
@@ -464,7 +456,7 @@ private:
 		loadModel(scale, pos, rotation, MODEL_DIR + path);
 	}
 
-	void createLight(dml::vec3 pos, dml::vec3 color, float intensity, dml::vec3 t) {
+	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 0.6f) {
 		Light l;
 		l.col = color;
 		l.pos = pos;
@@ -475,7 +467,7 @@ private:
 		l.quadraticAttenuation = 0.032f;
 		l.innerConeAngle = 6.6f;
 		l.outerConeAngle = 10.0f;
-		lights.push_back(std::make_unique<Light>(l));
+		return l;
 	}
 
 	void setPlayer(uint16_t i) {
@@ -497,9 +489,8 @@ private:
 		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
 		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
-		//createObject("models/chess.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createLight({ -2.0f, 0.0f, -4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 1.1f, 0.0f });
-		createLight({ -2.0f, 0.0f, 4.0f }, { 1.0f, 1.0f, 1.0f }, 1.0f, { 0.0f, 0.7f, 0.0f });
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
 
 		for (auto& obj : objects) {
 			originalObjects.push_back(std::make_unique<dvl::Model>(*obj));
@@ -1460,14 +1451,18 @@ private:
 		return shaderModule;
 	}
 
-	void setupBuffers() {
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
-
+	void createLightBuffer() {
 		lightData.lightCords.resize(lights.size());
 		lightData.memSize = lights.size() * sizeof(LightDataObject);
 
 		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	}
+
+	void setupBuffers() {
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+
+		createLightBuffer();
 
 		// skybox buffer data
 		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
@@ -3052,7 +3047,6 @@ private:
 		createSCCommandBuffers(mainPassCommandBuffers);
 		createSCCommandBuffers(wboitCommandBuffers);
 		createSCCommandBuffers(compCommandBuffers);
-
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
@@ -3143,17 +3137,46 @@ private:
 		return uniqueModels.size();
 	}
 
-	void realtimeLoad(std::string p) {
+	void summonModel() {
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 2, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
-		recreateBuffers();
-
+		recreateModelBuffers();
 	}
-	void recreateBuffers() {
+
+	void cloneLight(dml::vec3 pos, dml::vec4 quat) {
+		dml::vec3 target = pos + (dml::quatToDir(quat) * -1);
+		Light l = createLight(pos, target);
+
+		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(l.shadowMapData, "depth");
+		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, "depth");
+
+		lights.push_back(std::make_unique<Light>(l));
+	}
+	void summonLight() {
+		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+
+		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
+
+		cloneLight(pos, cam.quat);
+
+		recreateLightBuffer();
+		setupDescriptorSets(true);
+		setupPipelines(true);
+	}
+
+	void recreateLightBuffer() {
+		vkDestroyBuffer(device, lightBuffer, nullptr);
+		vkFreeMemory(device, lightBufferMem, nullptr);
+		createLightBuffer();
+		createShadowCommandBuffers();
+	}
+
+	void recreateModelBuffers() {
 		vkDestroyBuffer(device, vertBuffer, nullptr);
 		vkFreeMemory(device, vertBufferMem, nullptr);
 		vkDestroyBuffer(device, indBuffer, nullptr);
@@ -3791,7 +3814,8 @@ private:
 		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
 		cam.rightAngle = fmod(cam.rightAngle + 360.0f, 360.0f);
 
-		dml::vec3 forward = cam.getLookPoint() - cam.camPos;
+		cam.updateQuaternion();
+		dml::vec3 forward = dml::quatToDir(cam.quat);
 		dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
 
 		// camera movement
@@ -3818,7 +3842,12 @@ private:
 
 		// realtime object loading
 		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-			realtimeLoad("models/gear2/Gear2.obj");
+			summonModel();
+		}
+
+		// realtime light loading
+		if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+			summonLight();
 		}
 
 		if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
@@ -3829,7 +3858,7 @@ private:
 
 			double startS = ((double)vertCount / fps) / 1000;
 			double memEfficiency = vertCount / (1024.0 * 1024.0); // convert to mb
-			double finalS = (startS) / memEfficiency;
+			double finalS = (startS) / memEfficiency / lights.size();
 
 			utils::sep();
 			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
@@ -3844,6 +3873,7 @@ private:
 			initializeMouseInput(cam.locked);
 		}
 		keyPO.escPressedLastFrame = isEsc;
+
 	}
 
 	void initVulkan() { //initializes Vulkan functions

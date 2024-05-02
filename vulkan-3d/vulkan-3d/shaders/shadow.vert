@@ -5,12 +5,6 @@
 
 layout (location = 0) in vec3 inPosition;
 
-layout(location = 0) out vec3 outLightPos;
-layout(location = 1) out vec3 outLightTarget;
-layout(location = 2) out vec3 outFragPos;
-layout(location = 3) out float outConeRadsCos;
-
-
 // individual rows of the instanced model matrix
 layout(location = 1) in vec4 inModel1;
 layout(location = 2) in vec4 inModel2;
@@ -48,11 +42,6 @@ void main() {
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
 
     gl_Position = getPos(lights[index].proj, lights[index].view, model, inPosition); // transform position
-
-    outLightPos = lights[index].pos.xyz;
-    outLightTarget = lights[index].targetVec.xyz;
-    outFragPos = vec3(model * vec4(inPosition, 1.0));
-    outConeRadsCos = cos(radians(lights[index].outerConeAngle));
 }
 
 
