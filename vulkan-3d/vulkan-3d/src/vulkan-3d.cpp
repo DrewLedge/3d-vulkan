@@ -39,10 +39,11 @@
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
-#define MAX_MODELS 1200
+constexpr uint32_t MAX_MODELS = 1200;
+constexpr uint32_t MAX_LIGHTS = 300;
 
-#define SCREEN_WIDTH 3200
-#define SCREEN_HEIGHT 1800
+constexpr uint32_t SCREEN_WIDTH = 3200;
+constexpr uint32_t SCREEN_HEIGHT = 1800;
 
 const std::string SHADER_DIR = "shaders/compiled/";
 const std::string MODEL_DIR = "assets/models/";
@@ -399,6 +400,7 @@ private:
 	DSObject descs = {};
 	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
 	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
+	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
 
 	// scene data and objects
 	std::vector<BufData> bufferData;
@@ -409,6 +411,7 @@ private:
 	CamUBO camMatData = {};
 	LightDataSSBO lightData = {};
 	std::vector<std::unique_ptr<Light>> lights;
+
 	ShadowMapDim shadowProps = {};
 	uint32_t modelIndex = 0; // index of where vertecies are loaded to
 
@@ -417,6 +420,7 @@ private:
 
 	// textures and materials
 	std::vector<dvl::Texture> allTextures;
+	std::vector<VkDescriptorImageInfo> shadowInfos;
 	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
 	unsigned char* imageData = nullptr;
@@ -663,7 +667,8 @@ private:
 		std::vector<const char*> deviceExtensions = {
 		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-		VK_KHR_MAINTENANCE3_EXTENSION_NAME
+		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 		};
 
 		if (rtSupported) {
@@ -690,6 +695,11 @@ private:
 			std::stringstream errorMessage;
 			errorMessage << "Failed to create logical device! VkResult: " << result;
 			throw std::runtime_error(errorMessage.str());
+		}
+
+		vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR");
+		if (vkCmdPushDescriptorSetKHR == nullptr) {
+			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!!!");
 		}
 	}
 
@@ -762,6 +772,7 @@ private:
 		QueueFamilyIndices indices = findQueueFamiliesG(device);
 		return indices.graphicsComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
 	}
+
 	QueueFamilyIndices findQueueFamiliesP(VkPhysicalDevice device, VkSurfaceKHR surface) {
 		QueueFamilyIndices indices;
 		uint32_t queueFamilyCount = 0;
@@ -1633,15 +1644,6 @@ private:
 		return allTextures;
 	}
 
-	std::vector<dvl::Texture> getAllShadowMaps() {
-		std::vector<dvl::Texture>allMaps;
-		allMaps.reserve(lights.size());
-		for (const auto& light : lights) {
-			allMaps.push_back(light->shadowMapData);
-		}
-		return allMaps;
-	}
-
 	template<typename Stage>
 	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
 		descs.layouts[index] = vkhelper::createDSLayout(index, type, size, shaderStage);
@@ -1649,8 +1651,6 @@ private:
 	}
 
 	void createDS() {
-		std::vector<dvl::Texture> shadowMaps = getAllShadowMaps(); // put all shadowmaps into 1 vector
-
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1658,16 +1658,19 @@ private:
 			imageInfos[i].sampler = allTextures[i].sampler;
 		}
 
+		uint32_t lightSize = static_cast<uint32_t>(lights.size());
+		//uint32_t lightSize = MAX_LIGHTS;
+
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer;
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = lightData.memSize;
 
-		std::vector<VkDescriptorImageInfo> shadowInfos(lights.size());
-		for (size_t i = 0; i < lights.size(); i++) {
+		shadowInfos.resize(lightSize);
+		for (size_t i = 0; i < lightSize; i++) {
 			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = shadowMaps[i].imageView;
-			shadowInfos[i].sampler = shadowMaps[i].sampler;
+			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView;
+			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler;
 		}
 
 		VkDescriptorImageInfo skyboxInfo{};
@@ -1701,13 +1704,12 @@ private:
 		descs.pools.resize(size);
 
 		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
-		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 		uint32_t texCompSize = static_cast<uint32_t>(compositionPassImageInfo.size());
 
 		//initialize descriptor set layouts and pools
 		createDSLayoutPool(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
 		createDSLayoutPool(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)); // light data ssbo
-		createDSLayoutPool(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, lightSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
+		createDSLayoutPool(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
 		createDSLayoutPool(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		createDSLayoutPool(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 		createDSLayoutPool(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
@@ -1717,7 +1719,7 @@ private:
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
 		allocInfo.descriptorSetCount = 1;
 
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, lightSize, 1, 1, texCompSize, 1 };
+		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, MAX_LIGHTS, 1, 1, texCompSize, 1 };
 		for (uint32_t i = 0; i < descs.sets.size(); i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
@@ -1735,12 +1737,12 @@ private:
 		}
 
 		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
-		descriptorWrites[0] = vkhelper::createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos);
+		descriptorWrites[0] = vkhelper::createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos.data(), imageInfos.size());
 		descriptorWrites[1] = vkhelper::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		descriptorWrites[2] = vkhelper::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos);
+		descriptorWrites[2] = vkhelper::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), shadowInfos.size());
 		descriptorWrites[3] = vkhelper::createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
 		descriptorWrites[4] = vkhelper::createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
-		descriptorWrites[5] = vkhelper::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo);
+		descriptorWrites[5] = vkhelper::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo.data(), compositionPassImageInfo.size());
 		descriptorWrites[6] = vkhelper::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, mainPassDepthInfo);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -3147,26 +3149,42 @@ private:
 		recreateModelBuffers();
 	}
 
-	void cloneLight(dml::vec3 pos, dml::vec4 quat) {
-		dml::vec3 target = pos + (dml::quatToDir(quat) * -1);
-		Light l = createLight(pos, target);
+	void updateLightDS() {
+		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
-		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(l.shadowMapData, "depth");
-		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, "depth");
+		recreateLightBuffer();
+		VkDescriptorBufferInfo lightBufferInfo{};
+		lightBufferInfo.buffer = lightBuffer;
+		lightBufferInfo.offset = 0;
+		lightBufferInfo.range = lightData.memSize;
 
-		lights.push_back(std::make_unique<Light>(l));
+		std::array<VkWriteDescriptorSet, 2> dw{};
+		dw[0] = vkhelper::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		dw[1] = vkhelper::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
 	}
+
 	void summonLight() {
+		if (lights.size() + 1 > MAX_LIGHTS) return;
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
+		dml::vec3 target = pos + (dml::quatToDir(cam.quat) * -1);
+		Light l = createLight(pos, target);
+		lights.push_back(std::make_unique<Light>(l));
 
-		cloneLight(pos, cam.quat);
+		vkhelper::createImage(lights.back()->shadowMapData.image, lights.back()->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(lights.back()->shadowMapData, "depth");
+		vkhelper::createSampler(lights.back()->shadowMapData.sampler, lights.back()->shadowMapData.mipLevels, "depth");
 
-		recreateLightBuffer();
-		setupDescriptorSets(true);
-		setupPipelines(true);
+		VkDescriptorImageInfo shadowInfo{};
+		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+		shadowInfo.imageView = lights.back()->shadowMapData.imageView;
+		shadowInfo.sampler = lights.back()->shadowMapData.sampler;
+		shadowInfos.push_back(shadowInfo);
+
+		updateLightDS();
 	}
 
 	void recreateLightBuffer() {
@@ -3858,12 +3876,12 @@ private:
 
 			double startS = ((double)vertCount / fps) / 1000;
 			double memEfficiency = vertCount / (1024.0 * 1024.0); // convert to mb
-			double finalS = (startS) / memEfficiency / lights.size();
+			double finalS = 100 * ((startS) / memEfficiency / lights.size());
 
 			utils::sep();
-			std::cout << "Number of vertecies in the scene: " << vertCount << std::endl;
-			std::cout << "Vertecies size: " << sizeof(dml::vec3) * vertCount << std::endl;
+			std::cout << "Vertex count: " << vertCount << std::endl;
 			std::cout << "Object count: " << objects.size() << std::endl;
+			std::cout << "Light count: " << lights.size() << " / " << MAX_LIGHTS << std::endl;
 			std::cout << "Score: " << finalS << std::endl;
 		}
 

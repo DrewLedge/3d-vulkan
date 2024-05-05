@@ -1,5 +1,4 @@
 #version 460
-#define MAX_MODELS 1200
 
 layout(location = 0) in vec3 inPos; 
 layout(location = 0) out vec4 outPos;

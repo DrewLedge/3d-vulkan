@@ -1,5 +1,4 @@
 #version 460
-#define MAX_MODELS 1200
 
 #include "includes/vertformulas.glsl"
 

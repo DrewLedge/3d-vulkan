@@ -417,7 +417,7 @@ public:
 	}
 
 	// ------------------ DESCRIPTOR SETS ------------------ //
-	static VkDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags) {
+	static VkDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
 		VkDescriptorSetLayoutBinding binding{};
 		binding.binding = bindingIndex;
 		binding.descriptorType = type;
@@ -440,6 +440,7 @@ public:
 		layoutInfo.pNext = &bindingFlagsInfo; // bindingFlagsInfo is added to the pNext chain
 		layoutInfo.bindingCount = 1;
 		layoutInfo.pBindings = &binding;
+		if (pushDescriptors) layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 
 		VkDescriptorSetLayout descriptorSetLayout;
 		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
@@ -470,20 +471,20 @@ public:
 	}
 
 	template<typename InfoType>
-	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const std::vector<InfoType>& infos) {
+	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
 		VkWriteDescriptorSet d{};
 		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
 		d.dstSet = set;
 		d.dstBinding = binding;
 		d.dstArrayElement = arrayElem;
 		d.descriptorType = type;
-		d.descriptorCount = static_cast<uint32_t>(infos.size());
+		d.descriptorCount = static_cast<uint32_t>(count);
 
 		if constexpr (std::is_same_v<InfoType, VkDescriptorImageInfo>) { // if the info type is an image
-			d.pImageInfo = infos.data();
+			d.pImageInfo = infos;
 		}
 		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
-			d.pBufferInfo = infos.data();
+			d.pBufferInfo = infos;
 		}
 		else {
 			static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");

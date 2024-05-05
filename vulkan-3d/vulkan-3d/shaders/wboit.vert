@@ -2,8 +2,6 @@
 #extension GL_ARB_separate_shader_objects : enable
 #extension GL_EXT_nonuniform_qualifier : enable
 
-#define MAX_TEXTURES 4000 // this number must be the same as in the main code!!!
-
 #include "includes/vertformulas.glsl"
 
 layout(location = 0) in vec3 inPosition; 
