@@ -3456,11 +3456,18 @@ private:
 			// draw the imgui text
 			std::string fpsText = "fps: " + std::to_string(fps);
 			std::string objText = "objects: " + std::to_string(objects.size());
-			drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
+			std::string lightText = "lights: " + std::to_string(lights.size());
 
-			float w = ImGui::CalcTextSize(fpsText.c_str()).x;
-			float x = static_cast<float>(swap.extent.width / 2) + w + 20.0f;
-			drawText(objText, x, 30, font_large, ImVec4(40.0f, 61.0f, 59.0f, 0.9f));
+			ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
+			drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
+
+			float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
+			float x = static_cast<float>(swap.extent.width / 2) + w;
+			drawText(objText, x, 30, font_large, bgColor);
+
+			float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
+			float x2 = static_cast<float>(swap.extent.width / 2) - w2;
+			drawText(lightText, x2, 30, font_large, bgColor);
 
 			// render the imgui frame and draw imgui's commands into the command buffer:
 			ImGui::Render();
