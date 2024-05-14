@@ -437,9 +437,12 @@ private:
 	uint32_t fps = 0;
 	double lastFrame = 0.0;
 
-	// mutexes for multithreading
+	// mutexes and multithreading
 	std::mutex modelMtx;
 	std::mutex mtx;
+
+	// other
+	bool debug = false;
 
 	void initWindow() {
 		glfwInit();
@@ -483,15 +486,22 @@ private:
 		objects.push_back(std::move(p));
 	}
 
+	void createObjTask(tf::Taskflow& tf, const std::string& model, const dml::vec3& scale, const dml::vec4& orientation, const dml::vec3& position) {
+		tf.emplace([=] { createObject(model, scale, orientation, position); });
+	}
+
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		//createObject("models/sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		//createObject("models/sword.glb", { 1.0f, 1.0f, 1.0f }, { 0.0f, 0.0f, 0.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		tf::Executor executor;
+		tf::Taskflow taskFlow;
+
+		createObjTask(taskFlow, "sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask(taskFlow, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObjTask(taskFlow, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+
+		executor.run(taskFlow).wait();
 
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
@@ -500,8 +510,8 @@ private:
 			originalObjects.push_back(std::make_unique<dvl::Model>(*obj));
 		}
 
-		setPlayer(1);
-		setPlayer(2);
+		setPlayer(6);
+		setPlayer(9);
 	}
 
 	bool isRTSupported(VkPhysicalDevice device) {
@@ -701,6 +711,7 @@ private:
 		if (vkCmdPushDescriptorSetKHR == nullptr) {
 			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!!!");
 		}
+		if (!debug) utils::sep();
 	}
 
 	bool checkExtensionSupport(const char* extensionName) {
@@ -907,8 +918,8 @@ private:
 
 	auto getAttributeIt(const std::string& name, const auto& attributes) {
 		auto it = attributes.find(name);
-		if (it == attributes.end()) {
-			std::cerr << "WARNING: Failed to find attribute: " << name << std::endl;;
+		if (it == attributes.end() && debug) {
+			std::cerr << "WARNING: Failed to find attribute: " << name << std::endl;
 		}
 		return it;
 	}
@@ -937,7 +948,7 @@ private:
 		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
 			return reinterpret_cast<const uint32_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
 		default:
-			std::cerr << "WARNING: Unsupported index type: " << accessor.componentType << std::endl;
+			if (debug) std::cerr << "WARNING: Unsupported index type: " << accessor.componentType << std::endl;
 			return nullptr;
 		}
 	}
@@ -1062,9 +1073,265 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
+	void loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
+		const uint32_t meshInd, const dml::vec3 scale, const dml::vec3 pos, const dml::vec4 rot) {
+
+		dvl::Model newObject;
+
+		std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
+		std::vector<dvl::Vertex> tempVertices;
+		std::vector<uint32_t> tempIndices;
+
+
+		// process primitives in the mesh
+		for (const auto& primitive : mesh.primitives) {
+			if (primitive.mode != TINYGLTF_MODE_TRIANGLES && debug) {
+				std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
+			}
+			bool tangentFound = true;
+			bool colorFound = true;
+
+			// pos
+			auto positionIt = getAttributeIt("POSITION", primitive.attributes);
+			const auto& positionAccessor = model.accessors[positionIt->second];
+			const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
+
+			// tex coords
+			auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
+			const auto& texCoordAccessor = model.accessors[texCoordIt->second];
+			const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
+
+			// normals
+			auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
+			const auto& normalAccessor = model.accessors[normalIt->second];
+			const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
+
+			// colors
+			const float* colorData = nullptr;
+			auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
+			if (colorIt != primitive.attributes.end()) { // check if the primitive has color data
+				const auto& colorAccessor = model.accessors[colorIt->second];
+				colorData = getAccessorData(model, primitive.attributes, "COLOR_0");
+			}
+			else {
+				colorFound = false;
+			}
+
+			// indices
+			const auto& indexAccessor = model.accessors[primitive.indices];
+			const void* rawIndices = getIndexData(model, indexAccessor);
+
+			// tangents
+			std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+
+			const float* tangentData = nullptr;
+			auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
+			if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
+				const auto& tangentAccessor = model.accessors[tangentIt->second];
+				tangentData = getAccessorData(model, primitive.attributes, "TANGENT");
+			}
+			else {
+				if (debug) std::cout << "Calculating tangents..." << std::endl;
+				tangentFound = false;
+
+				switch (indexAccessor.componentType) {
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					dvl::calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					dvl::calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				default:
+					if (debug) std::cerr << "WARNING: Unsupported index type: " << indexAccessor.componentType << std::endl;
+					break;
+				}
+
+				dvl::normalizeTangents(tangents);
+			}
+
+			for (size_t i = 0; i < indexAccessor.count; ++i) {
+				uint32_t index;  // use the largest type to ensure no overflow.
+
+				switch (indexAccessor.componentType) {
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					index = static_cast<const uint8_t*>(rawIndices)[i];
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					index = static_cast<const uint16_t*>(rawIndices)[i];
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					index = static_cast<const uint32_t*>(rawIndices)[i];
+					break;
+				default:
+					continue; // skip this iteration
+				}
+
+				dvl::Vertex vertex;
+				vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
+				vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
+				vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+
+				if (colorFound) {
+					vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
+				}
+				else {
+					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
+				}
+				//vertex.col.w = 0.6f;
+
+				// get handedness of the tangent
+				dml::vec3 t = tangents[index].xyz();
+				tangents[index].w = dml::dot(dml::cross(vertex.normal, t), tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
+
+				if (tangentFound) {
+					vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+					//std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << std::endl;
+				}
+				else {
+					vertex.tangent = tangents[index];
+
+				}
+
+				if (uniqueVertices.count(vertex) == 0) {
+					uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+					tempVertices.push_back(std::move(vertex));
+				}
+				tempIndices.push_back(uniqueVertices[vertex]);
+			}
+			if (primitive.material >= 0) { // if the primitive has a material
+				auto& material = model.materials[primitive.material];
+				dvl::Material texture;
+
+				// base color texture
+				if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+					auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
+					auto& tex = model.textures[texInfo.index];
+					texture.baseColor.gltfImage = model.images[tex.source];
+					texture.baseColor.path = "gltf";
+					texture.baseColor.found = true;
+					newObject.textureCount++;
+				}
+
+				// metallic-roughness Texture
+				if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+					auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
+					auto& tex = model.textures[texInfo.index];
+					texture.metallicRoughness.gltfImage = model.images[tex.source];
+					texture.metallicRoughness.path = "gltf";
+					texture.metallicRoughness.found = true;
+					newObject.textureCount++;
+				}
+
+				// normal map
+				if (material.normalTexture.index >= 0) {
+					auto& texInfo = material.normalTexture;
+					auto& tex = model.textures[texInfo.index];
+					texture.normalMap.gltfImage = model.images[tex.source];
+					texture.normalMap.path = "gltf";
+					texture.normalMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// emissive map
+				if (material.emissiveTexture.index >= 0) {
+					auto& texInfo = material.emissiveTexture;
+					auto& tex = model.textures[texInfo.index];
+					texture.emissiveMap.gltfImage = model.images[tex.source];
+					texture.emissiveMap.path = "gltf";
+					texture.emissiveMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// occlusion map
+				if (material.occlusionTexture.index >= 0) {
+					auto& texInfo = material.occlusionTexture;
+					auto& tex = model.textures[texInfo.index];
+					texture.occlusionMap.gltfImage = model.images[tex.source];
+					texture.occlusionMap.path = "gltf";
+					texture.occlusionMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// ensure the model is PBR
+				if (!texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found) {
+					if (debug) std::cerr << "WARNING: Model isnt PBR!!" << std::endl;
+					return;
+				}
+
+				newObject.material = texture;
+			}
+
+			else {
+				if (debug) std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
+			}
+		}
+		newObject.vertices = tempVertices;
+		newObject.indices = tempIndices;
+
+		size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
+		size_t hash2 = std::hash<std::string>{}(mesh.name);
+
+		newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+
+		newObject.name = mesh.name;
+
+		newObject.scale = scale;
+		newObject.position = pos;
+		newObject.rotation = rot;
+
+		// calculate the model matrix for the mesh
+		newObject.modelMatrix = calcMeshWM(model, meshInd, parentInd, newObject);
+
+		modelMtx.lock();
+
+		// load the textures
+		if (newObject.material.baseColor.found) {
+			createTexturedImage(newObject.material.baseColor, true);
+			vkhelper::createImageView(newObject.material.baseColor);
+			vkhelper::createSampler(newObject.material.baseColor.sampler, newObject.material.baseColor.mipLevels);
+
+		}
+
+		if (newObject.material.metallicRoughness.found) {
+			createTexturedImage(newObject.material.metallicRoughness, true, "metallic");
+			vkhelper::createImageView(newObject.material.metallicRoughness, "metallic");
+			vkhelper::createSampler(newObject.material.metallicRoughness.sampler, newObject.material.metallicRoughness.mipLevels);
+
+		}
+
+		if (newObject.material.normalMap.found) {
+			createTexturedImage(newObject.material.normalMap, true, "norm");
+			vkhelper::createImageView(newObject.material.normalMap, "norm");
+			vkhelper::createSampler(newObject.material.normalMap.sampler, newObject.material.normalMap.mipLevels);
+
+		}
+
+		if (newObject.material.emissiveMap.found) {
+			createTexturedImage(newObject.material.emissiveMap, true, "emissive");
+			vkhelper::createImageView(newObject.material.emissiveMap, "emissive");
+			vkhelper::createSampler(newObject.material.emissiveMap.sampler, newObject.material.emissiveMap.mipLevels);
+
+		}
+
+		if (newObject.material.occlusionMap.found) {
+			createTexturedImage(newObject.material.occlusionMap, true, "occlusion");
+			vkhelper::createImageView(newObject.material.occlusionMap, "occlusion");
+			vkhelper::createSampler(newObject.material.occlusionMap.sampler, newObject.material.occlusionMap.mipLevels);
+
+		}
+
+		// add newObject to global objects list
+		objects.push_back(std::make_unique<dvl::Model>(newObject));
+		modelMtx.unlock();
+
+		modelIndex++;
+	}
+
+
 	void loadModel(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
-		tf::Executor executor;
-		tf::Taskflow taskFlow;
 		uint32_t meshInd = 0; // index of the mesh in the model
 
 		tinygltf::Model gltfModel;
@@ -1073,10 +1340,12 @@ private:
 		std::string warn;
 
 		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-		utils::sep();
-		std::cout << "Finished loading binaries" << std::endl;
+		if (debug) {
+			utils::sep();
+			std::cout << "Finished loading binaries" << std::endl;
+		}
 
-		if (!warn.empty()) {
+		if (!warn.empty() && debug) {
 			std::cout << "Warning: " << warn << std::endl;
 		}
 		if (!err.empty()) {
@@ -1108,278 +1377,10 @@ private:
 		for (const auto& extension : gltfModel.extensionsUsed) {
 			std::cerr << "WARNING: The " << path << " relies on: " << extension << std::endl;
 		}
-		//printFullHierarchy(gltfModel);
 
-		// parallel loading using taskflow:
-		auto loadModelTask = taskFlow.emplace([&]() {
-			// loop over each mesh (object)
-			for (const auto& mesh : gltfModel.meshes) {
-				dvl::Model newObject;
-
-				std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
-				std::vector<dvl::Vertex> tempVertices;
-				std::vector<uint32_t> tempIndices;
-
-
-				// process primitives in the mesh
-				for (const auto& primitive : mesh.primitives) {
-					if (primitive.mode != TINYGLTF_MODE_TRIANGLES) {
-						std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
-					}
-					bool tangentFound = true;
-					bool colorFound = true;
-
-					// pos
-					auto positionIt = getAttributeIt("POSITION", primitive.attributes);
-					const auto& positionAccessor = gltfModel.accessors[positionIt->second];
-					const float* positionData = getAccessorData(gltfModel, primitive.attributes, "POSITION");
-
-					// tex coords
-					auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
-					const auto& texCoordAccessor = gltfModel.accessors[texCoordIt->second];
-					const float* texCoordData = getAccessorData(gltfModel, primitive.attributes, "TEXCOORD_0");
-
-					// normals
-					auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
-					const auto& normalAccessor = gltfModel.accessors[normalIt->second];
-					const float* normalData = getAccessorData(gltfModel, primitive.attributes, "NORMAL");
-
-					// colors
-					const float* colorData = nullptr;
-					auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
-					if (colorIt != primitive.attributes.end()) { // check if the primitive has color data
-						const auto& colorAccessor = gltfModel.accessors[colorIt->second];
-						colorData = getAccessorData(gltfModel, primitive.attributes, "COLOR_0");
-					}
-					else {
-						colorFound = false;
-					}
-
-					// indices
-					const auto& indexAccessor = gltfModel.accessors[primitive.indices];
-					const void* rawIndices = getIndexData(gltfModel, indexAccessor);
-
-					// tangents
-					std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
-
-					const float* tangentData = nullptr;
-					auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
-					if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
-						const auto& tangentAccessor = gltfModel.accessors[tangentIt->second];
-						tangentData = getAccessorData(gltfModel, primitive.attributes, "TANGENT");
-					}
-					else {
-						std::cout << "Calculating tangents..." << std::endl;
-						tangentFound = false;
-
-						switch (indexAccessor.componentType) {
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-							dvl::calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
-							break;
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-							dvl::calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
-							break;
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-							dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
-							break;
-						default:
-							std::cerr << "WARNING: Unsupported index type: " << indexAccessor.componentType << std::endl;
-							break;
-						}
-
-						dvl::normalizeTangents(tangents);
-					}
-
-					for (size_t i = 0; i < indexAccessor.count; ++i) {
-						uint32_t index;  // use the largest type to ensure no overflow.
-
-						switch (indexAccessor.componentType) {
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-							index = static_cast<const uint8_t*>(rawIndices)[i];
-							break;
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-							index = static_cast<const uint16_t*>(rawIndices)[i];
-							break;
-						case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-							index = static_cast<const uint32_t*>(rawIndices)[i];
-							break;
-						default:
-							continue; // skip this iteration
-						}
-
-						dvl::Vertex vertex;
-						vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
-						vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
-						vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
-
-						if (colorFound) {
-							vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
-						}
-						else {
-							vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
-						}
-						//vertex.col.w = 0.6f;
-
-						// get handedness of the tangent
-						dml::vec3 t = tangents[index].xyz();
-						tangents[index].w = dml::dot(dml::cross(vertex.normal, t), tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
-
-						if (tangentFound) {
-							vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
-							//std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << std::endl;
-						}
-						else {
-							vertex.tangent = tangents[index];
-
-						}
-
-						if (uniqueVertices.count(vertex) == 0) {
-							uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-							tempVertices.push_back(std::move(vertex));
-						}
-						tempIndices.push_back(uniqueVertices[vertex]);
-					}
-					if (primitive.material >= 0) { // if the primitive has a material
-						auto& material = gltfModel.materials[primitive.material];
-						dvl::Material texture;
-
-						// base color texture
-						if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
-							auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.baseColor.gltfImage = gltfModel.images[tex.source];
-							texture.baseColor.path = "gltf";
-							texture.baseColor.found = true;
-							newObject.textureCount++;
-						}
-
-						// metallic-roughness Texture
-						if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
-							auto& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.metallicRoughness.gltfImage = gltfModel.images[tex.source];
-							texture.metallicRoughness.path = "gltf";
-							texture.metallicRoughness.found = true;
-							newObject.textureCount++;
-						}
-
-						// normal map
-						if (material.normalTexture.index >= 0) {
-							auto& texInfo = material.normalTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.normalMap.gltfImage = gltfModel.images[tex.source];
-							texture.normalMap.path = "gltf";
-							texture.normalMap.found = true;
-							newObject.textureCount++;
-						}
-
-						// emissive map
-						if (material.emissiveTexture.index >= 0) {
-							auto& texInfo = material.emissiveTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.emissiveMap.gltfImage = gltfModel.images[tex.source];
-							texture.emissiveMap.path = "gltf";
-							texture.emissiveMap.found = true;
-							newObject.textureCount++;
-						}
-
-						// occlusion map
-						if (material.occlusionTexture.index >= 0) {
-							auto& texInfo = material.occlusionTexture;
-							auto& tex = gltfModel.textures[texInfo.index];
-							texture.occlusionMap.gltfImage = gltfModel.images[tex.source];
-							texture.occlusionMap.path = "gltf";
-							texture.occlusionMap.found = true;
-							newObject.textureCount++;
-						}
-
-						// ensure the model is PBR
-						if (!texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found) {
-							std::cerr << "WARNING: Model isnt PBR!!" << std::endl;
-							return;
-						}
-
-						newObject.material = texture;
-					}
-
-					else {
-						std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
-					}
-				}
-				newObject.vertices = tempVertices;
-				newObject.indices = tempIndices;
-
-				size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
-				size_t hash2 = std::hash<std::string>{}(mesh.name);
-
-				newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
-
-				newObject.name = mesh.name;
-
-				newObject.scale = scale;
-				newObject.position = pos;
-				newObject.rotation = rot;
-
-				// calculate the model matrix for the mesh
-				newObject.modelMatrix = calcMeshWM(gltfModel, meshInd, parentInd, newObject);
-
-				// add newObject to global objects list
-				modelMtx.lock();
-				objects.push_back(std::make_unique<dvl::Model>(newObject));
-				modelMtx.unlock();
-
-				modelIndex++;
-				meshInd++;
-			}
-			std::cout << "Finished loading vertecies" << std::endl;
-			}).name("load_model");
-
-			auto loadTextureTask = taskFlow.emplace([&]() {
-				for (auto& object : objects) {
-					//create the texture image for each texture (material)
-					//also create mipmaps for every texture
-					if (object->material.baseColor.found) {
-						createTexturedImage(object->material.baseColor, true);
-						vkhelper::createImageView(object->material.baseColor);
-						vkhelper::createSampler(object->material.baseColor.sampler, object->material.baseColor.mipLevels);
-
-					}
-
-					if (object->material.metallicRoughness.found) {
-						createTexturedImage(object->material.metallicRoughness, true, "metallic");
-						vkhelper::createImageView(object->material.metallicRoughness, "metallic");
-						vkhelper::createSampler(object->material.metallicRoughness.sampler, object->material.metallicRoughness.mipLevels);
-
-					}
-
-					if (object->material.normalMap.found) {
-						createTexturedImage(object->material.normalMap, true, "norm");
-						vkhelper::createImageView(object->material.normalMap, "norm");
-						vkhelper::createSampler(object->material.normalMap.sampler, object->material.normalMap.mipLevels);
-
-					}
-
-					if (object->material.emissiveMap.found) {
-						createTexturedImage(object->material.emissiveMap, true, "emissive");
-						vkhelper::createImageView(object->material.emissiveMap, "emissive");
-						vkhelper::createSampler(object->material.emissiveMap.sampler, object->material.emissiveMap.mipLevels);
-
-					}
-
-					if (object->material.occlusionMap.found) {
-						createTexturedImage(object->material.occlusionMap, true, "occlusion");
-						vkhelper::createImageView(object->material.occlusionMap, "occlusion");
-						vkhelper::createSampler(object->material.occlusionMap.sampler, object->material.occlusionMap.mipLevels);
-
-					}
-				}
-				}).name("load_texture");
-				loadModelTask.precede(loadTextureTask);
-				executor.run(taskFlow).get();
-
-				utils::sep();
-				std::cout << "Successfully loaded " << objects.size() << " meshes" << std::endl;
-				taskFlow.clear();
+		for (const auto& mesh : gltfModel.meshes) {
+			loadMesh(mesh, gltfModel, parentInd, meshInd++, scale, pos, rot);
+		}
 	}
 
 	void setupTextures() {
@@ -3903,6 +3904,7 @@ private:
 
 	void initVulkan() { //initializes Vulkan functions
 		// initialize Vulkan components
+		auto now = utils::now();
 		createInstance();
 		createSurface();
 		pickDevice();
@@ -3932,6 +3934,10 @@ private:
 		createFrameBuffers();
 		createCommandBuffers();
 		recordAllCommandBuffers();
+
+		auto duration = utils::duration<milliseconds>(now);
+		utils::printDuration(duration);
+
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
 	}
 };
