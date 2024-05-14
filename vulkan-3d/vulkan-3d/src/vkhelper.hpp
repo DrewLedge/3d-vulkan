@@ -12,6 +12,17 @@ extern VkPhysicalDevice physicalDevice;
 
 class vkhelper {
 public:
+	typedef enum {
+		BASE,
+		DEPTH,
+		NORMAL,
+		METALLIC,
+		EMISSIVE,
+		OCCLUSION,
+		CUBEMAP,
+		ALPHA
+	} TextureType;
+
 	// ------------------ MEMORY ------------------ //
 	static uint32_t findMemoryType(const uint32_t tFilter, const VkMemoryPropertyFlags& prop) { //find the memory type based on the type filter and properties
 		VkPhysicalDeviceMemoryProperties memP; //struct to hold memory properties
@@ -202,7 +213,7 @@ public:
 		vkBindImageMemory(device, image, imageMemory, 0);
 	}
 
-	static void createSampler(VkSampler& sampler, const uint32_t mipLevels, const std::string type = "tex") {
+	static void createSampler(VkSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
 		VkSamplerCreateInfo samplerInf{};
 		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
@@ -213,17 +224,19 @@ public:
 		samplerInf.maxAnisotropy = 16;
 		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		samplerInf.unnormalizedCoordinates = VK_FALSE;
-		if (type == "depth") {
+		switch (type) {
+		case DEPTH:
 			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.compareEnable = VK_TRUE;
 			samplerInf.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 			samplerInf.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
-		}
-		if (type == "cube") {
+			break;
+		case CUBEMAP:
 			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // prevent seams at the edges
+			break;
 		}
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
 		samplerInf.minLod = 0.0f;
@@ -234,52 +247,54 @@ public:
 	}
 
 	template<typename Texture>
-	static void createImageView(Texture& tex, const std::string type = "base") {
+	static void createImageView(Texture& tex, const TextureType type = BASE) {
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image;
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		if (type == "depth") {
-			viewInf.format = VK_FORMAT_D32_SFLOAT;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-		}
-		else if (type == "norm") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "base") {
+
+		switch (type) {
+		case BASE:
 			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for base texture
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "metallic") {
+			break;
+		case DEPTH:
+			viewInf.format = VK_FORMAT_D32_SFLOAT;
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+			break;
+		case NORMAL:
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			break;
+		case METALLIC:
 			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "emissive") {
+			break;
+		case EMISSIVE:
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB;
+			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			break;
+		case OCCLUSION:
 			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "occlusion") {
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
-			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else if (type == "cube") {
+			break;
+		case CUBEMAP:
 			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			viewInf.subresourceRange.layerCount = 6;
-		}
-		else if (type == "alpha") {
+			break;
+		case ALPHA:
 			viewInf.format = VK_FORMAT_R32_SFLOAT;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-		}
-		else {
+			break;
+		default:
 			throw std::invalid_argument("Invalid texture type!");
 		}
-		viewInf.subresourceRange.baseMipLevel = 0;
 
+		viewInf.subresourceRange.baseMipLevel = 0;
 		uint32_t level = (tex.mipLevels <= 0) ? 1 : tex.mipLevels;
 		viewInf.subresourceRange.levelCount = level - viewInf.subresourceRange.baseMipLevel;
 		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {

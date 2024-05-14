@@ -13,9 +13,6 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
-    <Filter Include="Source Files\Shaders">
-      <UniqueIdentifier>{41eb6084-856d-4bb5-b8c4-ce153d0e4683}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Other dependencies">
       <UniqueIdentifier>{f163d2c7-acb2-4e51-b8f3-187586c0c3f0}</UniqueIdentifier>
     </Filter>
@@ -28,7 +25,10 @@
     <Filter Include="Source Files\Other files">
       <UniqueIdentifier>{07e3bd8c-ad41-4b72-987a-c88ba843d96c}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Source Files\shader includes">
+    <Filter Include="Shaders">
+      <UniqueIdentifier>{41eb6084-856d-4bb5-b8c4-ce153d0e4683}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shader Libraries">
       <UniqueIdentifier>{8ea1ebdd-012e-4024-95f7-7a348d8c3cbc}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
@@ -61,28 +61,28 @@
       <Filter>Source Files\Other files</Filter>
     </None>
     <None Include="shaders\engine.frag">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\engine.vert">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\shadow.frag">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\shadow.vert">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\sky.frag">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\sky.vert">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\composition.frag">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\composition.vert">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\compile.bat">
       <Filter>Source Files\Other files</Filter>
@@ -91,16 +91,16 @@
       <Filter>Source Files\Other files</Filter>
     </None>
     <None Include="shaders\includes\fragformulas.glsl">
-      <Filter>Source Files\shader includes</Filter>
+      <Filter>Shader Libraries</Filter>
     </None>
     <None Include="shaders\includes\vertformulas.glsl">
-      <Filter>Source Files\shader includes</Filter>
+      <Filter>Shader Libraries</Filter>
     </None>
     <None Include="shaders\wboit.frag">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
     <None Include="shaders\wboit.vert">
-      <Filter>Source Files\Shaders</Filter>
+      <Filter>Shaders</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

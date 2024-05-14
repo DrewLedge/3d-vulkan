@@ -1078,8 +1078,8 @@ private:
 	void loadSkybox(std::string path) {
 		skybox.cubemap.path = SKYBOX_DIR + path;
 		createTexturedCubemap(skybox.cubemap);
-		vkhelper::createImageView(skybox.cubemap, "cube");
-		vkhelper::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, "cube");
+		vkhelper::createImageView(skybox.cubemap, vkhelper::CUBEMAP);
+		vkhelper::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkhelper::CUBEMAP);
 
 		skybox.bufferData.vertexOffset = 0;
 		skybox.bufferData.vertexCount = 8;
@@ -1290,29 +1290,29 @@ private:
 		}
 
 		if (newObject.material.metallicRoughness.found) {
-			createTexturedImage(newObject.material.metallicRoughness, true, "metallic");
-			vkhelper::createImageView(newObject.material.metallicRoughness, "metallic");
+			createTexturedImage(newObject.material.metallicRoughness, true, vkhelper::METALLIC);
+			vkhelper::createImageView(newObject.material.metallicRoughness, vkhelper::METALLIC);
 			vkhelper::createSampler(newObject.material.metallicRoughness.sampler, newObject.material.metallicRoughness.mipLevels);
 
 		}
 
 		if (newObject.material.normalMap.found) {
-			createTexturedImage(newObject.material.normalMap, true, "norm");
-			vkhelper::createImageView(newObject.material.normalMap, "norm");
+			createTexturedImage(newObject.material.normalMap, true, vkhelper::NORMAL);
+			vkhelper::createImageView(newObject.material.normalMap, vkhelper::NORMAL);
 			vkhelper::createSampler(newObject.material.normalMap.sampler, newObject.material.normalMap.mipLevels);
 
 		}
 
 		if (newObject.material.emissiveMap.found) {
-			createTexturedImage(newObject.material.emissiveMap, true, "emissive");
-			vkhelper::createImageView(newObject.material.emissiveMap, "emissive");
+			createTexturedImage(newObject.material.emissiveMap, true, vkhelper::EMISSIVE);
+			vkhelper::createImageView(newObject.material.emissiveMap, vkhelper::EMISSIVE);
 			vkhelper::createSampler(newObject.material.emissiveMap.sampler, newObject.material.emissiveMap.mipLevels);
 
 		}
 
 		if (newObject.material.occlusionMap.found) {
-			createTexturedImage(newObject.material.occlusionMap, true, "occlusion");
-			vkhelper::createImageView(newObject.material.occlusionMap, "occlusion");
+			createTexturedImage(newObject.material.occlusionMap, true, vkhelper::OCCLUSION);
+			vkhelper::createImageView(newObject.material.occlusionMap, vkhelper::OCCLUSION);
 			vkhelper::createSampler(newObject.material.occlusionMap.sampler, newObject.material.occlusionMap.mipLevels);
 
 		}
@@ -1385,8 +1385,8 @@ private:
 
 		// main pass depth image
 		vkhelper::createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(mainPassTextures.depth, "depth");
-		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, "depth");
+		vkhelper::createImageView(mainPassTextures.depth, vkhelper::DEPTH);
+		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, vkhelper::DEPTH);
 
 		// weighted color image
 		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
@@ -1407,8 +1407,8 @@ private:
 		if (init) {
 			for (size_t i = 0; i < lights.size(); i++) {
 				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-				vkhelper::createImageView(lights[i]->shadowMapData, "depth");
-				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, "depth");
+				vkhelper::createImageView(lights[i]->shadowMapData, vkhelper::DEPTH);
+				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkhelper::DEPTH);
 			}
 			init = false;
 		}
@@ -1889,7 +1889,7 @@ private:
 		skyboxData = nullptr;
 	}
 
-	void createTexturedImage(dvl::Texture& tex, bool doMipmap, std::string type = "base") {
+	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkhelper::TextureType type = vkhelper::BASE) {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path, imageData);
@@ -1899,8 +1899,19 @@ private:
 			}
 			createStagingBuffer(tex, false);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
+			VkFormat imgFormat;
+			switch (type) {
+			case vkhelper::BASE:
+				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
+				break;
+			case vkhelper::EMISSIVE:
+				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
+				break;
+			default:
+				imgFormat = VK_FORMAT_R8G8B8A8_UNORM;
+				break;
+			}
 
-			VkFormat imgFormat = type == "base" ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM;
 			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
 
 			// initialize img and barrier data before buffer copy:
@@ -3166,8 +3177,8 @@ private:
 		lights.push_back(std::make_unique<Light>(l));
 
 		vkhelper::createImage(lights.back()->shadowMapData.image, lights.back()->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(lights.back()->shadowMapData, "depth");
-		vkhelper::createSampler(lights.back()->shadowMapData.sampler, lights.back()->shadowMapData.mipLevels, "depth");
+		vkhelper::createImageView(lights.back()->shadowMapData, vkhelper::DEPTH);
+		vkhelper::createSampler(lights.back()->shadowMapData.sampler, lights.back()->shadowMapData.mipLevels, vkhelper::DEPTH);
 
 		VkDescriptorImageInfo shadowInfo{};
 		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
