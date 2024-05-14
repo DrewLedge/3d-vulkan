@@ -106,6 +106,7 @@ CamData cam;
 VkDevice device;
 VkQueue graphicsQueue;
 VkPhysicalDevice physicalDevice;
+GLFWwindow* window = nullptr;
 
 class Engine {
 public:
@@ -300,8 +301,18 @@ private:
 		{}
 	};
 
-	struct KeyPressObject { // prevent a certain key from being held down
-		bool escPressedLastFrame = false; // unlock mouse
+	struct KeyPO {
+		bool pressedLastFrame = false;
+		int keyPress;
+
+		KeyPO() : pressedLastFrame(false), keyPress(-1) {}
+		KeyPO(const int key) : pressedLastFrame(false), keyPress(key) {}
+
+		bool isPressed() {
+			bool notPressedLast = !pressedLastFrame;
+			pressedLastFrame = (glfwGetKey(window, keyPress) == GLFW_PRESS);
+			return (glfwGetKey(window, keyPress) == GLFW_PRESS) && notPressedLast;
+		}
 	};
 
 	struct WBOITData { // weighted blended order independent transparency
@@ -336,11 +347,12 @@ private:
 	};
 
 	// window and rendering context
-	GLFWwindow* window = nullptr;
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue presentQueue = VK_NULL_HANDLE;
-	KeyPressObject keyPO = {};
+
+	KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
+	KeyPO eKey = KeyPO(GLFW_KEY_E);
 
 	// swap chain and framebuffers
 	SCData swap = {};
@@ -404,8 +416,8 @@ private:
 
 	// scene data and objects
 	std::vector<BufData> bufferData;
-	std::vector<std::unique_ptr<dvl::Model>> objects;
-	std::vector<std::unique_ptr<dvl::Model>> originalObjects;
+	std::vector<std::unique_ptr<dvl::Mesh>> objects;
+	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
 	ModelMatInstanceData objInstanceData = {};
 	CamUBO camMatData = {};
@@ -442,7 +454,7 @@ private:
 	std::mutex mtx;
 
 	// other
-	bool debug = false;
+	bool debug = true;
 
 	void initWindow() {
 		glfwInit();
@@ -478,7 +490,7 @@ private:
 	}
 
 	void setPlayer(uint16_t i) {
-		auto p = std::make_unique<dvl::Model>(*objects[i]);
+		auto p = std::make_unique<dvl::Mesh>(*objects[i]);
 		p->player = true;
 		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
 		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
@@ -507,7 +519,7 @@ private:
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
 
 		for (auto& obj : objects) {
-			originalObjects.push_back(std::make_unique<dvl::Model>(*obj));
+			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
 		}
 
 		setPlayer(6);
@@ -926,6 +938,8 @@ private:
 
 	const float* getAccessorData(const auto& model, const auto& attributes, const std::string& attributeName) {
 		auto it = getAttributeIt(attributeName, attributes); // get the attribute iterator
+		if (it == attributes.end()) return nullptr;
+
 		const auto& accessor = model.accessors[it->second]; // get the accessor
 
 		const auto& bufferView = model.bufferViews[accessor.bufferView]; // get the buffer view from the accessor
@@ -1002,7 +1016,7 @@ private:
 		return -1; // not found
 	}
 
-	dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, dvl::Model& m) {
+	dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, dvl::Mesh& m) {
 		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
 		dml::mat4 modelMatrix;
 
@@ -1076,63 +1090,43 @@ private:
 	void loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
 		const uint32_t meshInd, const dml::vec3 scale, const dml::vec3 pos, const dml::vec4 rot) {
 
-		dvl::Model newObject;
+		dvl::Mesh newObject;
 
 		std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
 		std::vector<dvl::Vertex> tempVertices;
 		std::vector<uint32_t> tempIndices;
-
 
 		// process primitives in the mesh
 		for (const auto& primitive : mesh.primitives) {
 			if (primitive.mode != TINYGLTF_MODE_TRIANGLES && debug) {
 				std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
 			}
-			bool tangentFound = true;
-			bool colorFound = true;
 
-			// pos
-			auto positionIt = getAttributeIt("POSITION", primitive.attributes);
-			const auto& positionAccessor = model.accessors[positionIt->second];
 			const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
-
-			// tex coords
-			auto texCoordIt = getAttributeIt("TEXCOORD_0", primitive.attributes);
-			const auto& texCoordAccessor = model.accessors[texCoordIt->second];
 			const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
-
-			// normals
-			auto normalIt = getAttributeIt("NORMAL", primitive.attributes);
-			const auto& normalAccessor = model.accessors[normalIt->second];
 			const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
+			const float* colorData = getAccessorData(model, primitive.attributes, "COLOR_0");
+			const float* tangentData = getAccessorData(model, primitive.attributes, "TANGENT");
 
-			// colors
-			const float* colorData = nullptr;
-			auto colorIt = getAttributeIt("COLOR_0", primitive.attributes);
-			if (colorIt != primitive.attributes.end()) { // check if the primitive has color data
-				const auto& colorAccessor = model.accessors[colorIt->second];
-				colorData = getAccessorData(model, primitive.attributes, "COLOR_0");
-			}
-			else {
-				colorFound = false;
+			if (!positionData || !texCoordData || !normalData) {
+				throw std::runtime_error("Mesh doesn't contain position, normal or texture cord data!");
 			}
 
 			// indices
 			const auto& indexAccessor = model.accessors[primitive.indices];
 			const void* rawIndices = getIndexData(model, indexAccessor);
 
-			// tangents
-			std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+			// position data
+			auto positionIt = getAttributeIt("POSITION", primitive.attributes);
+			const auto& positionAccessor = model.accessors[positionIt->second];
 
-			const float* tangentData = nullptr;
-			auto tangentIt = getAttributeIt("TANGENT", primitive.attributes);
-			if (tangentIt != primitive.attributes.end()) { // check if the primitive has tangents
-				const auto& tangentAccessor = model.accessors[tangentIt->second];
-				tangentData = getAccessorData(model, primitive.attributes, "TANGENT");
-			}
-			else {
+			bool colorFound = (colorData);
+			bool tangentFound = (tangentData);
+
+			// calculate the tangents if theyre not found
+			std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+			if (!tangentFound) {
 				if (debug) std::cout << "Calculating tangents..." << std::endl;
-				tangentFound = false;
 
 				switch (indexAccessor.componentType) {
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
@@ -1153,7 +1147,7 @@ private:
 			}
 
 			for (size_t i = 0; i < indexAccessor.count; ++i) {
-				uint32_t index;  // use the largest type to ensure no overflow.
+				uint32_t index;  // use the largest type to ensure no overflow
 
 				switch (indexAccessor.componentType) {
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
@@ -1192,7 +1186,6 @@ private:
 				}
 				else {
 					vertex.tangent = tangents[index];
-
 				}
 
 				if (uniqueVertices.count(vertex) == 0) {
@@ -1268,13 +1261,14 @@ private:
 				if (debug) std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
 			}
 		}
+
 		newObject.vertices = tempVertices;
 		newObject.indices = tempIndices;
 
 		size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
 		size_t hash2 = std::hash<std::string>{}(mesh.name);
 
-		newObject.modelHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+		newObject.meshHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
 
 		newObject.name = mesh.name;
 
@@ -1323,8 +1317,7 @@ private:
 
 		}
 
-		// add newObject to global objects list
-		objects.push_back(std::make_unique<dvl::Model>(newObject));
+		objects.push_back(std::make_unique<dvl::Mesh>(newObject));
 		modelMtx.unlock();
 
 		modelIndex++;
@@ -1340,10 +1333,7 @@ private:
 		std::string warn;
 
 		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-		if (debug) {
-			utils::sep();
-			std::cout << "Finished loading binaries" << std::endl;
-		}
+		if (debug) utils::sep();
 
 		if (!warn.empty() && debug) {
 			std::cout << "Warning: " << warn << std::endl;
@@ -1611,7 +1601,7 @@ private:
 		size_t currentIndex = 0;
 		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->modelHash] == i) {
+			if (uniqueModelIndex[obj->meshHash] == i) {
 				meshTexStartInd.push_back(static_cast<int>(currentIndex));
 				if (obj->material.baseColor.found) {
 					allTextures.emplace_back(obj->material.baseColor);
@@ -1637,7 +1627,7 @@ private:
 		}
 		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->modelHash] == i) {
+			if (uniqueModelIndex[obj->meshHash] == i) {
 				objects[i]->texIndex = i;
 			}
 		}
@@ -1754,7 +1744,7 @@ private:
 		totalTextureCount = 0;
 		for (uint32_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->modelHash] == i) {
+			if (uniqueModelIndex[obj->meshHash] == i) {
 				totalTextureCount += obj->textureCount;
 			}
 		}
@@ -3053,7 +3043,7 @@ private:
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
-		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->modelHash < b->modelHash; });
+		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
 		bufferData.resize(getUniqueModels());
 		uniqueModelIndex.clear();
@@ -3066,11 +3056,11 @@ private:
 		uint32_t ind = 0;
 		for (size_t i = 0; i < objects.size(); ++i) {
 			auto& obj = objects[i];
-			if (uniqueModelIndex.find(obj->modelHash) == uniqueModelIndex.end()) {
+			if (uniqueModelIndex.find(obj->meshHash) == uniqueModelIndex.end()) {
 				totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
 				totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
-				uniqueModelIndex[obj->modelHash] = i; //store the index of the object
-				modelHashToBufferIndex[obj->modelHash] = ind++;
+				uniqueModelIndex[obj->meshHash] = i; //store the index of the object
+				modelHashToBufferIndex[obj->meshHash] = ind++;
 			}
 		}
 
@@ -3087,9 +3077,9 @@ private:
 		VkDeviceSize currentIndexOffset = 0;
 
 		for (size_t i = 0; i < objects.size(); i++) {
-			size_t modelInd = uniqueModelIndex[objects[i]->modelHash];
+			size_t modelInd = uniqueModelIndex[objects[i]->meshHash];
 			if (modelInd != i) continue; // skip if not the first instance of the model
-			size_t bufferInd = modelHashToBufferIndex[objects[i]->modelHash];
+			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
 
 			// vertex data
 			bufferData[bufferInd].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
@@ -3110,7 +3100,7 @@ private:
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<dvl::Model>(*originalObjects[object]);
+		auto m = std::make_unique<dvl::Mesh>(*originalObjects[object]);
 
 		m->scale = scale;
 		m->position = pos;
@@ -3125,7 +3115,7 @@ private:
 	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
 		uint32_t count = 0;
 		for (auto& m : objects) {
-			if (m->modelHash == hash) {
+			if (m->meshHash == hash) {
 				count++;
 			}
 		}
@@ -3135,7 +3125,7 @@ private:
 	size_t getUniqueModels() { // get the number of unique models
 		std::unordered_set<size_t> uniqueModels;
 		for (auto& m : objects) {
-			uniqueModels.insert(m->modelHash);
+			uniqueModels.insert(m->meshHash);
 		}
 		return uniqueModels.size();
 	}
@@ -3144,8 +3134,8 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
-		cloneObject(pos, 1, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 2, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateModelBuffers();
 	}
@@ -3242,7 +3232,7 @@ private:
 			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
 				if (uniqueModelInd == j) { // only process unique models
 					struct {
 						int modelIndex;
@@ -3253,8 +3243,8 @@ private:
 
 					vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 					vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				}
@@ -3314,7 +3304,7 @@ private:
 			vkCmdBindIndexBuffer(mainPassCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 			uint32_t p = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
 				if (uniqueModelInd == j) { // only process unique models
 					// bitfield for which textures exist
 					int textureExistence = 0;
@@ -3333,8 +3323,8 @@ private:
 					pushConst.texIndex = meshTexStartInd[p];
 					vkCmdPushConstants(mainPassCommandBuffers[i], mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 
 					vkCmdDrawIndexed(mainPassCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
@@ -3387,7 +3377,7 @@ private:
 			vkCmdBindIndexBuffer(wboitCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 			uint32_t p = 0;
 			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->modelHash]);
+				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
 				if (uniqueModelInd == j) { // only process unique models
 					// bitfield for which textures exist
 					int textureExistence = 0;
@@ -3406,8 +3396,8 @@ private:
 					pushConst.texIndex = meshTexStartInd[p];
 					vkCmdPushConstants(wboitCommandBuffer, wboit.pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->modelHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->modelHash);
+					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 
 					vkCmdDrawIndexed(wboitCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
@@ -3829,8 +3819,6 @@ private:
 	}
 
 	void handleKeyboardInput() {
-		bool isEsc = glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS;
-
 		double currentFrame = glfwGetTime();
 		float deltaTime = static_cast<float>(currentFrame - lastFrame);
 		lastFrame = currentFrame;
@@ -3872,7 +3860,7 @@ private:
 		}
 
 		// realtime light loading
-		if (glfwGetKey(window, GLFW_KEY_E) == GLFW_PRESS) {
+		if (eKey.isPressed()) {
 			summonLight();
 		}
 
@@ -3894,12 +3882,10 @@ private:
 		}
 
 		// lock / unlock mouse
-		if (isEsc && !keyPO.escPressedLastFrame) {
+		if (escapeKey.isPressed()) {
 			cam.locked = !cam.locked;
 			initializeMouseInput(cam.locked);
 		}
-		keyPO.escPressedLastFrame = isEsc;
-
 	}
 
 	void initVulkan() { //initializes Vulkan functions

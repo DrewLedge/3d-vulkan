@@ -145,28 +145,28 @@ public:
 		Texture emissiveMap;
 	};
 
-	struct Model {
-		Material material; //used to store all the textures/materials of the model
+	struct Mesh {
+		Material material; //used to store all the textures/materials of the mesh
 		std::vector<dvl::Vertex> vertices;
 		std::vector<uint32_t> indices;
 		std::string pathObj; // i.e "models/cube.obj"
 
-		dml::vec3 position;  // position of the model
-		dml::vec4 rotation;  // rotation of the model in quaternions
-		dml::vec3 scale;     // scale of the model
+		dml::vec3 position;  // position of the mesh
+		dml::vec4 rotation;  // rotation of the mesh in quaternions
+		dml::vec3 scale;     // scale of the mesh
 		dml::mat4 modelMatrix;
 
-		size_t textureCount; // number of textures in the model
-		size_t texIndex; // where in the texture array the textures of the model start
+		size_t textureCount; // number of textures in the mesh
+		size_t texIndex; // where in the texture array the textures of the mesh start
 
 		bool startObj; // wether is loaded at the start of the program or not
-		bool player; // if the object is treated as a player model or not
+		bool player; // if the object is treated as a player mesh or not
 
-		size_t modelHash;
+		size_t meshHash;
 		std::string name;
 
 		// default constructor
-		Model()
+		Mesh()
 			: material(),
 			vertices(),
 			indices(),
@@ -179,12 +179,12 @@ public:
 			texIndex(0),
 			startObj(true),
 			player(false),
-			modelHash(),
+			meshHash(),
 			name("")
 		{}
 
 		// copy constructor
-		Model(const Model& other)
+		Mesh(const Mesh& other)
 			: material(other.material),
 			vertices(other.vertices),
 			indices(other.indices),
@@ -197,7 +197,7 @@ public:
 			texIndex(other.texIndex),
 			startObj(other.startObj),
 			player(other.player),
-			modelHash(other.modelHash),
+			meshHash(other.meshHash),
 			name(other.name) {
 		}
 	};
