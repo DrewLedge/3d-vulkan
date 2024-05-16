@@ -353,6 +353,7 @@ private:
 
 	KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
 	KeyPO eKey = KeyPO(GLFW_KEY_E);
+	KeyPO rKey = KeyPO(GLFW_KEY_R);
 
 	// swap chain and framebuffers
 	SCData swap = {};
@@ -3875,7 +3876,7 @@ private:
 			summonLight();
 		}
 
-		if (glfwGetKey(window, GLFW_KEY_R) == GLFW_PRESS) {
+		if (rKey.isPressed()) {
 			uint64_t vertCount = 0;
 			for (const auto& o : objects) {
 				vertCount += o->vertices.size();

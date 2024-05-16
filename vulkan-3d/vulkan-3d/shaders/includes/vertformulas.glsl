@@ -4,8 +4,8 @@ vec4 getPos(mat4 proj, mat4 view, mat4 model, vec3 pos) {
 
 vec3 getViewDir(mat4 view, mat4 model, vec3 pos) {
 	vec3 worldCamPos = vec3(inverse(view)[3]);
-	vec4 worldPos = model * vec4(pos, 1.0);
-	return normalize(worldPos.xyz - worldCamPos);
+	vec3 fragPos = vec3(model * vec4(pos, 1.0));
+	return normalize(worldCamPos - fragPos);
 }
 
 mat3 getTBN(vec4 tangent, mat4 model, vec3 normal) {

@@ -29,41 +29,39 @@ float gAttenutation(float term, float alphaS) {
 	return 2.0 * term / (term + sqrt(alphaS + (1.0 - alphaS) * (term * term)));
 }
 
-float roughnessTerm(float term, float alphaS) {
-	return alphaS / (PI * pow(term * term * (alphaS - 1.0) + 1.0, 2.0));
+float roughnessTerm(float NdotH, float alphaS) {
+	return alphaS / (PI * pow(NdotH * NdotH * (alphaS - 1.0) + 1.0, 2.0));
 }
 
-vec3 frenselTerm(vec3 color, float metallic, float term) {
-	vec3 F0 = mix(vec3(0.04), color, metallic);  // reflectance at normal incidence
-	return F0 + (1.0 - F0) * pow(1.0 - term, 5.0);
+vec3 frenselTerm(vec3 color, float metallic, float VdotH) {
+	vec3 F0 = mix(vec3(0.04), color, metallic);  // base reflectivity
+	return F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 }
 
 vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
-	float alpha = roughness * roughness;
-	float alphaS = alpha * alpha;
-	float scale = metallic * roughness;
+	float alpha2 = roughness * roughness;
 
 	// compute halfway vector
 	vec3 H = normalize(V + L);
 
-	// compute the geometric term
+	// compute the dot products
 	float NdotH = max(dot(N, H), 0.0);
 	float NdotV = max(dot(N, V), 0.0);
 	float VdotH = max(dot(V, H), 0.0);
-	float NdotL = dot(N, L);
+	float NdotL = max(dot(N, L), 0.0);
 
 	// compute the roughness term
-	float D = roughnessTerm(NdotH, alphaS);
+	float D = roughnessTerm(NdotH, alpha2);
 
 	// geometric attenuation factor
-	float G = gAttenutation(NdotV, alphaS) * gAttenutation(NdotL, alphaS);
+	float G = gAttenutation(NdotV, roughness) * gAttenutation(NdotL, roughness);
 
 	// compute the Fresnel term (schlick approximation)
 	vec3 F = frenselTerm(albedo.rgb, metallic, VdotH);
 
 	// specular and diffuse terms
-	vec3 specular = scale * (D * G * F) / (4.0 * NdotV * NdotL);
-	vec3 diffuse = (1.0 - metallic) * albedo.rgb * (1.0 / PI);
+	vec3 specular = (D * G * F) / (4.0 * max(NdotV * NdotL, 0.0001));
+	vec3 diffuse = (1.0 - metallic) * albedo.rgb / PI;
 
 	return (diffuse + specular); // output final color
 }
@@ -84,7 +82,8 @@ void getTextures() {
 		nextTexture += 1;
 	}
 	if (normalExists) {
-		normal = (texture(texSamplers[nextTexture], inTexCoord).rgb * 2.0 - 1.0) * -1.0;
+		normal = (texture(texSamplers[nextTexture], inTexCoord).rgb * 2.0 - 1.0);
+		normal.y *= -1.0;
 		normal = normalize(inTBN * normal);
 		nextTexture += 1;
 	}

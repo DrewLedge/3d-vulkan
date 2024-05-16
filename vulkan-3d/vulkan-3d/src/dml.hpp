@@ -14,7 +14,6 @@ public:
 	struct vec4;
 	struct mat4;
 
-
 	struct alignas(16) vec3 {
 		float x, y, z;
 		vec3() : x(0.0f), y(0.0f), z(0.0f) {}
@@ -326,7 +325,7 @@ public:
 			}
 			return result;
 		}
-		mat4& operator *=(const mat4& other) {
+		mat4& operator*=(const mat4& other) {
 			mat4 temp;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
@@ -340,7 +339,7 @@ public:
 			return *this;
 		}
 
-		friend vec3 operator *(const mat4& mat, const vec3& vec) {
+		friend vec3 operator*(const mat4& mat, const vec3& vec) {
 			float x = mat.m[0][0] * vec.x + mat.m[1][0] * vec.y + mat.m[2][0] * vec.z + mat.m[3][0];
 			float y = mat.m[0][1] * vec.x + mat.m[1][1] * vec.y + mat.m[2][1] * vec.z + mat.m[3][1];
 			float z = mat.m[0][2] * vec.x + mat.m[1][2] * vec.y + mat.m[2][2] * vec.z + mat.m[3][2];
@@ -353,7 +352,7 @@ public:
 			return vec3(x, y, z);
 		}
 
-		friend vec4 operator *(const mat4& mat, const vec4& vec) {
+		friend vec4 operator*(const mat4& mat, const vec4& vec) {
 			float x = mat.m[0][0] * vec.x + mat.m[1][0] * vec.y + mat.m[2][0] * vec.z + mat.m[3][0] * vec.w;
 			float y = mat.m[0][1] * vec.x + mat.m[1][1] * vec.y + mat.m[2][1] * vec.z + mat.m[3][1] * vec.w;
 			float z = mat.m[0][2] * vec.x + mat.m[1][2] * vec.y + mat.m[2][2] * vec.z + mat.m[3][2] * vec.w;
@@ -361,7 +360,7 @@ public:
 			return vec4(x, y, z, w);
 		}
 
-		mat4 operator +(const mat4& other) const {
+		mat4 operator+(const mat4& other) const {
 			mat4 result;
 			for (int i = 0; i < 4; ++i) {
 				for (int j = 0; j < 4; ++j) {
@@ -371,7 +370,7 @@ public:
 			return result;
 		}
 
-		mat4& operator +=(const mat4& other) {
+		mat4& operator+=(const mat4& other) {
 			for (int i = 0; i < 4; ++i) {
 				for (int j = 0; j < 4; ++j) {
 					m[i][j] += other.m[i][j];
