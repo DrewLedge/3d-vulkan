@@ -317,13 +317,11 @@ private:
 
 	struct WBOITData { // weighted blended order independent transparency
 		dvl::Texture weightedColor;
-		dvl::Texture weightedAlpha;
 		VkFramebuffer frameBuffer;
 		PipelineData pipeline;
 
 		WBOITData()
 			: weightedColor(),
-			weightedAlpha(),
 			frameBuffer(VK_NULL_HANDLE),
 			pipeline()
 		{}
@@ -1175,7 +1173,7 @@ private:
 				else {
 					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 				}
-				//vertex.col.w = 0.6f;
+				vertex.col.w = 0.6f;
 
 				// get handedness of the tangent
 				dml::vec3 t = tangents[index].xyz();
@@ -1390,14 +1388,9 @@ private:
 		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, vkhelper::DEPTH);
 
 		// weighted color image
-		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(wboit.weightedColor, swap.imageFormat);
+		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
 		vkhelper::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
-
-		// weighted alpha image
-		vkhelper::createImage(wboit.weightedAlpha.image, wboit.weightedAlpha.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(wboit.weightedAlpha, swap.imageFormat);
-		vkhelper::createSampler(wboit.weightedAlpha.sampler, wboit.weightedAlpha.mipLevels);
 
 		// skybox image (2d)
 		vkhelper::createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
@@ -1675,9 +1668,9 @@ private:
 		camMatBufferInfo.offset = 0;
 		camMatBufferInfo.range = sizeof(CamUBO);
 
-		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(4);
-		std::array<VkImageView, 4> cImageViews = { mainPassTextures.color.imageView, wboit.weightedColor.imageView, wboit.weightedAlpha.imageView, skybox.out.imageView };
-		std::array<VkSampler, 4> cSamplers = { mainPassTextures.color.sampler, wboit.weightedColor.sampler, wboit.weightedAlpha.sampler, skybox.cubemap.sampler };
+		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(3);
+		std::array<VkImageView, 3> cImageViews = { mainPassTextures.color.imageView, wboit.weightedColor.imageView, skybox.out.imageView };
+		std::array<VkSampler, 3> cSamplers = { mainPassTextures.color.sampler, wboit.weightedColor.sampler, skybox.cubemap.sampler };
 
 		for (size_t i = 0; i < compositionPassImageInfo.size(); i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -2717,22 +2710,20 @@ private:
 		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
 		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
-		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
-		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
-
-		std::array<VkPipelineColorBlendAttachmentState, 2> colorBAS = { colorBA, colorBA };
 
 		VkPipelineColorBlendStateCreateInfo colorBS{};
 		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
 		colorBS.logicOpEnable = VK_FALSE;
 		colorBS.logicOp = VK_LOGIC_OP_COPY;
-		colorBS.attachmentCount = 2;
-		colorBS.pAttachments = colorBAS.data();
+		colorBS.attachmentCount = 1;
+		colorBS.pAttachments = &colorBA;
 
 		// weighted color
 		VkAttachmentDescription colorAttachment{};
-		colorAttachment.format = swap.imageFormat;
+		colorAttachment.format = VK_FORMAT_R16G16B16A16_SFLOAT;
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -2745,33 +2736,16 @@ private:
 		colorAttachmentRef.attachment = 0;
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-		// weighted alpha
-		VkAttachmentDescription alphaAttachment{};
-		alphaAttachment.format = swap.imageFormat;
-		alphaAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-		alphaAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-		alphaAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-		alphaAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-		alphaAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-		alphaAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		alphaAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-
-		VkAttachmentReference alphaAttachmentRef{};
-		alphaAttachmentRef.attachment = 1;
-		alphaAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-
-		std::array<VkAttachmentReference, 2> colorAttatchments = { colorAttachmentRef, alphaAttachmentRef };
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-		subpass.colorAttachmentCount = 2;
-		subpass.pColorAttachments = colorAttatchments.data();
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &colorAttachmentRef;
 
 		// define the render pass
-		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, alphaAttachment };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
-		renderPassInf.pAttachments = attachments.data();
+		renderPassInf.attachmentCount = 1;
+		renderPassInf.pAttachments = &colorAttachment;
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
 		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &wboit.pipeline.renderPass);
@@ -3538,7 +3512,7 @@ private:
 
 	void createWBOITFB() {
 		// create the framebuffer for the wboit pass
-		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView, wboit.weightedAlpha.imageView };
+		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView };
 		if (wboit.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, wboit.frameBuffer, nullptr);
 		vkhelper::createFB(wboit.pipeline.renderPass, wboit.frameBuffer, attachmentsD, swap.extent.width, swap.extent.height);
 	}
@@ -3615,7 +3589,6 @@ private:
 		freeTexture(mainPassTextures.depth);
 
 		freeTexture(wboit.weightedColor);
-		freeTexture(wboit.weightedAlpha);
 
 		freeTexture(skybox.out);
 

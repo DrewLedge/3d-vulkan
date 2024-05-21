@@ -14,9 +14,9 @@ void main() {
 
     // get the weighted color and alpha from the wboit pass
     vec4 weightedColor = texture(textures[1], inUV);
-    float weightedAlpha = texture(textures[2], inUV).g;
+    float weightedAlpha = weightedColor.a;
 
-    vec4 skyboxColor = texture(textures[3], inUV);
+    vec4 skyboxColor = texture(textures[2], inUV);
     float factor = pow(weightedAlpha, 2.0) * 0.1;
     weightedColor = mix(weightedColor, skyboxColor, factor);
 

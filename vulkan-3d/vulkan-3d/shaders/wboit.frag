@@ -12,7 +12,6 @@ layout(set = 4, binding = 6) uniform sampler2D depthSampler;
 struct LightData {
     mat4 view;
     mat4 proj;
-
     vec4 pos;
     vec4 color;
     vec4 targetVec;
@@ -40,7 +39,6 @@ layout(location = 10) in float inFarPlane;
 layout(location = 11) in float inNearPlane;
 
 layout(location = 0) out vec4 outColor; 
-layout(location = 1) out vec4 outAlpha; 
 
 vec4 albedo = vec4(0.0f);
 vec4 metallicRoughness = vec4(1.0f);
@@ -51,12 +49,10 @@ float occlusion = 1.0f;
 #include "includes/fragformulas.glsl"
 
 float getWeight(float z, float a) {
-    float af = pow(a + 0.01, 2.0); //alpha factor
-    float df = 1.0 / (1e-5 + pow(abs(z) / 10.0, 2.0) + pow(abs(z) / 200.0, 4.0)); // depth factor
-    
-    float weight = af * df;
-    return clamp(weight, 0.0, 2.0);
+    float weight = a * exp(-z);
+    return weight;
 }
+
 
 void main() {
     if (inRender == 1) {
@@ -73,16 +69,12 @@ void main() {
     oDepth = linDepth(oDepth, inNearPlane, inFarPlane);
 
     // get the depth of the fragment
-    float tDepth = gl_FragCoord.z;
-    tDepth = linDepth(tDepth, inNearPlane, inFarPlane);
+    float tDepth = linDepth(gl_FragCoord.z, inNearPlane, inFarPlane);
 
     // if the transparent depth is greater than the opaque depth, discard
-    if (tDepth > oDepth) {
-        discard;
-    }
-    
+    if (tDepth > oDepth) discard;
+
     // get the weight and output the color and alpha
     float weight = getWeight(gl_FragCoord.z, color.a);
-    outColor = vec4(color.rgb * color.a * weight, color.a);
-    outAlpha = vec4(color.a * weight);
+    outColor = vec4(color.rgb * weight, weight);
 }
