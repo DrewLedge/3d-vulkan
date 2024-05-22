@@ -50,7 +50,7 @@ float occlusion = 1.0f;
 
 float getWeight(float z, float a) {
     float weight = a * exp(-z);
-    return weight;
+    return 1.0 - weight;
 }
 
 

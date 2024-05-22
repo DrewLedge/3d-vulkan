@@ -1173,7 +1173,7 @@ private:
 				else {
 					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 				}
-				vertex.col.w = 0.6f;
+				//vertex.col.w = 0.6f;
 
 				// get handedness of the tangent
 				dml::vec3 t = tangents[index].xyz();
@@ -2708,7 +2708,7 @@ private:
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 		colorBA.blendEnable = VK_TRUE;
 		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE;
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
 		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
