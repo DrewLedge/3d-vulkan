@@ -227,7 +227,6 @@ private:
 
 	struct SkyboxObject { // skybox struct
 		dvl::Texture cubemap;
-		dvl::Texture out;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
 		BufData bufferData; // buffer data for the skybox (vert offsets, etc)
@@ -241,7 +240,6 @@ private:
 
 		SkyboxObject()
 			: cubemap(),
-			out(),
 			pipelineLayout(VK_NULL_HANDLE),
 			pipeline(VK_NULL_HANDLE),
 			bufferData(),
@@ -1398,11 +1396,6 @@ private:
 		vkhelper::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
 		vkhelper::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
 
-		// skybox image (2d)
-		vkhelper::createImage(skybox.out.image, skybox.out.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandPool);
-		vkhelper::createImageView(skybox.out, swap.imageFormat);
-		vkhelper::createSampler(skybox.out.sampler, skybox.out.mipLevels);
-
 		// shadowmaps
 		if (init) {
 			for (size_t i = 0; i < lights.size(); i++) {
@@ -1674,14 +1667,13 @@ private:
 		camMatBufferInfo.offset = 0;
 		camMatBufferInfo.range = sizeof(CamUBO);
 
-		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(3);
-		std::array<VkImageView, 3> cImageViews = { mainPassTextures.color.imageView, wboit.weightedColor.imageView, skybox.out.imageView };
-		std::array<VkSampler, 3> cSamplers = { mainPassTextures.color.sampler, wboit.weightedColor.sampler, skybox.out.sampler };
-
+		const uint32_t texCompSize = 2;
+		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
+		std::array<dvl::Texture, texCompSize> compositionTextures = { mainPassTextures.color, wboit.weightedColor };
 		for (size_t i = 0; i < compositionPassImageInfo.size(); i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			compositionPassImageInfo[i].imageView = cImageViews[i];
-			compositionPassImageInfo[i].sampler = cSamplers[i];
+			compositionPassImageInfo[i].imageView = compositionTextures[i].imageView;
+			compositionPassImageInfo[i].sampler = compositionTextures[i].sampler;
 		}
 
 		VkDescriptorImageInfo mainPassDepthInfo{};
@@ -1695,7 +1687,6 @@ private:
 		descs.pools.resize(size);
 
 		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
-		uint32_t texCompSize = static_cast<uint32_t>(compositionPassImageInfo.size());
 
 		//initialize descriptor set layouts and pools
 		createDSLayoutPool(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
@@ -3571,7 +3562,6 @@ private:
 		freeTexture(mainPassTextures.color);
 		freeTexture(mainPassTextures.depth);
 		freeTexture(wboit.weightedColor);
-		freeTexture(skybox.out);
 
 		cleanupSC();
 		createSC();

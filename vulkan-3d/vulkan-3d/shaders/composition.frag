@@ -22,12 +22,9 @@ void main() {
         return;
     }
 
-    vec4 skyboxColor = texture(textures[2], inUV);
-    float factor = pow(weightedAlpha, 2.0) * 0.1;
-    weightedColor = mix(weightedColor, skyboxColor, factor);
-
     weightedColor.rgb /= max(weightedAlpha, 1e-5);
 
     // blend the main color with the weighted color based on the weighted alpha
     outColor = vec4(mix(mainColor.rgb, weightedColor.rgb, weightedAlpha), 1.0);
+    outColor.rgb *= pow(weightedAlpha, 0.4);
 }
