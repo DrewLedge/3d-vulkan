@@ -433,6 +433,19 @@ public:
 		}
 	}
 
+	static VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, const size_t commandBufferCount) {
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount = 0;
+		submitInfo.pWaitSemaphores = nullptr;
+		submitInfo.pWaitDstStageMask = nullptr;
+		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+		submitInfo.pCommandBuffers = commandBuffers;
+		submitInfo.signalSemaphoreCount = 0;
+		submitInfo.pSignalSemaphores = nullptr;
+		return submitInfo;
+	}
+
 	static VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkSemaphore& wait, const VkSemaphore& signal) {
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;

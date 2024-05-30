@@ -447,7 +447,12 @@ private:
 
 	// mutexes and multithreading
 	std::mutex modelMtx;
-	std::mutex mtx;
+
+	tf::Executor cmdExecutor;
+	tf::Taskflow tfCmd;
+
+	tf::Executor meshExecutor;
+	tf::Taskflow tfMesh;
 
 	// other
 	bool debug = true;
@@ -498,20 +503,20 @@ private:
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		tf::Executor executor;
-		tf::Taskflow taskFlow;
+		tfMesh.clear();
 
-		createObjTask(taskFlow, "sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask(taskFlow, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObjTask(taskFlow, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObjTask(taskFlow, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		createObjTask(tfMesh, "sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
-		executor.run(taskFlow).wait();
+		meshExecutor.run(tfMesh).wait();
 
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
+
 
 		for (auto& obj : objects) {
 			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
@@ -3181,57 +3186,59 @@ private:
 		VkDeviceSize offsets[] = { 0, 0 };
 
 		for (size_t i = 0; i < lights.size(); i++) {
-			if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer!");
-			}
-			// render pass
-			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = shadowMapPipeline.renderPass;
-			renderPassInfo.framebuffer = lights[i]->frameBuffer;
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
-			renderPassInfo.clearValueCount = 1;
-			renderPassInfo.pClearValues = &clearValue;
-			vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-			vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline.graphicsPipeline);
-
-			// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
-			vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline.layout, 0, 1, &shadowDS, 0, nullptr);
-
-			// iterate through all objects that cast shadows
-			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
-			VkBuffer indexBuffer = indBuffer;
-
-			vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 2, vertexBuffersArray, offsets);
-
-			vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-
-			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
-				if (uniqueModelInd == j) { // only process unique models
-					struct {
-						int modelIndex;
-						int lightIndex;
-					} pushConst;
-					pushConst.modelIndex = static_cast<int>(j);
-					pushConst.lightIndex = static_cast<int>(i);
-
-					vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-					vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
-						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+			tfCmd.emplace([&, i, beginInfo, clearValue, shadowDS, offsets]() {
+				if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
+					throw std::runtime_error("failed to begin recording command buffer!");
 				}
-			}
+				// render pass
+				VkRenderPassBeginInfo renderPassInfo{};
+				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+				renderPassInfo.renderPass = shadowMapPipeline.renderPass;
+				renderPassInfo.framebuffer = lights[i]->frameBuffer;
+				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
+				renderPassInfo.clearValueCount = 1;
+				renderPassInfo.pClearValues = &clearValue;
+				vkCmdBeginRenderPass(shadowMapCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-			// end the render pass and command buffer
-			vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
-			if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
-			}
+				vkCmdBindPipeline(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline.graphicsPipeline);
+
+				// bind the descriptorset that contains light matrices and the shadowmap sampler array descriptorset
+				vkCmdBindDescriptorSets(shadowMapCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, shadowMapPipeline.layout, 0, 1, &shadowDS, 0, nullptr);
+
+				// iterate through all objects that cast shadows
+				VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
+				VkBuffer indexBuffer = indBuffer;
+
+				vkCmdBindVertexBuffers(shadowMapCommandBuffers[i], 0, 2, vertexBuffersArray, offsets);
+
+				vkCmdBindIndexBuffer(shadowMapCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+				for (size_t j = 0; j < objects.size(); j++) {
+					uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+					if (uniqueModelInd == j) { // only process unique models
+						struct {
+							int modelIndex;
+							int lightIndex;
+						} pushConst;
+						pushConst.modelIndex = static_cast<int>(j);
+						pushConst.lightIndex = static_cast<int>(i);
+
+						vkCmdPushConstants(shadowMapCommandBuffers[i], shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
+						size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+						uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
+						vkCmdDrawIndexed(shadowMapCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+							bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+					}
+				}
+
+				// end the render pass and command buffer
+				vkCmdEndRenderPass(shadowMapCommandBuffers[i]);
+				if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
+					throw std::runtime_error("failed to record command buffer!");
+				}
+				});
 		}
 	}
 
@@ -3247,71 +3254,73 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
-			if (vkBeginCommandBuffer(mainPassCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer!");
-			}
-
-			vkCmdSetViewport(mainPassCommandBuffers[i], 0, 1, &swapVP);
-			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = mainPassPipeline.renderPass;
-			renderPassInfo.framebuffer = mainPassFB;
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = swap.extent;
-			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-			renderPassInfo.pClearValues = clearValues.data();
-
-			vkCmdBeginRenderPass(mainPassCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
-
-			// FOR THE SKYBOX PASS
-			vkCmdBindPipeline(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-			vkCmdBindDescriptorSets(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-			vkCmdBindVertexBuffers(mainPassCommandBuffers[i], 0, 1, &skybox.vertBuffer, skyboxOffsets);
-			vkCmdBindIndexBuffer(mainPassCommandBuffers[i], skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
-			vkCmdDrawIndexed(mainPassCommandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
-
-			// FOR THE MAIN PASS
-			vkCmdBindPipeline(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.graphicsPipeline);
-			vkCmdBindDescriptorSets(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.layout, 0, static_cast<uint32_t>(mainDS.size()), mainDS.data(), 0, nullptr);
-			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
-			VkBuffer indexBuffer = indBuffer;
-
-			// bind the vertex and instance buffers
-			vkCmdBindVertexBuffers(mainPassCommandBuffers[i], 0, 2, vertexBuffersArray, mainOffsets);
-			vkCmdBindIndexBuffer(mainPassCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-			uint32_t p = 0;
-			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
-				if (uniqueModelInd == j) { // only process unique models
-					// bitfield for which textures exist
-					int textureExistence = 0;
-					textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
-					textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
-					textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
-					textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
-					textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
-
-					struct {
-						int textureExist; // bitfield of which textures exist
-						int texIndex; // starting index of the textures in the texture array
-					} pushConst;
-
-					pushConst.textureExist = textureExistence;
-					pushConst.texIndex = meshTexStartInd[p];
-					vkCmdPushConstants(mainPassCommandBuffers[i], mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-
-					vkCmdDrawIndexed(mainPassCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
-						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
-					p++;
+			tfCmd.emplace([&, i, clearValues, skyboxDS, mainDS, skyboxOffsets, mainOffsets, beginInfo]() {
+				if (vkBeginCommandBuffer(mainPassCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
+					throw std::runtime_error("failed to begin recording command buffer!");
 				}
-			}
-			vkCmdEndRenderPass(mainPassCommandBuffers[i]);
-			if (vkEndCommandBuffer(mainPassCommandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
-			}
+
+				vkCmdSetViewport(mainPassCommandBuffers[i], 0, 1, &swapVP);
+				VkRenderPassBeginInfo renderPassInfo{};
+				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+				renderPassInfo.renderPass = mainPassPipeline.renderPass;
+				renderPassInfo.framebuffer = mainPassFB;
+				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.extent = swap.extent;
+				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+				renderPassInfo.pClearValues = clearValues.data();
+
+				vkCmdBeginRenderPass(mainPassCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
+
+				// FOR THE SKYBOX PASS
+				vkCmdBindPipeline(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
+				vkCmdBindDescriptorSets(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+				vkCmdBindVertexBuffers(mainPassCommandBuffers[i], 0, 1, &skybox.vertBuffer, skyboxOffsets);
+				vkCmdBindIndexBuffer(mainPassCommandBuffers[i], skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
+				vkCmdDrawIndexed(mainPassCommandBuffers[i], skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
+
+				// FOR THE MAIN PASS
+				vkCmdBindPipeline(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.graphicsPipeline);
+				vkCmdBindDescriptorSets(mainPassCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.layout, 0, static_cast<uint32_t>(mainDS.size()), mainDS.data(), 0, nullptr);
+				VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
+				VkBuffer indexBuffer = indBuffer;
+
+				// bind the vertex and instance buffers
+				vkCmdBindVertexBuffers(mainPassCommandBuffers[i], 0, 2, vertexBuffersArray, mainOffsets);
+				vkCmdBindIndexBuffer(mainPassCommandBuffers[i], indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+				uint32_t p = 0;
+				for (size_t j = 0; j < objects.size(); j++) {
+					uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+					if (uniqueModelInd == j) { // only process unique models
+						// bitfield for which textures exist
+						int textureExistence = 0;
+						textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+						textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+						textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+						textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+						textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
+
+						struct {
+							int textureExist; // bitfield of which textures exist
+							int texIndex; // starting index of the textures in the texture array
+						} pushConst;
+
+						pushConst.textureExist = textureExistence;
+						pushConst.texIndex = meshTexStartInd[p];
+						vkCmdPushConstants(mainPassCommandBuffers[i], mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
+						size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+						uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
+
+						vkCmdDrawIndexed(mainPassCommandBuffers[i], bufferData[bufferInd].indexCount, instanceCount,
+							bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+						p++;
+					}
+				}
+				vkCmdEndRenderPass(mainPassCommandBuffers[i]);
+				if (vkEndCommandBuffer(mainPassCommandBuffers[i]) != VK_SUCCESS) {
+					throw std::runtime_error("failed to record command buffer!");
+				}
+				});
 		}
 	}
 
@@ -3325,65 +3334,67 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
-			VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers[i];
-			if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer!");
-			}
-
-			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = wboitPipeline.renderPass;
-			renderPassInfo.framebuffer = wboit.frameBuffer;
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = swap.extent;
-			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-			renderPassInfo.pClearValues = clearValues.data();
-
-			vkhelper::transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-
-			vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
-
-			vkCmdBindPipeline(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.graphicsPipeline);
-			vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.layout, 0, static_cast<uint32_t>(wboitDS.size()), wboitDS.data(), 0, nullptr);
-			VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
-			VkBuffer indexBuffer = indBuffer;
-
-			// bind the vertex and instance buffers
-			vkCmdBindVertexBuffers(wboitCommandBuffer, 0, 2, vertexBuffersArray, offset);
-			vkCmdBindIndexBuffer(wboitCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-			uint32_t p = 0;
-			for (size_t j = 0; j < objects.size(); j++) {
-				uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
-				if (uniqueModelInd == j) { // only process unique models
-					// bitfield for which textures exist
-					int textureExistence = 0;
-					textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
-					textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
-					textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
-					textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
-					textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
-
-					struct {
-						int textureExist; // bitfield of which textures exist
-						int texIndex; // starting index of the textures in the texture array
-					} pushConst;
-
-					pushConst.textureExist = textureExistence;
-					pushConst.texIndex = meshTexStartInd[p];
-					vkCmdPushConstants(wboitCommandBuffer, wboitPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-					size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
-					uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-
-					vkCmdDrawIndexed(wboitCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
-						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
-					p++;
+			tfCmd.emplace([&, i, clearValues, wboitDS, offset, beginInfo]() {
+				VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers[i];
+				if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
+					throw std::runtime_error("failed to begin recording command buffer!");
 				}
-			}
-			vkCmdEndRenderPass(wboitCommandBuffer);
-			if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
-			}
+
+				VkRenderPassBeginInfo renderPassInfo{};
+				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+				renderPassInfo.renderPass = wboitPipeline.renderPass;
+				renderPassInfo.framebuffer = wboit.frameBuffer;
+				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.extent = swap.extent;
+				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+				renderPassInfo.pClearValues = clearValues.data();
+
+				vkhelper::transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+
+				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
+
+				vkCmdBindPipeline(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.graphicsPipeline);
+				vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.layout, 0, static_cast<uint32_t>(wboitDS.size()), wboitDS.data(), 0, nullptr);
+				VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
+				VkBuffer indexBuffer = indBuffer;
+
+				// bind the vertex and instance buffers
+				vkCmdBindVertexBuffers(wboitCommandBuffer, 0, 2, vertexBuffersArray, offset);
+				vkCmdBindIndexBuffer(wboitCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+				uint32_t p = 0;
+				for (size_t j = 0; j < objects.size(); j++) {
+					uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+					if (uniqueModelInd == j) { // only process unique models
+						// bitfield for which textures exist
+						int textureExistence = 0;
+						textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+						textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+						textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+						textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+						textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
+
+						struct {
+							int textureExist; // bitfield of which textures exist
+							int texIndex; // starting index of the textures in the texture array
+						} pushConst;
+
+						pushConst.textureExist = textureExistence;
+						pushConst.texIndex = meshTexStartInd[p];
+						vkCmdPushConstants(wboitCommandBuffer, wboitPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+
+						size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+						uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
+
+						vkCmdDrawIndexed(wboitCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
+							bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+						p++;
+					}
+				}
+				vkCmdEndRenderPass(wboitCommandBuffer);
+				if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
+					throw std::runtime_error("failed to record command buffer!");
+				}
+				});
 		}
 	}
 
@@ -3396,54 +3407,56 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
-			if (vkBeginCommandBuffer(compCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording command buffer!");
-			}
+			tfCmd.emplace([&, i, clearValues, compDS, beginInfo]() {
+				if (vkBeginCommandBuffer(compCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
+					throw std::runtime_error("failed to begin recording command buffer!");
+				}
 
-			VkRenderPassBeginInfo renderPassInfo{};
-			renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-			renderPassInfo.renderPass = compositionPipelineData.renderPass;
-			renderPassInfo.framebuffer = swap.framebuffers[i];
-			renderPassInfo.renderArea.offset = { 0, 0 };
-			renderPassInfo.renderArea.extent = swap.extent;
-			renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-			renderPassInfo.pClearValues = clearValues.data();
+				VkRenderPassBeginInfo renderPassInfo{};
+				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+				renderPassInfo.renderPass = compositionPipelineData.renderPass;
+				renderPassInfo.framebuffer = swap.framebuffers[i];
+				renderPassInfo.renderArea.offset = { 0, 0 };
+				renderPassInfo.renderArea.extent = swap.extent;
+				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+				renderPassInfo.pClearValues = clearValues.data();
 
-			vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-			vkCmdBindPipeline(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.graphicsPipeline);
-			vkCmdBindDescriptorSets(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.layout, 0, 1, &compDS, 0, nullptr);
+				vkCmdBeginRenderPass(compCommandBuffers[i], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+				vkCmdBindPipeline(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.graphicsPipeline);
+				vkCmdBindDescriptorSets(compCommandBuffers[i], VK_PIPELINE_BIND_POINT_GRAPHICS, compositionPipelineData.layout, 0, 1, &compDS, 0, nullptr);
 
-			vkCmdDraw(compCommandBuffers[i], 6, 1, 0, 0);
+				vkCmdDraw(compCommandBuffers[i], 6, 1, 0, 0);
 
-			// prepare for next frame in ImGui:
-			ImGui_ImplVulkan_NewFrame();
-			ImGui_ImplGlfw_NewFrame();
-			ImGui::NewFrame();
+				// prepare for next frame in ImGui:
+				ImGui_ImplVulkan_NewFrame();
+				ImGui_ImplGlfw_NewFrame();
+				ImGui::NewFrame();
 
-			// draw the imgui text
-			std::string fpsText = "fps: " + std::to_string(fps);
-			std::string objText = "objects: " + std::to_string(objects.size());
-			std::string lightText = "lights: " + std::to_string(lights.size());
+				// draw the imgui text
+				std::string fpsText = "fps: " + std::to_string(fps);
+				std::string objText = "objects: " + std::to_string(objects.size());
+				std::string lightText = "lights: " + std::to_string(lights.size());
 
-			ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
-			drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
+				ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
+				drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
 
-			float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
-			float x = static_cast<float>(swap.extent.width / 2) + w;
-			drawText(objText, x, 30, font_large, bgColor);
+				float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
+				float x = static_cast<float>(swap.extent.width / 2) + w;
+				drawText(objText, x, 30, font_large, bgColor);
 
-			float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
-			float x2 = static_cast<float>(swap.extent.width / 2) - w2;
-			drawText(lightText, x2, 30, font_large, bgColor);
+				float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
+				float x2 = static_cast<float>(swap.extent.width / 2) - w2;
+				drawText(lightText, x2, 30, font_large, bgColor);
 
-			// render the imgui frame and draw imgui's commands into the command buffer:
-			ImGui::Render();
-			ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), compCommandBuffers[i]);
+				// render the imgui frame and draw imgui's commands into the command buffer:
+				ImGui::Render();
+				ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), compCommandBuffers[i]);
 
-			vkCmdEndRenderPass(compCommandBuffers[i]);
-			if (vkEndCommandBuffer(compCommandBuffers[i]) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record command buffer!");
-			}
+				vkCmdEndRenderPass(compCommandBuffers[i]);
+				if (vkEndCommandBuffer(compCommandBuffers[i]) != VK_SUCCESS) {
+					throw std::runtime_error("failed to record command buffer!");
+				}
+				});
 		}
 	}
 
@@ -3616,16 +3629,19 @@ private:
 		}
 
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
-		const size_t size = 4;
-		VkSubmitInfo submitInfos[size] = {};
+		std::vector<VkSubmitInfo> submitInfos;
 
-		submitInfos[0] = vkhelper::createSubmitInfo(shadowMapCommandBuffers.data(), shadowMapCommandBuffers.size(), waitStages, imageAvailableSemaphore, shadowSemaphore);
-		submitInfos[1] = vkhelper::createSubmitInfo(&mainPassCommandBuffers[imageIndex], 1, waitStages, shadowSemaphore, wboitSemaphore);
-		submitInfos[2] = vkhelper::createSubmitInfo(&wboitCommandBuffers[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore);
-		submitInfos[3] = vkhelper::createSubmitInfo(&compCommandBuffers[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore);
+		for (VkCommandBuffer& shadow : shadowMapCommandBuffers) {
+			VkSubmitInfo sub = vkhelper::createSubmitInfo(&shadow, 1);
+			submitInfos.push_back(sub);
+		}
 
-		// submit both command buffers in a single call
-		if (vkQueueSubmit(graphicsQueue, size, submitInfos, inFlightFences[currentFrame]) != VK_SUCCESS) {
+		submitInfos.push_back(vkhelper::createSubmitInfo(&mainPassCommandBuffers[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
+		submitInfos.push_back(vkhelper::createSubmitInfo(&wboitCommandBuffers[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
+		submitInfos.push_back(vkhelper::createSubmitInfo(&compCommandBuffers[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
+
+		// submit all command buffers in a single call
+		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame]) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit command buffers!");
 		}
 
@@ -3664,6 +3680,10 @@ private:
 		recordCommandBuffers();
 		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
+
+		cmdExecutor.run(tfCmd).wait();
+
+		tfCmd.clear();
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
