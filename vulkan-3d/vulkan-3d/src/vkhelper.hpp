@@ -177,7 +177,7 @@ public:
 	}
 
 	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
-		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags usage) {
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage) {
 
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -211,6 +211,13 @@ public:
 		}
 
 		vkBindImageMemory(device, image, imageMemory, 0);
+	}
+
+	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool) {
+
+		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage);
+		transitionImageLayout(cPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
 	}
 
 	static void createSampler(VkSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
@@ -371,27 +378,12 @@ public:
 		vkFreeCommandBuffers(device, cPool, 1, &cBuffer); //free the command buffer
 	}
 
-	static void createFB(const VkRenderPass& renderPass, VkFramebuffer& frameBuf, const VkImageView& IV, const uint32_t width, const uint32_t height) {
+	static void createFB(const VkRenderPass& renderPass, VkFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frameBufferInfo.renderPass = renderPass;
-		frameBufferInfo.attachmentCount = 1;
-		frameBufferInfo.pAttachments = &IV; // imageview
-		frameBufferInfo.width = width;
-		frameBufferInfo.height = height;
-		frameBufferInfo.layers = 1;
-
-		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuf) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create framebuffer!");
-		}
-	}
-
-	static void createFB(const VkRenderPass& renderPass, VkFramebuffer& frameBuf, const std::vector<VkImageView>& attachments, const uint32_t width, const uint32_t height) {
-		VkFramebufferCreateInfo frameBufferInfo{};
-		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = renderPass;
-		frameBufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
-		frameBufferInfo.pAttachments = attachments.data();
+		frameBufferInfo.attachmentCount = static_cast<uint32_t>(attatchmentCount);
+		frameBufferInfo.pAttachments = attachments;
 		frameBufferInfo.width = width;
 		frameBufferInfo.height = height;
 		frameBufferInfo.layers = 1;
@@ -429,6 +421,44 @@ public:
 			throw std::runtime_error("failed to allocate command buffers!!");
 		}
 		return commandBuffers;
+	}
+
+	static void createSemaphore(VkSemaphore& semaphore) {
+		VkSemaphoreCreateInfo semaphoreInfo{};
+		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+		VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
+		if (resultRenderFinished != VK_SUCCESS) {
+			throw std::runtime_error("failed to create semaphore!");
+		}
+	}
+
+	static VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkSemaphore& wait, const VkSemaphore& signal) {
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount = 1;
+		submitInfo.pWaitSemaphores = &wait;
+		submitInfo.pWaitDstStageMask = waitStages;
+		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+		submitInfo.pCommandBuffers = commandBuffers;
+		submitInfo.signalSemaphoreCount = 1;
+		submitInfo.pSignalSemaphores = &signal;
+		return submitInfo;
+	}
+
+	static VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkSemaphore* wait, const VkSemaphore* signal,
+		const size_t commandBufferCount, const size_t waitSemaphoreCount, const size_t signalSemaphoreCount) {
+
+		VkSubmitInfo submitInfo{};
+		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphoreCount);
+		submitInfo.pWaitSemaphores = wait;
+		submitInfo.pWaitDstStageMask = waitStages;
+		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+		submitInfo.pCommandBuffers = commandBuffers;
+		submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
+		submitInfo.pSignalSemaphores = signal;
+		return submitInfo;
 	}
 
 	// ------------------ DESCRIPTOR SETS ------------------ //
