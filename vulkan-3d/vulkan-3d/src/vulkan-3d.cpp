@@ -341,6 +341,28 @@ private:
 		{}
 	};
 
+	struct CommandBufferCollection {
+		std::vector<VkCommandBuffer> buffers;
+		std::vector<VkCommandPool> pools;
+
+		void resize(size_t size) {
+			buffers.resize(size);
+			pools.resize(size);
+		}
+
+		size_t size() const {
+			return buffers.size();
+		}
+
+		VkCommandBuffer* data() {
+			return buffers.data();
+		}
+
+		VkCommandBuffer& operator[](size_t index) {
+			return buffers[index];
+		}
+	};
+
 	// window and rendering context
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
@@ -369,10 +391,10 @@ private:
 
 	// command buffers and command pool
 	VkCommandPool commandPool = VK_NULL_HANDLE;
-	std::vector<VkCommandBuffer> mainPassCommandBuffers;
-	std::vector<VkCommandBuffer> shadowMapCommandBuffers;
-	std::vector<VkCommandBuffer> wboitCommandBuffers;
-	std::vector<VkCommandBuffer> compCommandBuffers;
+	CommandBufferCollection mainPassCommandBuffers;
+	CommandBufferCollection shadowMapCommandBuffers;
+	CommandBufferCollection wboitCommandBuffers;
+	CommandBufferCollection compCommandBuffers;
 
 	// buffers
 	VkBuffer vertBuffer = VK_NULL_HANDLE;
@@ -447,6 +469,7 @@ private:
 
 	// mutexes and multithreading
 	std::mutex modelMtx;
+	std::mutex compositionMutex;
 
 	tf::Executor cmdExecutor;
 	tf::Taskflow tfCmd;
@@ -2998,13 +3021,13 @@ private:
 		return cPool;
 	}
 
-	void createSCCommandBuffers(std::vector<VkCommandBuffer>& cmdBuffers) {
+	void createSCCommandBuffers(CommandBufferCollection& cmdBuffers) {
 		cmdBuffers.resize(swap.images.size());  //resize based on swap chain images size
-		cmdBuffers = vkhelper::allocateCommandBuffers(commandPool, swap.images.size());
-	}
 
-	void createSCCommandBuffers(VkCommandBuffer& cmdBuffer) {
-		cmdBuffer = vkhelper::allocateCommandBuffers(commandPool);
+		for (size_t i = 0; i < cmdBuffers.buffers.size(); i++) {
+			cmdBuffers.pools[i] = createCommandPool();
+			cmdBuffers.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.pools[i]);
+		}
 	}
 
 	void createShadowCommandBuffers() { // create a command buffer for each light
@@ -3013,8 +3036,9 @@ private:
 		for (size_t i = 0; i < lights.size(); i++) {
 			if (lights[i]->frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, lights[i]->frameBuffer, nullptr);
 			vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.mapWidth, shadowProps.mapHeight);
+			shadowMapCommandBuffers.pools[i] = createCommandPool();
+			shadowMapCommandBuffers.buffers[i] = vkhelper::allocateCommandBuffers(shadowMapCommandBuffers.pools[i]);
 		}
-		shadowMapCommandBuffers = vkhelper::allocateCommandBuffers(commandPool, lights.size());
 	}
 
 	void createCommandBuffers() {
@@ -3427,6 +3451,8 @@ private:
 
 				vkCmdDraw(compCommandBuffers[i], 6, 1, 0, 0);
 
+				compositionMutex.lock();
+
 				// prepare for next frame in ImGui:
 				ImGui_ImplVulkan_NewFrame();
 				ImGui_ImplGlfw_NewFrame();
@@ -3451,6 +3477,8 @@ private:
 				// render the imgui frame and draw imgui's commands into the command buffer:
 				ImGui::Render();
 				ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), compCommandBuffers[i]);
+
+				compositionMutex.unlock();
 
 				vkCmdEndRenderPass(compCommandBuffers[i]);
 				if (vkEndCommandBuffer(compCommandBuffers[i]) != VK_SUCCESS) {
@@ -3631,7 +3659,7 @@ private:
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
 		std::vector<VkSubmitInfo> submitInfos;
 
-		for (VkCommandBuffer& shadow : shadowMapCommandBuffers) {
+		for (VkCommandBuffer& shadow : shadowMapCommandBuffers.buffers) {
 			VkSubmitInfo sub = vkhelper::createSubmitInfo(&shadow, 1);
 			submitInfos.push_back(sub);
 		}
@@ -3669,12 +3697,6 @@ private:
 	void recordAllCommandBuffers() { // record every command buffer
 		//auto start = utils::now();
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		//auto durationMc = utils::duration<microseconds>(start);
-		//auto durationMs = utils::duration<milliseconds>(start);
-
-		//utils::sep();
-		//utils::printDuration(durationMc);
-		//utils::printDuration(durationMs);
 
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
@@ -3684,6 +3706,11 @@ private:
 		cmdExecutor.run(tfCmd).wait();
 
 		tfCmd.clear();
+
+		//auto durationMc = utils::duration<microseconds>(start);
+		//utils::sep();
+		//std::cout << "Command buffer recording time:" << std::endl;
+		//utils::printDuration(durationMc);
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {

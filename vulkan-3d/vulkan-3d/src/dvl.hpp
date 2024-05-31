@@ -147,7 +147,7 @@ public:
 
 	struct Mesh {
 		Material material; //used to store all the textures/materials of the mesh
-		std::vector<dvl::Vertex> vertices;
+		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
 		std::string pathObj; // i.e "models/cube.obj"
 
