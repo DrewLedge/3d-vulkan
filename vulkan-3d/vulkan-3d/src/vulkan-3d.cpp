@@ -3169,11 +3169,19 @@ private:
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 		dml::vec3 target = pos + (dml::quatToDir(cam.quat) * -1);
 		Light l = createLight(pos, target);
-		lights.push_back(std::make_unique<Light>(l));
 
-		vkhelper::createImage(lights.back()->shadowMapData.image, lights.back()->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
-		vkhelper::createImageView(lights.back()->shadowMapData, vkhelper::DEPTH);
-		vkhelper::createSampler(lights.back()->shadowMapData.sampler, lights.back()->shadowMapData.mipLevels, vkhelper::DEPTH);
+		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImageView(l.shadowMapData, vkhelper::DEPTH);
+		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkhelper::DEPTH);
+
+		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.mapWidth, shadowProps.mapHeight);
+
+		VkCommandPool p = createCommandPool();
+		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p);
+		shadowMapCommandBuffers.buffers.push_back(c);
+		shadowMapCommandBuffers.pools.push_back(p);
+
+		lights.push_back(std::make_unique<Light>(l));
 
 		VkDescriptorImageInfo shadowInfo{};
 		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
@@ -3188,7 +3196,6 @@ private:
 		vkDestroyBuffer(device, lightBuffer, nullptr);
 		vkFreeMemory(device, lightBufferMem, nullptr);
 		createLightBuffer();
-		createShadowCommandBuffers();
 	}
 
 	void recreateModelBuffers() {
@@ -3541,18 +3548,18 @@ private:
 		ImGui::End();
 	}
 
-	void createWBOITFB() {
-		// create the framebuffer for the wboit pass
-		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView };
-		if (wboit.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, wboit.frameBuffer, nullptr);
-		vkhelper::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsD.data(), attachmentsD.size(), swap.extent.width, swap.extent.height);
-	}
-
 	void createMainPassFB() {
 		// create the framebuffers for the main pass
 		std::vector<VkImageView> attachmentsD = { mainPassTextures.color.imageView, mainPassTextures.depth.imageView };
 		if (mainPassFB != VK_NULL_HANDLE) vkDestroyFramebuffer(device, mainPassFB, nullptr);
 		vkhelper::createFB(mainPassPipeline.renderPass, mainPassFB, attachmentsD.data(), attachmentsD.size(), swap.extent.width, swap.extent.height);
+	}
+
+	void createWBOITFB() {
+		// create the framebuffer for the wboit pass
+		std::vector<VkImageView> attachmentsD = { wboit.weightedColor.imageView };
+		if (wboit.frameBuffer != VK_NULL_HANDLE) vkDestroyFramebuffer(device, wboit.frameBuffer, nullptr);
+		vkhelper::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsD.data(), attachmentsD.size(), swap.extent.width, swap.extent.height);
 	}
 
 	void createFramebuffersSC() {
@@ -3733,6 +3740,7 @@ private:
 		auto previousTime = startTime;
 
 		while (!glfwWindowShouldClose(window)) {
+#if 0
 			currentFrame = (currentFrame + 1) % swapSize;
 			glfwPollEvents();
 			drawFrame();
@@ -3740,6 +3748,44 @@ private:
 			recordAllCommandBuffers();
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
+#else
+
+			utils::sep();
+			auto now = utils::now();
+			currentFrame = (currentFrame + 1) % swapSize;
+			auto duration = utils::duration<microseconds>(now);
+			std::cout << "currentFrame: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			glfwPollEvents();
+			duration = utils::duration<microseconds>(now);
+			std::cout << "glfwPollEvents: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			drawFrame();
+			duration = utils::duration<microseconds>(now);
+			std::cout << "drawFrame: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			handleKeyboardInput();
+			duration = utils::duration<microseconds>(now);
+			std::cout << "handleKeyboardInput: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			recordAllCommandBuffers();
+			duration = utils::duration<microseconds>(now);
+			std::cout << "recordAllCommandBuffers: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			updateUBO();
+			duration = utils::duration<microseconds>(now);
+			std::cout << "updateUBO: " << utils::durationString(duration) << std::endl;
+
+			now = utils::now();
+			calcFps(startTime, previousTime, frameCount);
+			duration = utils::duration<microseconds>(now);
+			std::cout << "calcFps: " << utils::durationString(duration) << std::endl;
+#endif
 		}
 
 		vkDeviceWaitIdle(device);

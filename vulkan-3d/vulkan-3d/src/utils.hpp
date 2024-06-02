@@ -28,17 +28,23 @@ public:
 	}
 
 	template<typename DurType>
-	static void printDuration(const DurType& duration) {
-		std::cout << "Time: " << duration.count() << " ";
+	static std::string durationString(const DurType& duration) {
+		std::string length = std::to_string(duration.count());
+
 		if constexpr (std::is_same_v<DurType, microseconds>) {
-			std::cout << "microseconds" << std::endl;
+			return length + " microseconds";
 		}
 		else if constexpr (std::is_same_v<DurType, milliseconds>) {
-			std::cout << "milliseconds" << std::endl;
+			return length + " milliseconds";
 		}
 		else {
 			static_assert(std::is_same_v<DurType, microseconds> || std::is_same_v<DurType, milliseconds>, "Invalid duration type");
 		}
+	}
+
+	template<typename DurType>
+	static void printDuration(const DurType& duration) {
+		std::cout << "Time: " << durationString(duration) << std::endl;;
 	}
 
 	static int random(int min, int max) {
