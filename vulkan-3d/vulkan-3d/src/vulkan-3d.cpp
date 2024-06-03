@@ -2,6 +2,11 @@
 #define TINYGLTF_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
+
+//#define PROFILE_MAIN_LOOP
+//#define PROFILE_COMMAND_BUFFERS
+#define ENABLE_DEBUG
+
 #include "../ext/tiny_gltf.h" // load .obj and .mtl files
 #include "../ext/stb_image_resize.h"
 
@@ -477,9 +482,6 @@ private:
 	tf::Executor meshExecutor;
 	tf::Taskflow tfMesh;
 
-	// other
-	bool debug = true;
-
 	void initWindow() {
 		glfwInit();
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
@@ -657,7 +659,11 @@ private:
 		physicalDevice = bestDevice;
 		VkPhysicalDeviceProperties deviceProperties;
 		vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+#ifdef ENABLE_DEBUG
 		printCapabilities(deviceProperties);
+#else
+		utils::sep();
+#endif
 
 		// check if ray tracing is supported
 		rtSupported = isRTSupported(physicalDevice);
@@ -737,16 +743,14 @@ private:
 		newInfo.ppEnabledLayerNames = nullptr;
 		VkResult result = vkCreateDevice(physicalDevice, &newInfo, nullptr, &device);
 		if (result != VK_SUCCESS) {
-			std::stringstream errorMessage;
-			errorMessage << "Failed to create logical device! VkResult: " << result;
-			throw std::runtime_error(errorMessage.str());
+			throw std::runtime_error("Failed to create logical device!!");
 		}
 
 		vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR");
 		if (vkCmdPushDescriptorSetKHR == nullptr) {
 			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!!!");
 		}
-		if (!debug) utils::sep();
+		utils::sep();
 	}
 
 	bool checkExtensionSupport(const char* extensionName) {
@@ -962,9 +966,7 @@ private:
 
 	auto getAttributeIt(const std::string& name, const auto& attributes) {
 		auto it = attributes.find(name);
-		if (it == attributes.end() && debug) {
-			std::cerr << "WARNING: Failed to find attribute: " << name << std::endl;
-		}
+		LOG_WARNING_E("Failed to find attribute: " + name, it == attributes.end());
 		return it;
 	}
 
@@ -994,7 +996,7 @@ private:
 		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
 			return reinterpret_cast<const uint32_t*>(&buffer.data[bufferView.byteOffset + accessor.byteOffset]);
 		default:
-			if (debug) std::cerr << "WARNING: Unsupported index type: " << accessor.componentType << std::endl;
+			LOG_WARNING("Unsupported index type" + accessor.componentType);
 			return nullptr;
 		}
 	}
@@ -1130,9 +1132,7 @@ private:
 
 		// process primitives in the mesh
 		for (const auto& primitive : mesh.primitives) {
-			if (primitive.mode != TINYGLTF_MODE_TRIANGLES && debug) {
-				std::cerr << "WARNING: Unsupported primitive mode: " << primitive.mode << std::endl;
-			}
+			LOG_WARNING_E("Unsupported primitive mode: " + std::to_string(primitive.mode), primitive.mode != TINYGLTF_MODE_TRIANGLES);
 
 			const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
 			const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
@@ -1158,7 +1158,7 @@ private:
 			// calculate the tangents if theyre not found
 			std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
 			if (!tangentFound) {
-				if (debug) std::cout << "Calculating tangents..." << std::endl;
+				LOG_WARNING("Could not load tangents. Calculating tangents...");
 
 				switch (indexAccessor.componentType) {
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
@@ -1171,7 +1171,7 @@ private:
 					dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
 					break;
 				default:
-					if (debug) std::cerr << "WARNING: Unsupported index type: " << indexAccessor.componentType << std::endl;
+					LOG_WARNING("Unsupported index type: " + std::to_string(indexAccessor.type));
 					break;
 				}
 
@@ -1281,17 +1281,10 @@ private:
 				}
 
 				// ensure the model is PBR
-				if (!texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found) {
-					if (debug) std::cerr << "WARNING: Model isnt PBR!!" << std::endl;
-					return;
-				}
-
+				LOG_WARNING_E("Model isnt PBR!!", !texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found);
 				newObject.material = texture;
 			}
-
-			else {
-				if (debug) std::cerr << "WARNING: Primitive " << primitive.material << " doesn't have a material/texture" << std::endl;
-			}
+			LOG_WARNING_E("Primitive " + std::to_string(primitive.material) + " doesn't have a material/texture", primitive.material < 0);
 		}
 
 		newObject.vertices = tempVertices;
@@ -1365,11 +1358,8 @@ private:
 		std::string warn;
 
 		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-		if (debug) utils::sep();
+		LOG_WARNING_E(warn, !warn.empty());
 
-		if (!warn.empty() && debug) {
-			std::cout << "Warning: " << warn << std::endl;
-		}
 		if (!err.empty()) {
 			throw std::runtime_error(err);
 		}
@@ -1387,17 +1377,13 @@ private:
 		}
 
 		// check if the model has any skins or animations (not supported for now)
-		if (!gltfModel.skins.empty()) {
-			std::cerr << "WARNING: The " << path << " contains skinning information" << std::endl;
-		}
-
-		if (!gltfModel.animations.empty()) {
-			std::cerr << "WARNING: The " << path << " contains animation data." << std::endl;
-		}
+		LOG_WARNING_E("The " + path + " contains skinning information", !gltfModel.skins.empty());
+		LOG_WARNING_E("The " + path + " contains animation data", !gltfModel.animations.empty());
+		LOG_WARNING_E("The " + path + " contains cameras", !gltfModel.cameras.empty());
 
 		// check if the gltf model relies on any extensions
 		for (const auto& extension : gltfModel.extensionsUsed) {
-			std::cerr << "WARNING: The " << path << " relies on: " << extension << std::endl;
+			LOG_WARNING("The" + path + " relies on: " + extension);
 		}
 
 		for (const auto& mesh : gltfModel.meshes) {
@@ -3217,7 +3203,10 @@ private:
 		VkDeviceSize offsets[] = { 0, 0 };
 
 		for (size_t i = 0; i < lights.size(); i++) {
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 			tfCmd.emplace([&, i, beginInfo, clearValue, shadowDS, offsets]() {
+#endif
 				if (vkBeginCommandBuffer(shadowMapCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
@@ -3269,7 +3258,10 @@ private:
 				if (vkEndCommandBuffer(shadowMapCommandBuffers[i]) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 				});
+#endif
 		}
 	}
 
@@ -3285,7 +3277,10 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 			tfCmd.emplace([&, i, clearValues, skyboxDS, mainDS, skyboxOffsets, mainOffsets, beginInfo]() {
+#endif
 				if (vkBeginCommandBuffer(mainPassCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
@@ -3351,7 +3346,10 @@ private:
 				if (vkEndCommandBuffer(mainPassCommandBuffers[i]) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 				});
+#endif
 		}
 	}
 
@@ -3365,7 +3363,10 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 			tfCmd.emplace([&, i, clearValues, wboitDS, offset, beginInfo]() {
+#endif
 				VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers[i];
 				if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
@@ -3425,7 +3426,10 @@ private:
 				if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 				});
+#endif
 		}
 	}
 
@@ -3438,7 +3442,10 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 			tfCmd.emplace([&, i, clearValues, compDS, beginInfo]() {
+#endif
 				if (vkBeginCommandBuffer(compCommandBuffers[i], &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
@@ -3491,7 +3498,10 @@ private:
 				if (vkEndCommandBuffer(compCommandBuffers[i]) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
+#ifdef PROFILE_COMMAND_BUFFERS
+#else
 				});
+#endif
 		}
 	}
 
@@ -3702,22 +3712,39 @@ private:
 	}
 
 	void recordAllCommandBuffers() { // record every command buffer
-		//auto start = utils::now();
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
+#ifdef PROFILE_COMMAND_BUFFERS
+		utils::sep();
+
+		auto now = utils::now();
+		recordShadowCommandBuffers();
+		auto duration = utils::duration<microseconds>(now);
+		std::cout << "recordShadowCommandBuffers: " << utils::durationString(duration) << std::endl;
+
+		now = utils::now();
+		recordCommandBuffers();
+		duration = utils::duration<microseconds>(now);
+		std::cout << "recordCommandBuffers: " << utils::durationString(duration) << std::endl;
+
+		now = utils::now();
+		recordWBOITCommandBuffers();
+		duration = utils::duration<microseconds>(now);
+		std::cout << "recordWBOITCommandBuffers: " << utils::durationString(duration) << std::endl;
+
+		now = utils::now();
+		recordCompCommandBuffers();
+		duration = utils::duration<microseconds>(now);
+		std::cout << "recordCompCommandBuffers: " << utils::durationString(duration) << std::endl;
+#else
 		recordShadowCommandBuffers();
 		recordCommandBuffers();
 		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
 
 		cmdExecutor.run(tfCmd).wait();
-
 		tfCmd.clear();
-
-		//auto durationMc = utils::duration<microseconds>(start);
-		//utils::sep();
-		//std::cout << "Command buffer recording time:" << std::endl;
-		//utils::printDuration(durationMc);
+#endif
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
@@ -3740,16 +3767,7 @@ private:
 		auto previousTime = startTime;
 
 		while (!glfwWindowShouldClose(window)) {
-#if 0
-			currentFrame = (currentFrame + 1) % swapSize;
-			glfwPollEvents();
-			drawFrame();
-			handleKeyboardInput(); // handle keyboard input
-			recordAllCommandBuffers();
-			updateUBO(); // update ubo matrices and populate the buffer
-			calcFps(startTime, previousTime, frameCount);
-#else
-
+#ifdef PROFILE_MAIN_LOOP
 			utils::sep();
 			auto now = utils::now();
 			currentFrame = (currentFrame + 1) % swapSize;
@@ -3785,6 +3803,14 @@ private:
 			calcFps(startTime, previousTime, frameCount);
 			duration = utils::duration<microseconds>(now);
 			std::cout << "calcFps: " << utils::durationString(duration) << std::endl;
+#else PROFILE_FRAMES
+			currentFrame = (currentFrame + 1) % swapSize;
+			glfwPollEvents();
+			drawFrame();
+			handleKeyboardInput(); // handle keyboard input
+			recordAllCommandBuffers();
+			updateUBO(); // update ubo matrices and populate the buffer
+			calcFps(startTime, previousTime, frameCount);
 #endif
 		}
 
