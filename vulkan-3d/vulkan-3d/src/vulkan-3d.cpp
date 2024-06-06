@@ -135,6 +135,7 @@ private:
 		float quadraticAttenuation;
 		dvl::Texture shadowMapData;
 		VkFramebuffer frameBuffer;
+		bool followPlayer;
 
 
 		// default constructor
@@ -151,7 +152,8 @@ private:
 			linearAttenuation(0.1f),
 			quadraticAttenuation(0.032f),
 			shadowMapData(),
-			frameBuffer(VK_NULL_HANDLE) {
+			frameBuffer(VK_NULL_HANDLE),
+			followPlayer(false) {
 		}
 
 		// copy constructor
@@ -168,7 +170,8 @@ private:
 			linearAttenuation(other.linearAttenuation),
 			quadraticAttenuation(other.quadraticAttenuation),
 			shadowMapData(other.shadowMapData),
-			frameBuffer(other.frameBuffer) {
+			frameBuffer(other.frameBuffer),
+			followPlayer(other.followPlayer) {
 		}
 	};
 	struct LightMatrix {
@@ -516,6 +519,20 @@ private:
 		l.quadraticAttenuation = 0.032f;
 		l.innerConeAngle = 6.6f;
 		l.outerConeAngle = 10.0f;
+		l.followPlayer = false;
+		return l;
+	}
+
+	Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 0.6f) {
+		Light l;
+		l.col = color;
+		l.baseIntensity = intensity;
+		l.constantAttenuation = 1.0f;
+		l.linearAttenuation = 0.1f;
+		l.quadraticAttenuation = 0.032f;
+		l.innerConeAngle = 6.6f;
+		l.outerConeAngle = 20.0f;
+		l.followPlayer = true;
 		return l;
 	}
 
@@ -546,7 +563,7 @@ private:
 
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
-
+		lights.push_back(std::make_unique<Light>(createPlayerLight()));
 
 		for (auto& obj : objects) {
 			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
@@ -1500,6 +1517,10 @@ private:
 	}
 
 	void calcShadowMats(Light& l) {
+		if (l.followPlayer) {
+			l.pos = dml::getCamWorldPos(cam.viewMatrix);
+			l.target = l.pos + (dml::quatToDir(cam.quat) * -1);
+		}
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
 		float nearPlane = 0.01f, farPlane = 100.0f;
@@ -3715,7 +3736,7 @@ private:
 		cmdExecutor.run(tfCmd).wait();
 		tfCmd.clear();
 #endif
-}
+	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
 		auto endTime = std::chrono::steady_clock::now();
@@ -3782,10 +3803,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-	}
+		}
 
 		vkDeviceWaitIdle(device);
-}
+	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
