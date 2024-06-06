@@ -30,7 +30,6 @@ layout (set=0, binding = 1) buffer LightBuffer {
 };
 
 layout(push_constant) uniform PC {
-    int modelIndex;
     int lightIndex;
 } pc;
 
@@ -39,7 +38,6 @@ void main() {
 
     // fetch matrices
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
-
     gl_Position = getPos(lights[index].proj, lights[index].view, model, inPosition); // transform position
 }
 

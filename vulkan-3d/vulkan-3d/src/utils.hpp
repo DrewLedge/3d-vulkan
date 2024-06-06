@@ -29,7 +29,7 @@ void logwarning(const std::string& message, bool execute, const char* file, int 
 }
 
 #define LOG_WARNING(message) logwarning(message, __FILE__, __LINE__)
-#define LOG_WARNING_E(message, execute) logwarning(message, execute, __FILE__, __LINE__)
+#define LOG_WARNING_IF(message, execute) logwarning(message, execute, __FILE__, __LINE__)
 
 #else
 #define LOG_WARNING(message)

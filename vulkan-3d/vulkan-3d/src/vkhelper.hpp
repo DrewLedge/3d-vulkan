@@ -379,6 +379,8 @@ public:
 	}
 
 	static void createFB(const VkRenderPass& renderPass, VkFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
+		if (frameBuf != VK_NULL_HANDLE) vkDestroyFramebuffer(device, frameBuf, nullptr);
+
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frameBufferInfo.renderPass = renderPass;
