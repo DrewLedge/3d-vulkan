@@ -4,7 +4,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 //#define PROFILE_MAIN_LOOP
-//#define PROFILE_COMMAND_BUFFERS
+#define PROFILE_COMMAND_BUFFERS
 #define ENABLE_DEBUG
 
 #include "../ext/tiny_gltf.h" // load .obj and .mtl files
@@ -742,6 +742,7 @@ private:
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
 		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+		VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME
 		};
 
 		if (rtSupported) {
@@ -755,7 +756,8 @@ private:
 				std::cout << "---- " << e << " is supported!" << " ----" << std::endl;
 			}
 			else {
-				throw std::runtime_error("Device contains unsupported extensions!");
+				std::cerr << "---- " << e << " is NOT supported!" << " ----" << std::endl;
+				deviceExtensions.erase(std::remove(deviceExtensions.begin(), deviceExtensions.end(), e), deviceExtensions.end());
 			}
 		}
 
@@ -3031,12 +3033,11 @@ private:
 				cmdBuffers.secondary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 			}
 		}
-
 	}
 
 	void createCommandBuffers() {
-		allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), objects.size());
-		allocateCommandBuffers(mainPassCommandBuffers, swap.imageCount, objects.size());
+		allocateCommandBuffers(shadowMapCommandBuffers, lights.size());
+		allocateCommandBuffers(mainPassCommandBuffers, swap.imageCount, 1);
 		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, objects.size());
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount);
 	}
@@ -3109,12 +3110,6 @@ private:
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
-
-		VkCommandPool p = createCommandPool();
-		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
-
-		shadowMapCommandBuffers.secondary.buffers.push_back(c);
-		shadowMapCommandBuffers.secondary.pools.push_back(p);
 	}
 
 	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
@@ -3219,8 +3214,8 @@ private:
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
 			tfCmd.emplace([&, i, beginInfo, clearValue, shadowDS, offsets]() {
-				VkCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
 #endif
+				VkCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
 				if (vkBeginCommandBuffer(shadowCommandBuffer, &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
@@ -3272,24 +3267,86 @@ private:
 		}
 	}
 
-	void recordCommandBuffers() { //records and submits the command buffers
-		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
-		std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
-		VkDeviceSize skyboxOffsets[] = { 0 };
-		VkDeviceSize mainOffsets[] = { 0, 0 };
+	void recordMainCommandBuffers() { //records and submits the command buffers
+		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
+		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
 
-		VkCommandBufferBeginInfo beginInfo{};
-		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		beginInfo.pInheritanceInfo = nullptr;
+		const VkDeviceSize skyboxOffset = 0;
+		const std::array<VkDeviceSize, 2> mainOffsets = { 0, 0 };
+
+		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
+		const VkBuffer indexBuffer = indBuffer;
+
+		VkCommandBufferInheritanceInfo inheritInfo{};
+		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		inheritInfo.renderPass = mainPassPipeline.renderPass;
+		inheritInfo.framebuffer = VK_NULL_HANDLE;
+		inheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo beginInfoS{};
+		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+		beginInfoS.pInheritanceInfo = &inheritInfo;
+
+		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary, &beginInfoS) != VK_SUCCESS) {
+			throw std::runtime_error("failed to begin recording command buffer!");
+		}
+
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.graphicsPipeline);
+		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.layout, 0, static_cast<uint32_t>(mainDS.size()), mainDS.data(), 0, nullptr);
+
+		// bind the vertex and instance buffers
+		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), mainOffsets.data());
+		vkCmdBindIndexBuffer(secondary, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+
+		uint32_t p = 0;
+		for (size_t j = 0; j < objects.size(); j++) {
+			uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+			if (uniqueModelInd == j) { // only process unique models
+				// bitfield for which textures exist
+				int textureExistence = 0;
+				textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
+				textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
+				textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
+				textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
+				textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
+
+				struct {
+					int textureExist; // bitfield of which textures exist
+					int texIndex; // starting index of the textures in the texture array
+				} pushConst;
+
+				pushConst.textureExist = textureExistence;
+				pushConst.texIndex = meshTexStartInd[p];
+
+				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
+				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
+
+
+				vkCmdPushConstants(secondary, mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdDrawIndexed(secondary, bufferData[bufferInd].indexCount, instanceCount,
+					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+				p++;
+			}
+		}
+		if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+			throw std::runtime_error("failed to record command buffer!");
+		}
+
+
+		VkCommandBufferBeginInfo beginInfoP{};
+		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfoP.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfoP.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
-			tfCmd.emplace([&, i, clearValues, skyboxDS, mainDS, skyboxOffsets, mainOffsets, beginInfo]() {
+			tfCmd.emplace([&, i, clearValues, skyboxDS, mainDS, skyboxOffset, mainOffsets, beginInfoP]() {
 #endif
 				VkCommandBuffer& mainCommandBuffer = mainPassCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(mainCommandBuffer, &beginInfo) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(mainCommandBuffer, &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3302,53 +3359,18 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(mainCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
-
 				// FOR THE SKYBOX PASS
+				vkCmdBeginRenderPass(mainCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE_AND_SECONDARY_COMMAND_BUFFERS_EXT);
+
 				vkCmdBindPipeline(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
 				vkCmdBindDescriptorSets(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-				vkCmdBindVertexBuffers(mainCommandBuffer, 0, 1, &skybox.vertBuffer, skyboxOffsets);
+				vkCmdBindVertexBuffers(mainCommandBuffer, 0, 1, &skybox.vertBuffer, &skyboxOffset);
 				vkCmdBindIndexBuffer(mainCommandBuffer, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
 				vkCmdDrawIndexed(mainCommandBuffer, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
 				// FOR THE MAIN PASS
-				vkCmdBindPipeline(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.graphicsPipeline);
-				vkCmdBindDescriptorSets(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.layout, 0, static_cast<uint32_t>(mainDS.size()), mainDS.data(), 0, nullptr);
-				VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
-				VkBuffer indexBuffer = indBuffer;
+				vkCmdExecuteCommands(mainCommandBuffer, static_cast<uint32_t>(mainPassCommandBuffers.secondary.size()), mainPassCommandBuffers.secondary.data());
 
-				// bind the vertex and instance buffers
-				vkCmdBindVertexBuffers(mainCommandBuffer, 0, 2, vertexBuffersArray, mainOffsets);
-				vkCmdBindIndexBuffer(mainCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-				uint32_t p = 0;
-				for (size_t j = 0; j < objects.size(); j++) {
-					uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
-					if (uniqueModelInd == j) { // only process unique models
-						// bitfield for which textures exist
-						int textureExistence = 0;
-						textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
-						textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
-						textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
-						textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
-						textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
-
-						struct {
-							int textureExist; // bitfield of which textures exist
-							int texIndex; // starting index of the textures in the texture array
-						} pushConst;
-
-						pushConst.textureExist = textureExistence;
-						pushConst.texIndex = meshTexStartInd[p];
-						vkCmdPushConstants(mainCommandBuffer, mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-						size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
-						uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-
-						vkCmdDrawIndexed(mainCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
-							bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
-						p++;
-					}
-				}
 				vkCmdEndRenderPass(mainCommandBuffer);
 				if (vkEndCommandBuffer(mainCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
@@ -3714,7 +3736,7 @@ private:
 		std::cout << "recordShadowCommandBuffers: " << utils::durationString(duration) << std::endl;
 
 		now = utils::now();
-		recordCommandBuffers();
+		recordMainCommandBuffers();
 		duration = utils::duration<microseconds>(now);
 		std::cout << "recordCommandBuffers: " << utils::durationString(duration) << std::endl;
 
@@ -3729,7 +3751,7 @@ private:
 		std::cout << "recordCompCommandBuffers: " << utils::durationString(duration) << std::endl;
 #else
 		recordShadowCommandBuffers();
-		recordCommandBuffers();
+		recordMainCommandBuffers();
 		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
 
