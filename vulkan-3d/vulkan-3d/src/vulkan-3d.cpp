@@ -3038,7 +3038,7 @@ private:
 	void createCommandBuffers() {
 		allocateCommandBuffers(shadowMapCommandBuffers, lights.size());
 		allocateCommandBuffers(mainPassCommandBuffers, swap.imageCount, 1);
-		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, objects.size());
+		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount);
 	}
 
@@ -3267,38 +3267,22 @@ private:
 		}
 	}
 
-	void recordMainCommandBuffers() { //records and submits the command buffers
-		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
-		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
-
-		const VkDeviceSize skyboxOffset = 0;
-		const std::array<VkDeviceSize, 2> mainOffsets = { 0, 0 };
-
+	void recordObjectCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
 		const VkBuffer indexBuffer = indBuffer;
+		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
-		VkCommandBufferInheritanceInfo inheritInfo{};
-		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = mainPassPipeline.renderPass;
-		inheritInfo.framebuffer = VK_NULL_HANDLE;
-		inheritInfo.subpass = 0;
-
-		VkCommandBufferBeginInfo beginInfoS{};
-		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-		beginInfoS.pInheritanceInfo = &inheritInfo;
-
-		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
-		if (vkBeginCommandBuffer(secondary, &beginInfoS) != VK_SUCCESS) {
-			throw std::runtime_error("failed to begin recording command buffer!");
+		if (startCommand) {
+			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording secondary command buffer!");
+			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.graphicsPipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, mainPassPipeline.layout, 0, static_cast<uint32_t>(mainDS.size()), mainDS.data(), 0, nullptr);
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.graphicsPipeline);
+		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		// bind the vertex and instance buffers
-		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), mainOffsets.data());
+		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), offsets.data());
 		vkCmdBindIndexBuffer(secondary, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 		uint32_t p = 0;
@@ -3324,17 +3308,52 @@ private:
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 
-
-				vkCmdPushConstants(secondary, mainPassPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdPushConstants(secondary, pipe.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				vkCmdDrawIndexed(secondary, bufferData[bufferInd].indexCount, instanceCount,
 					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				p++;
 			}
 		}
-		if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
-			throw std::runtime_error("failed to record command buffer!");
+
+		if (endCommand) {
+			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record secondary command buffer!");
+			}
+		}
+	}
+
+	void recordMainCommandBuffers() { //records and submits the main command buffers
+		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
+		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+
+		const VkDeviceSize skyboxOffset = 0;
+
+		VkCommandBufferInheritanceInfo inheritInfo{};
+		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		inheritInfo.renderPass = mainPassPipeline.renderPass;
+		inheritInfo.framebuffer = VK_NULL_HANDLE;
+		inheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo beginInfoS{};
+		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+		beginInfoS.pInheritanceInfo = &inheritInfo;
+
+		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary, &beginInfoS) != VK_SUCCESS) {
+			throw std::runtime_error("failed to begin recording secondary command buffer!");
 		}
 
+		// FOR THE SKYBOX PASS
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
+		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+		vkCmdBindVertexBuffers(secondary, 0, 1, &skybox.vertBuffer, &skyboxOffset);
+		vkCmdBindIndexBuffer(secondary, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
+
+		// FOR THE MAIN PASS
+		recordObjectCommandBuffers(secondary, mainPassPipeline, beginInfoS, mainDS.data(), mainDS.size(), false, true);
 
 		VkCommandBufferBeginInfo beginInfoP{};
 		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3343,7 +3362,7 @@ private:
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
-			tfCmd.emplace([&, i, clearValues, skyboxDS, mainDS, skyboxOffset, mainOffsets, beginInfoP]() {
+			tfCmd.emplace([&, i, clearValues, beginInfoP]() {
 #endif
 				VkCommandBuffer& mainCommandBuffer = mainPassCommandBuffers.primary[i];
 				if (vkBeginCommandBuffer(mainCommandBuffer, &beginInfoP) != VK_SUCCESS) {
@@ -3359,18 +3378,8 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				// FOR THE SKYBOX PASS
-				vkCmdBeginRenderPass(mainCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE_AND_SECONDARY_COMMAND_BUFFERS_EXT);
-
-				vkCmdBindPipeline(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-				vkCmdBindDescriptorSets(mainCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-				vkCmdBindVertexBuffers(mainCommandBuffer, 0, 1, &skybox.vertBuffer, &skyboxOffset);
-				vkCmdBindIndexBuffer(mainCommandBuffer, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
-				vkCmdDrawIndexed(mainCommandBuffer, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
-
-				// FOR THE MAIN PASS
+				vkCmdBeginRenderPass(mainCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 				vkCmdExecuteCommands(mainCommandBuffer, static_cast<uint32_t>(mainPassCommandBuffers.secondary.size()), mainPassCommandBuffers.secondary.data());
-
 				vkCmdEndRenderPass(mainCommandBuffer);
 				if (vkEndCommandBuffer(mainCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
@@ -3825,10 +3834,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-		}
+	}
 
 		vkDeviceWaitIdle(device);
-	}
+}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
