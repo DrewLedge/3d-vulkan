@@ -4,7 +4,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 //#define PROFILE_MAIN_LOOP
-#define PROFILE_COMMAND_BUFFERS
+//#define PROFILE_COMMAND_BUFFERS
 #define ENABLE_DEBUG
 
 #include "../ext/tiny_gltf.h" // load .obj and .mtl files
@@ -3045,7 +3045,7 @@ private:
 		allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
 		allocateCommandBuffers(mainPassCommandBuffers, swap.imageCount, 1);
 		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
-		allocateCommandBuffers(compCommandBuffers, swap.imageCount);
+		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
@@ -3214,12 +3214,11 @@ private:
 
 	void recordMainSecondaryCmdBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
-		const VkBuffer indexBuffer = indBuffer;
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		if (startCommand) {
 			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording secondary command buffer!");
+				throw std::runtime_error("failed to begin recording main secondary command buffer!");
 			}
 		}
 
@@ -3228,7 +3227,7 @@ private:
 
 		// bind the vertex and instance buffers
 		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), offsets.data());
-		vkCmdBindIndexBuffer(secondary, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindIndexBuffer(secondary, indBuffer, 0, VK_INDEX_TYPE_UINT32);
 
 		uint32_t p = 0;
 		for (size_t j = 0; j < objects.size(); j++) {
@@ -3261,7 +3260,7 @@ private:
 
 		if (endCommand) {
 			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record secondary command buffer!");
+				throw std::runtime_error("failed to record main secondary command buffer!");
 			}
 		}
 	}
@@ -3275,7 +3274,7 @@ private:
 		for (size_t i = 0; i < size; ++i) {
 			if (startCommand) {
 				if (vkBeginCommandBuffer(secondaries[i], &beginInfo) != VK_SUCCESS) {
-					throw std::runtime_error("failed to begin recording secondary command buffer!");
+					throw std::runtime_error("failed to begin recording shadow secondary command buffer!");
 				}
 			}
 
@@ -3307,11 +3306,56 @@ private:
 		if (endCommand) {
 			for (size_t i = 0; i < size; ++i) {
 				if (vkEndCommandBuffer(secondaries[i]) != VK_SUCCESS) {
-					throw std::runtime_error("failed to record secondary command buffer!");
+					throw std::runtime_error("failed to record shadow secondary command buffer!");
 				}
 			}
 		}
 	}
+
+	void recordCompSecondaryCmdBuffers(VkCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+		if (startCommand) {
+			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+				throw std::runtime_error("failed to begin recording composition secondary command buffer!");
+			}
+		}
+
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.graphicsPipeline);
+		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, descriptorCount, descriptorsets, 0, nullptr);
+
+		vkCmdDraw(secondary, 6, 1, 0, 0);
+
+		// prepare for next frame in ImGui
+		ImGui_ImplVulkan_NewFrame();
+		ImGui_ImplGlfw_NewFrame();
+		ImGui::NewFrame();
+
+		// draw the imgui text
+		std::string fpsText = "fps: " + std::to_string(fps);
+		std::string objText = "objects: " + std::to_string(objects.size());
+		std::string lightText = "lights: " + std::to_string(lights.size());
+
+		ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
+		drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
+
+		float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
+		float x = static_cast<float>(swap.extent.width / 2) + w;
+		drawText(objText, x, 30, font_large, bgColor);
+
+		float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
+		float x2 = static_cast<float>(swap.extent.width / 2) - w2;
+		drawText(lightText, x2, 30, font_large, bgColor);
+
+		// render the imgui frame and draw imgui's commands into the command buffer
+		ImGui::Render();
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), secondary);
+
+		if (endCommand) {
+			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+				throw std::runtime_error("failed to record composition secondary command buffer!");
+			}
+		}
+	}
+
 
 	void recordShadowCommandBuffers() {
 		const std::array<VkDescriptorSet, 1> shadowDS = { descs.sets[1] };
@@ -3451,6 +3495,20 @@ private:
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
+
+		VkCommandBufferInheritanceInfo inheritInfo{};
+		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		inheritInfo.renderPass = wboitPipeline.renderPass;
+		inheritInfo.framebuffer = VK_NULL_HANDLE;
+		inheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo beginInfoS{};
+		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+		beginInfoS.pInheritanceInfo = &inheritInfo;
+
+		recordMainSecondaryCmdBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, beginInfoS, wboitDS.data(), wboitDS.size(), true, true);
+
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
@@ -3472,46 +3530,10 @@ private:
 
 				vkhelper::transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
-				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE); // begin the renderpass
-
-				vkCmdBindPipeline(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.graphicsPipeline);
-				vkCmdBindDescriptorSets(wboitCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, wboitPipeline.layout, 0, static_cast<uint32_t>(wboitDS.size()), wboitDS.data(), 0, nullptr);
-				VkBuffer vertexBuffersArray[2] = { vertBuffer, instanceBuffer };
-				VkBuffer indexBuffer = indBuffer;
-
-				// bind the vertex and instance buffers
-				vkCmdBindVertexBuffers(wboitCommandBuffer, 0, 2, vertexBuffersArray, offset);
-				vkCmdBindIndexBuffer(wboitCommandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
-				uint32_t p = 0;
-				for (size_t j = 0; j < objects.size(); j++) {
-					uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
-					if (uniqueModelInd == j) { // only process unique models
-						// bitfield for which textures exist
-						int textureExistence = 0;
-						textureExistence |= (objects[j]->material.baseColor.found ? 1 : 0);
-						textureExistence |= (objects[j]->material.metallicRoughness.found ? 1 : 0) << 1;
-						textureExistence |= (objects[j]->material.normalMap.found ? 1 : 0) << 2;
-						textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
-						textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
-
-						struct {
-							int textureExist; // bitfield of which textures exist
-							int texIndex; // starting index of the textures in the texture array
-						} pushConst;
-
-						pushConst.textureExist = textureExistence;
-						pushConst.texIndex = meshTexStartInd[p];
-						vkCmdPushConstants(wboitCommandBuffer, wboitPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
-
-						size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
-						uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-
-						vkCmdDrawIndexed(wboitCommandBuffer, bufferData[bufferInd].indexCount, instanceCount,
-							bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
-						p++;
-					}
-				}
+				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(wboitCommandBuffer, static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
 				vkCmdEndRenderPass(wboitCommandBuffer);
+
 				if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
@@ -3530,6 +3552,20 @@ private:
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
+
+		VkCommandBufferInheritanceInfo inheritInfo{};
+		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		inheritInfo.renderPass = compPipelineData.renderPass;
+		inheritInfo.framebuffer = VK_NULL_HANDLE;
+		inheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo beginInfoS{};
+		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
+		beginInfoS.pInheritanceInfo = &inheritInfo;
+
+		recordCompSecondaryCmdBuffers(compCommandBuffers.secondary[0], beginInfoS, &compDS, 1, true, true);
+
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
@@ -3549,41 +3585,8 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(compCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-				vkCmdBindPipeline(compCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.graphicsPipeline);
-				vkCmdBindDescriptorSets(compCommandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, 1, &compDS, 0, nullptr);
-
-				vkCmdDraw(compCommandBuffer, 6, 1, 0, 0);
-
-				compositionMutex.lock();
-
-				// prepare for next frame in ImGui:
-				ImGui_ImplVulkan_NewFrame();
-				ImGui_ImplGlfw_NewFrame();
-				ImGui::NewFrame();
-
-				// draw the imgui text
-				std::string fpsText = "fps: " + std::to_string(fps);
-				std::string objText = "objects: " + std::to_string(objects.size());
-				std::string lightText = "lights: " + std::to_string(lights.size());
-
-				ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
-				drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
-
-				float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
-				float x = static_cast<float>(swap.extent.width / 2) + w;
-				drawText(objText, x, 30, font_large, bgColor);
-
-				float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
-				float x2 = static_cast<float>(swap.extent.width / 2) - w2;
-				drawText(lightText, x2, 30, font_large, bgColor);
-
-				// render the imgui frame and draw imgui's commands into the command buffer:
-				ImGui::Render();
-				ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), compCommandBuffer);
-
-				compositionMutex.unlock();
-
+				vkCmdBeginRenderPass(compCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(compCommandBuffer, 1, &compCommandBuffers.secondary[0]);
 				vkCmdEndRenderPass(compCommandBuffer);
 				if (vkEndCommandBuffer(compCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
@@ -3885,10 +3888,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-	}
+		}
 
 		vkDeviceWaitIdle(device);
-}
+	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
