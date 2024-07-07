@@ -337,18 +337,6 @@ private:
 		dvl::Texture color;
 	};
 
-	struct SCsupportDetails { // struct to hold the swap chain details
-		VkSurfaceCapabilitiesKHR capabilities;
-		std::vector<VkSurfaceFormatKHR> formats;
-		std::vector<VkPresentModeKHR> presentModes;
-
-		SCsupportDetails()
-			: capabilities(),
-			formats(),
-			presentModes()
-		{}
-	};
-
 	struct CommandBufferCollection {
 		std::vector<VkCommandBuffer> buffers;
 		std::vector<VkCommandPool> pools;
@@ -380,6 +368,9 @@ private:
 	VkSurfaceKHR surface = VK_NULL_HANDLE;
 	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue presentQueue = VK_NULL_HANDLE;
+	VkQueue computeQueue = VK_NULL_HANDLE;
+	VkQueue transferQueue = VK_NULL_HANDLE;
+	vkhelper::QueueFamilyIndices queueFamilyIndices;
 
 	// key press objects
 	KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
@@ -662,7 +653,8 @@ private:
 		VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
 		int highestScore = -1;
 		for (const auto& device : devices) {
-			if (isDeviceSuitableG(device) && isDeviceSuitableP(device, surface)) {
+			vkhelper::QueueFamilyIndices indices = vkhelper::findQueueFamilyIndices(surface, device);
+			if (indices.allComplete()) {
 				VkPhysicalDeviceProperties deviceProperties;
 				vkGetPhysicalDeviceProperties(device, &deviceProperties);
 
@@ -674,8 +666,11 @@ private:
 			}
 		}
 		if (bestDevice == VK_NULL_HANDLE) {
-			throw std::runtime_error("failed to find a suitable GPU for graphics and presentation");
+			throw std::runtime_error("failed to find a suitable GPU for graphics, compute, transfer and presentation!");
 		}
+
+		// get all of the queue family indices for the best selected device
+		queueFamilyIndices = vkhelper::findQueueFamilyIndices(surface, bestDevice);
 
 		// use the best device
 		physicalDevice = bestDevice;
@@ -711,11 +706,10 @@ private:
 	}
 
 	void createLogicalDevice() {
-		QueueFamilyIndices indices = findQueueFamiliesG(physicalDevice);
 		float queuePriority = 1.0f;
 		VkDeviceQueueCreateInfo queueInf{};
 		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold queue family info
-		queueInf.queueFamilyIndex = indices.graphicsFamily.value(); // index of the queue family to create gotten from the findQueueFamilies function
+		queueInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); // index of the graphics queue family
 		queueInf.queueCount = 1;
 		queueInf.pQueuePriorities = &queuePriority;
 
@@ -816,112 +810,41 @@ private:
 		}
 	}
 
-	struct QueueFamilyIndices {
-		std::optional<uint32_t> graphicsFamily;
-		std::optional<uint32_t> presentFamily;
-
-		bool graphicsComplete() {
-			return graphicsFamily.has_value();
-		}
-		bool presentComplete() {
-			return presentFamily.has_value();
-		}
-	};
-
-	QueueFamilyIndices findQueueFamiliesG(VkPhysicalDevice device) {
-		QueueFamilyIndices indices;
-		uint32_t queueFamilyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr); //this function gets the number of queue families
-		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data()); //outputs the queue families into the queueFamilies vector
-		int i = 0;
-		for (const auto& queueFamily : queueFamilies) {
-			if (queueFamily.queueFlags & VK_QUEUE_GRAPHICS_BIT) { //check if the queue family supports graphics
-				indices.graphicsFamily = i;
-			}
-			if (indices.graphicsComplete()) {
-				break;
-			}
-			i++;
-		}
-
-		return indices; //return the indices/position of the queue family that supports graphics
-	}
-
-	bool isDeviceSuitableG(VkPhysicalDevice device) {
-		QueueFamilyIndices indices = findQueueFamiliesG(device);
-		return indices.graphicsComplete(); //checks if the quefamilies have all been searched and if the graphics family has been found
-	}
-
-	QueueFamilyIndices findQueueFamiliesP(VkPhysicalDevice device, VkSurfaceKHR surface) {
-		QueueFamilyIndices indices;
-		uint32_t queueFamilyCount = 0;
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
-		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
-		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-
-		int i = 0;
-		for (const auto& queueFamily : queueFamilies) {
-			VkBool32 presentSupport = false;
-			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
-			if (presentSupport) { // check if the queue family supports presentation
-				indices.presentFamily = i;
-			}
-			if (indices.presentComplete()) {
-				break;
-			}
-			i++;
-		}
-		return indices; //return the indices/position of the queue family that supports presentation
-	}
-
-	bool isDeviceSuitableP(VkPhysicalDevice device, VkSurfaceKHR surface) {
-		QueueFamilyIndices indices = findQueueFamiliesP(device, surface);
-		return indices.presentComplete(); //checks if the queue families have all been searched and if the present family has been found
-	}
-
-	SCsupportDetails querySCsupport(VkPhysicalDevice device) { //takes in the physical device and outputs the swap chain details
-		SCsupportDetails details;
-		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &details.capabilities); //get the surface capabilities. an example of a surface capability is the minimum and maximum number of images in the swap chain
-		uint32_t formatCount;
-		vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, nullptr); //get the number of formats. an example of a format is the pixel format and color space
-		if (formatCount != 0) {
-			details.formats.resize(formatCount);
-			vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &formatCount, details.formats.data());
-		}
-
-		uint32_t presentModeCount;
-		vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr); //gets the number of present modes. this is the conditions for "swapping" images to the screen
-		if (presentModeCount != 0) {
-			details.presentModes.resize(presentModeCount);
-			vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, details.presentModes.data());
-		}
-		return details; //return the swap chain details
-	}
 	void initQueues() {
-		QueueFamilyIndices indicesG = findQueueFamiliesG(physicalDevice);
-		QueueFamilyIndices indicesP = findQueueFamiliesP(physicalDevice, surface);
-		vkGetDeviceQueue(device, indicesG.graphicsFamily.value(), 0, &graphicsQueue); //params: device, queue family index, queue index, pointer to queue
-		vkGetDeviceQueue(device, indicesP.presentFamily.value(), 0, &presentQueue);
+		vkGetDeviceQueue(device, queueFamilyIndices.graphicsFamily.value(), 0, &graphicsQueue);
+		vkGetDeviceQueue(device, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
+		vkGetDeviceQueue(device, queueFamilyIndices.computeFamily.value(), 0, &computeQueue);
+		vkGetDeviceQueue(device, queueFamilyIndices.transferFamily.value(), 0, &transferQueue);
 	}
+
 	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
 		VkExtent2D actualExtent = { SCREEN_WIDTH, SCREEN_HEIGHT }; //extent=res
-		actualExtent.width = std::max(capabilities.minImageExtent.width, std::min(capabilities.maxImageExtent.width, actualExtent.width));  //clamp the width between the min and max extents
-		actualExtent.height = std::max(capabilities.minImageExtent.height, std::min(capabilities.maxImageExtent.height, actualExtent.height));
+
+		// clamp the width and height to the min and max image extent
+		actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
 
 		return actualExtent; //return the actual extent
 	}
-	void createSC() { //SC = swap chain
-		SCsupportDetails swapChainSupport = querySCsupport(physicalDevice); //get the swap chain details from functions above
+	void createSC() {
+		vkhelper::SCsupportDetails swapChainSupport = vkhelper::querySCsupport(surface);
 
 		// choose the best surface format, present mode, and swap extent for the swap chain.
-		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats); //paramiters datatype ism a VK surface format
+		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
 		VkPresentModeKHR present = chooseSwapPresentMode(swapChainSupport.presentModes);
 		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
-		swap.imageCount = swapChainSupport.capabilities.minImageCount + 1; //the number of images is based on the minimum number of images plus one
+
+		// get the number of images for the sc. this is the minumum + 1
+		swap.imageCount = swapChainSupport.capabilities.minImageCount + 1;
+
+		// ensure the image count isnt higher than the max image count
 		if (swapChainSupport.capabilities.maxImageCount > 0 && swap.imageCount > swapChainSupport.capabilities.maxImageCount) {
 			swap.imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
+
+		// get the graphics queue family indices
+		uint32_t graphicsIndices[] = { queueFamilyIndices.graphicsFamily.value() };
+
 		// create the swap chain.
 		VkSwapchainCreateInfoKHR newinfo{};
 		newinfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -932,11 +855,9 @@ private:
 		newinfo.imageExtent = extent;
 		newinfo.imageArrayLayers = 1; //the num of layers each image has.
 		newinfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
-		QueueFamilyIndices indices = findQueueFamiliesG(physicalDevice);
-		uint32_t queueFamilyIndices[] = { indices.graphicsFamily.value() }; //the queue family indices that will be used
 		newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
 		newinfo.queueFamilyIndexCount = 1;
-		newinfo.pQueueFamilyIndices = queueFamilyIndices;
+		newinfo.pQueueFamilyIndices = graphicsIndices;
 		newinfo.preTransform = swapChainSupport.capabilities.currentTransform;
 		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 		newinfo.presentMode = present;
@@ -945,12 +866,15 @@ private:
 		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
 		}
+
 		// get the swap chain images
 		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
 		swap.images.resize(swap.imageCount);
 		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); //gets the images in the swap chain
 		swap.imageFormat = surfaceFormat.format;
 		swap.extent = extent;
+
+		// create the image views for the swap chain images
 		createSCImageViews();
 
 		// create the viewport for the swap chain
@@ -962,20 +886,22 @@ private:
 		swapVP.maxDepth = 1.0f;
 	}
 	VkSurfaceFormatKHR  chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) { //choose the best surface format for the swap chain
-		for (const auto& availableFormat : availableFormats) {
-			if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB && availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-				return availableFormat;
+		for (const VkSurfaceFormatKHR& format : availableFormats) {
+			if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+				return format;
 			}
 		}
+
 		return availableFormats[0];
 
 	}
 	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-		for (const auto& availablePresentMode : availablePresentModes) {
-			if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
-				return availablePresentMode;
+		for (const VkPresentModeKHR& present : availablePresentModes) {
+			if (present == VK_PRESENT_MODE_MAILBOX_KHR) {
+				return present;
 			}
 		}
+
 		return VK_PRESENT_MODE_FIFO_KHR;
 	}
 	VkFormat findDepthFormat() {
@@ -1472,7 +1398,6 @@ private:
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to create image views!");
 			}
-
 		}
 	}
 
@@ -1921,7 +1846,7 @@ private:
 
 			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
-		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool);
+		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
 		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
@@ -2004,7 +1929,7 @@ private:
 				vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
 			}
 
-			vkhelper::endSingleTimeCommands(tempBuffer, commandPool);
+			vkhelper::endSingleTimeCommands(tempBuffer, commandPool, graphicsQueue);
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}
@@ -2973,7 +2898,7 @@ private:
 		guiDSPool();
 
 		// imgui setup:
-		uint32_t graphicsQueueFamily = findQueueFamiliesG(physicalDevice).graphicsFamily.value();
+		uint32_t graphicsQueueFamily = queueFamilyIndices.graphicsFamily.value();
 		ImGui_ImplVulkan_InitInfo initInfo = {};
 		initInfo.Instance = instance;
 		initInfo.PhysicalDevice = physicalDevice;
@@ -2992,7 +2917,7 @@ private:
 		VkCommandPool guiCommandPool = createCommandPool();
 		VkCommandBuffer guiCommandBuffer = vkhelper::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
-		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool);
+		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 
@@ -3010,7 +2935,6 @@ private:
 
 	VkCommandPool createCommandPool() {
 		VkCommandPool cPool;
-		QueueFamilyIndices queueFamilyIndices = findQueueFamiliesG(physicalDevice);
 		VkCommandPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); //the queue family that will be using this command pool
@@ -3730,7 +3654,6 @@ private:
 		// create the framebuffers
 		createFrameBuffers(false);
 
-		recordAllCommandBuffers();
 		initializeMouseInput(true);
 	}
 

@@ -23,6 +23,112 @@ public:
 		ALPHA
 	} TextureType;
 
+	struct QueueFamilyIndices {
+		std::optional<uint32_t> graphicsFamily;
+		std::optional<uint32_t> presentFamily;
+		std::optional<uint32_t> computeFamily;
+		std::optional<uint32_t> transferFamily;
+
+		bool graphicsComplete() {
+			return graphicsFamily.has_value();
+		}
+
+		bool presentComplete() {
+			return presentFamily.has_value();
+		}
+
+		bool computeComplete() {
+			return computeFamily.has_value();
+		}
+
+		bool transferComplete() {
+			return transferFamily.has_value();
+		}
+
+		bool allComplete() {
+			return graphicsComplete() && presentComplete() && computeComplete() && transferComplete();
+		}
+	};
+
+	struct SCsupportDetails {
+		VkSurfaceCapabilitiesKHR capabilities;
+		std::vector<VkSurfaceFormatKHR> formats;
+		std::vector<VkPresentModeKHR> presentModes;
+
+		SCsupportDetails()
+			: capabilities(),
+			formats(),
+			presentModes()
+		{}
+	};
+
+	// ------------------ SWAP CHAIN ------------------ //
+
+	// gets the indices of each queue family (graphics, present, etc)
+	static QueueFamilyIndices findQueueFamilyIndices(const VkSurfaceKHR& surface, const VkPhysicalDevice& device) {
+		QueueFamilyIndices indices;
+
+		// get the number of queue families and their properties
+		uint32_t queueFamilyCount = 0;
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+
+		std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+		vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+
+		// iterate through all the queue families
+		for (uint32_t i = 0; i < queueFamilyCount; i++) {
+			const auto& family = queueFamilies[i];
+
+			// check if the queue family supports graphics, compute and transfer operations
+			if (family.queueFlags & VK_QUEUE_GRAPHICS_BIT) indices.graphicsFamily = i;
+			if (family.queueFlags & VK_QUEUE_COMPUTE_BIT) indices.computeFamily = i;
+			if (family.queueFlags & VK_QUEUE_TRANSFER_BIT) indices.transferFamily = i;
+
+			// check if the queue family supports presentation operations
+			VkBool32 presSupport = false;
+			vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presSupport);
+			if (presSupport) indices.presentFamily = i;
+
+			if (indices.allComplete()) {
+				break;
+			}
+		}
+
+		return indices;
+	}
+
+	// outputs details about what the swap chain supports
+	static SCsupportDetails querySCsupport(const VkSurfaceKHR& surface) {
+		SCsupportDetails details;
+
+		// get the surface capabilities of the physical device
+		// example: the minimum and maximum number of images in the swap chain
+		vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surface, &details.capabilities);
+
+		// get the number of supported surface formats
+		uint32_t formatCount;
+		vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, nullptr);
+
+		// if the format count isnt 0, then get the actual surface format details
+		// the surface format specifies the color space and pixel format
+		if (formatCount) {
+			details.formats.resize(formatCount);
+			vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, details.formats.data());
+		}
+
+		// get the number of supported present modes
+		// present modes determine how the swapping of images to the display is handled
+		uint32_t presentModeCount;
+		vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, nullptr);
+
+		// if any present modes are supported, get the present mode details
+		if (presentModeCount) {
+			details.presentModes.resize(presentModeCount);
+			vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surface, &presentModeCount, details.presentModes.data());
+		}
+		return details;
+	}
+
 	// ------------------ MEMORY ------------------ //
 	static uint32_t findMemoryType(const uint32_t tFilter, const VkMemoryPropertyFlags& prop) { //find the memory type based on the type filter and properties
 		VkPhysicalDeviceMemoryProperties memP; //struct to hold memory properties
@@ -173,7 +279,7 @@ public:
 		const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 		VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(cPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
-		endSingleTimeCommands(tempCommandBuffer, cPool);
+		endSingleTimeCommands(tempCommandBuffer, cPool, graphicsQueue);
 	}
 
 	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
@@ -353,7 +459,7 @@ public:
 	static void copyImage(const VkCommandPool& cPool, VkImage& srcImage, VkImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(cPool);
 		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
-		endSingleTimeCommands(commandBuffer, cPool);
+		endSingleTimeCommands(commandBuffer, cPool, graphicsQueue);
 	}
 
 
@@ -367,14 +473,14 @@ public:
 		return commandBuffer;
 	}
 
-	static void endSingleTimeCommands(const VkCommandBuffer& cBuffer, const VkCommandPool& cPool) {
+	static void endSingleTimeCommands(const VkCommandBuffer& cBuffer, const VkCommandPool& cPool, const VkQueue& queue) {
 		vkEndCommandBuffer(cBuffer);
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
 		submitInfo.pCommandBuffers = &cBuffer;
-		vkQueueSubmit(graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
-		vkQueueWaitIdle(graphicsQueue); //wait for the queue to be idle
+		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
+		vkQueueWaitIdle(queue); //wait for the queue to be idle
 		vkFreeCommandBuffers(device, cPool, 1, &cBuffer); //free the command buffer
 	}
 
@@ -485,6 +591,7 @@ public:
 		binding.stageFlags = stageFlags;
 
 		VkDescriptorBindingFlagsEXT bindingFlags = 0;
+
 		//if the descriptor count is variable, set the flag
 		if (descriptorCount > 1) {
 			bindingFlags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
