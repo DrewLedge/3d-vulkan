@@ -362,8 +362,8 @@ public:
 
 		mat4 operator+(const mat4& other) const {
 			mat4 result;
-			for (int i = 0; i < 4; ++i) {
-				for (int j = 0; j < 4; ++j) {
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
 					result.m[i][j] = m[i][j] + other.m[i][j];
 				}
 			}
@@ -371,8 +371,8 @@ public:
 		}
 
 		mat4& operator+=(const mat4& other) {
-			for (int i = 0; i < 4; ++i) {
-				for (int j = 0; j < 4; ++j) {
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
 					m[i][j] += other.m[i][j];
 				}
 			}
@@ -381,8 +381,8 @@ public:
 
 		mat4 transpose() const {
 			mat4 result;
-			for (int i = 0; i < 4; ++i) {
-				for (int j = 0; j < 4; ++j) {
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
 					result.m[i][j] = m[j][i];
 				}
 			}
@@ -767,10 +767,10 @@ public:
 		mat4 result;
 		int index = 0;
 
-		for (int col = 0; col < 4; ++col) {
-			for (int row = 0; row < 4; ++row) {
+		for (int col = 0; col < 4; col++) {
+			for (int row = 0; row < 4; row++) {
 				result.m[col][row] = static_cast<float>(vec[index]);
-				++index;
+				index++;
 			}
 		}
 		return result;

@@ -2,6 +2,10 @@
 // Designed to work with Vulkan and GLTF 2.0
 
 #include <vulkan/vulkan.h>
+#include <unordered_set>
+#include "utils.hpp"
+#include "dml.hpp"
+
 #pragma once
 
 class dvl {
@@ -252,5 +256,368 @@ public:
 			tangent.y = normalizedTangent.y;
 			tangent.z = normalizedTangent.z;
 		}
+	}
+
+	// returns an iterator to the attribute from a given name (TEXCOORD_0, NORMAL, etc)
+	static auto getAttributeIt(const std::string& name, const std::map < std::string, int>& attributes) {
+		auto it = attributes.find(name);
+
+		// if the attribute isnt found, log a warning (if debug is enabled)
+		LOG_WARNING_IF("Failed to find attribute: " + name, it == attributes.end());
+		return it;
+	}
+
+	// returns a pointer to the beggining of the attribute data
+	static const float* getAccessorData(const tinygltf::Model& model, const std::map<std::string, int>& attributes, const std::string& attributeName) {
+		auto it = getAttributeIt(attributeName, attributes); // get the attribute iterator from the attribute name
+		if (it == attributes.end()) return nullptr; // if the attribute isnt found, return nullptr
+
+		// get the accessor object from the attribite name
+		// accessors are objects that describe how to access the binary data in the tinygltf model as meaningful data
+		// it->second is the index of the accessor in the models accessors array
+		const tinygltf::Accessor& accessor = model.accessors[it->second];
+
+		// get the buffer view from the accessor
+		// the bufferview describes data about the buffer (stride, length, offset, etc)
+		// accessor.bufferview is the index of the bufferview to use
+		const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+
+		// get the buffer based from the buffer view
+		// the buffer is the raw binary data of the model
+		// bufferView.buffer is the index of the buffer to use
+		const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+
+		// get the offset of the accessor in the buffer
+		// bufferView.byteOffset is the offset of the buffer view inside the buffer
+		// accessor.byteOffset is the offset of the accessor in the buffer view
+		// the sum gives the total offset from the start to the beginning of the attribute data
+		size_t offset = bufferView.byteOffset + accessor.byteOffset;
+
+
+		// return the data from the buffer marking the start of the attribute data!
+		return reinterpret_cast<const float*>(&buffer.data[offset]);
+	}
+
+	// returns a pointer to the start of the index data (indices of the mesh)
+	static const void* getIndexData(const tinygltf::Model& model, const tinygltf::Accessor& accessor) {
+		// get the buffer view and buffer
+		const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
+		const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
+
+		// get the offset of the accessor in the buffer
+		size_t offset = bufferView.byteOffset + accessor.byteOffset;
+
+		// go through the accessors component type
+		// the compoenent type is the datatype of the data thats being read
+		// from this data, cast the binary data (of the buffer) to the correct type
+		switch (accessor.componentType) {
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+			return reinterpret_cast<const uint8_t*>(&buffer.data[offset]);
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+			return reinterpret_cast<const uint16_t*>(&buffer.data[offset]);
+		case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+			return reinterpret_cast<const uint32_t*>(&buffer.data[offset]);
+		default:
+			// if the component type is not supported, log a warning and return nullptr
+			LOG_WARNING("Unsupported index type" + accessor.componentType);
+			return nullptr;
+		}
+	}
+
+	static dml::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
+		if (node.matrix.size() == 16) { // if the node already has a matrix just return it
+			return dml::gltfToMat4(node.matrix);
+		}
+
+		// default values
+		dml::vec3 t = { 0.0f, 0.0f, 0.0f };
+		dml::vec4 r = { 0.0f, 0.0f, 0.0f, 1.0f };
+		dml::vec3 s = { 1.0f, 1.0f, 1.0f };
+		if (node.translation.size() >= 3) {
+			t = {
+				static_cast<float>(node.translation[0]),
+				static_cast<float>(node.translation[1]),
+				static_cast<float>(node.translation[2])
+			};
+		}
+
+		if (node.rotation.size() >= 4) {
+			r = {
+				static_cast<float>(node.rotation[0]),
+				static_cast<float>(node.rotation[1]),
+				static_cast<float>(node.rotation[2]),
+				static_cast<float>(node.rotation[3])
+			};
+		}
+
+		if (node.scale.size() >= 3) {
+			s = {
+				static_cast<float>(node.scale[0]),
+				static_cast<float>(node.scale[1]),
+				static_cast<float>(node.scale[2])
+			};
+		}
+		// calculate the matricies
+		dml::mat4 translationMatrix = dml::translate(t);
+		dml::mat4 rotationMatrix = dml::rotateQ(r); // quaternion rotation
+		dml::mat4 scaleMatrix = dml::scale(s);
+		return translationMatrix * rotationMatrix * scaleMatrix;
+	}
+
+	static int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
+		for (size_t i = 0; i < model.nodes.size(); i++) {
+			if (model.nodes[i].mesh == meshIndex) {
+				return static_cast<int>(i);
+			}
+		}
+		return -1; // not found
+	}
+
+	static dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, dvl::Mesh& m) {
+		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
+		dml::mat4 modelMatrix;
+
+		// get the matricies for object positioning
+		dml::mat4 translationMatrix = dml::translate(m.position);
+		dml::mat4 rotationMatrix = dml::rotateQ(m.rotation);
+		dml::mat4 scaleMatrix = dml::scale(m.scale * 0.03f); // 0.03 scales it down to a reasonable size
+
+		// walk up the node hierarchy to accumulate transformations
+		while (currentNodeIndex != -1) {
+			const tinygltf::Node& node = gltfMod.nodes[currentNodeIndex];
+			dml::mat4 localMatrix = calcNodeLM(node);
+
+			// combine the localMatrix with the accumulated modelMatrix
+			modelMatrix = localMatrix * modelMatrix;
+
+			// move up to the parent node for the next iteration
+			if (parentIndex.find(currentNodeIndex) != parentIndex.end()) {
+				currentNodeIndex = parentIndex[currentNodeIndex];
+			}
+			else {
+				currentNodeIndex = -1;  // no parent, exit loop
+			}
+		}
+
+		// after accumulating all local matricies, apply scaling first and then translation and rotation
+		modelMatrix = scaleMatrix * modelMatrix;
+		modelMatrix = translationMatrix * rotationMatrix * modelMatrix;
+		return modelMatrix;
+	}
+
+	static void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
+		for (int i = 0; i < depth; i++) { // indent based on depth
+			std::cout << "     ";
+		}
+		// print the current node's name or index if the name is empty
+		std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << std::endl;
+
+		for (const int& childIndex : model.nodes[nodeIndex].children) {
+			printNodeHierarchy(model, childIndex, depth + 1);
+		}
+	}
+
+	static void printFullHierarchy(const tinygltf::Model& model) {
+		std::unordered_set<int> childNodes;
+		for (const tinygltf::Node& node : model.nodes) {
+			for (const int& childIndex : node.children) {
+				childNodes.insert(childIndex);
+			}
+		}
+
+		for (int i = 0; i < model.nodes.size(); i++) {
+			if (childNodes.find(i) == childNodes.end()) { // if a node doesn't appear in the childNodes set, it's a root
+				printNodeHierarchy(model, i);
+				utils::sep();
+			}
+		}
+	}
+
+	static Mesh loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
+		const uint32_t meshInd, const dml::vec3 scale, const dml::vec3 pos, const dml::vec4 rot) {
+
+		dvl::Mesh newObject;
+
+		std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
+		std::vector<dvl::Vertex> tempVertices;
+		std::vector<uint32_t> tempIndices;
+
+		//printFullHierarchy(model);
+
+		// process primitives in the mesh
+		for (const tinygltf::Primitive& primitive : mesh.primitives) {
+			LOG_WARNING_IF("Unsupported primitive mode: " + std::to_string(primitive.mode), primitive.mode != TINYGLTF_MODE_TRIANGLES);
+
+			const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
+			const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
+			const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
+			const float* colorData = getAccessorData(model, primitive.attributes, "COLOR_0");
+			const float* tangentData = getAccessorData(model, primitive.attributes, "TANGENT");
+
+			if (!positionData || !texCoordData || !normalData) {
+				throw std::runtime_error("Mesh doesn't contain position, normal or texture cord data!");
+			}
+
+			// indices
+			const tinygltf::Accessor& indexAccessor = model.accessors[primitive.indices];
+			const void* rawIndices = getIndexData(model, indexAccessor);
+
+			// position data
+			auto positionIt = getAttributeIt("POSITION", primitive.attributes);
+			const tinygltf::Accessor& positionAccessor = model.accessors[positionIt->second];
+
+			bool colorFound = (colorData);
+			bool tangentFound = (tangentData);
+
+			// calculate the tangents if theyre not found
+			std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
+			if (!tangentFound) {
+				LOG_WARNING("Could not load tangents. Calculating tangents...");
+
+				switch (indexAccessor.componentType) {
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					dvl::calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					dvl::calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					break;
+				default:
+					LOG_WARNING("Unsupported index type: " + std::to_string(indexAccessor.type));
+					break;
+				}
+
+				dvl::normalizeTangents(tangents);
+			}
+
+			for (size_t i = 0; i < indexAccessor.count; i++) {
+				uint32_t index;  // use the largest type to ensure no overflow
+
+				switch (indexAccessor.componentType) {
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
+					index = static_cast<const uint8_t*>(rawIndices)[i];
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
+					index = static_cast<const uint16_t*>(rawIndices)[i];
+					break;
+				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
+					index = static_cast<const uint32_t*>(rawIndices)[i];
+					break;
+				default:
+					continue; // skip this iteration
+				}
+
+				dvl::Vertex vertex;
+				vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
+				vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
+				vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
+
+				if (colorFound) {
+					vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
+				}
+				else {
+					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
+				}
+				//vertex.col.w = 0.6f;
+
+				// get handedness of the tangent
+				dml::vec3 t = tangents[index].xyz();
+				tangents[index].w = dml::dot(dml::cross(vertex.normal, t), tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
+
+				if (tangentFound) {
+					vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
+					//std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << std::endl;
+				}
+				else {
+					vertex.tangent = tangents[index];
+				}
+
+				if (uniqueVertices.count(vertex) == 0) {
+					uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
+					tempVertices.push_back(std::move(vertex));
+				}
+				tempIndices.push_back(uniqueVertices[vertex]);
+			}
+			if (primitive.material >= 0) { // if the primitive has a material
+				tinygltf::Material& material = model.materials[primitive.material];
+				dvl::Material texture;
+
+				// base color texture
+				if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.baseColorTexture;
+					tinygltf::Texture& tex = model.textures[texInfo.index];
+					texture.baseColor.gltfImage = model.images[tex.source];
+					texture.baseColor.path = "gltf";
+					texture.baseColor.found = true;
+					newObject.textureCount++;
+				}
+
+				// metallic-roughness Texture
+				if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
+					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
+					tinygltf::Texture& tex = model.textures[texInfo.index];
+					texture.metallicRoughness.gltfImage = model.images[tex.source];
+					texture.metallicRoughness.path = "gltf";
+					texture.metallicRoughness.found = true;
+					newObject.textureCount++;
+				}
+
+				// normal map
+				if (material.normalTexture.index >= 0) {
+					tinygltf::NormalTextureInfo& texInfo = material.normalTexture;
+					tinygltf::Texture& tex = model.textures[texInfo.index];
+					texture.normalMap.gltfImage = model.images[tex.source];
+					texture.normalMap.path = "gltf";
+					texture.normalMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// emissive map
+				if (material.emissiveTexture.index >= 0) {
+					tinygltf::TextureInfo& texInfo = material.emissiveTexture;
+					tinygltf::Texture& tex = model.textures[texInfo.index];
+					texture.emissiveMap.gltfImage = model.images[tex.source];
+					texture.emissiveMap.path = "gltf";
+					texture.emissiveMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// occlusion map
+				if (material.occlusionTexture.index >= 0) {
+					tinygltf::OcclusionTextureInfo& texInfo = material.occlusionTexture;
+					tinygltf::Texture& tex = model.textures[texInfo.index];
+					texture.occlusionMap.gltfImage = model.images[tex.source];
+					texture.occlusionMap.path = "gltf";
+					texture.occlusionMap.found = true;
+					newObject.textureCount++;
+				}
+
+				// ensure the model is PBR
+				LOG_WARNING_IF("Model isnt PBR!!", !texture.baseColor.found && !texture.metallicRoughness.found && !texture.normalMap.found && !texture.emissiveMap.found && !texture.occlusionMap.found);
+				newObject.material = texture;
+			}
+			LOG_WARNING_IF("Primitive " + std::to_string(primitive.material) + " doesn't have a material/texture", primitive.material < 0);
+		}
+
+		newObject.vertices = tempVertices;
+		newObject.indices = tempIndices;
+
+		size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
+		size_t hash2 = std::hash<std::string>{}(mesh.name);
+
+		newObject.meshHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+
+		newObject.name = mesh.name;
+
+		newObject.scale = scale;
+		newObject.position = pos;
+		newObject.rotation = rot;
+
+		// calculate the model matrix for the mesh
+		newObject.modelMatrix = calcMeshWM(model, meshInd, parentInd, newObject);
+
+		return newObject;
 	}
 };
