@@ -717,6 +717,12 @@ private:
 		//maintenance4.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES_KHR;
 		//maintenance4.maintenance4 = VK_TRUE;
 
+		VkPhysicalDeviceNestedCommandBufferFeaturesEXT nestedCommandBufferFeatures{};
+		nestedCommandBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT;
+		nestedCommandBufferFeatures.nestedCommandBufferSimultaneousUse = VK_TRUE;
+		nestedCommandBufferFeatures.nestedCommandBuffer = VK_TRUE;
+		nestedCommandBufferFeatures.nestedCommandBufferRendering = VK_TRUE;
+
 		VkPhysicalDeviceFeatures deviceFeatures{};
 		deviceFeatures.imageCubeArray = VK_TRUE;
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
@@ -726,7 +732,7 @@ private:
 		descIndexing.runtimeDescriptorArray = VK_TRUE;
 		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE;
 		descIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-		//descIndexing.pNext = &maintenance4;
+		descIndexing.pNext = &nestedCommandBufferFeatures;
 
 		VkDeviceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -741,7 +747,7 @@ private:
 		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
 		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-		//VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
+		VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
 		//VK_KHR_MAINTENANCE_4_EXTENSION_NAME,
 		};
 
@@ -2750,6 +2756,7 @@ private:
 		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateModelBuffers();
+		recordSecondaryCommandBuffers();
 	}
 
 	void updateLightDS() {
@@ -2802,6 +2809,7 @@ private:
 		shadowInfos.push_back(shadowInfo);
 
 		updateLightDS();
+		recordSecondaryCommandBuffers();
 	}
 
 	void recreateLightBuffer() {
@@ -2810,7 +2818,7 @@ private:
 		createLightBuffer();
 	}
 
-	void recordMainSecondaryCmdBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordMainSecondaryCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
@@ -2863,7 +2871,7 @@ private:
 		}
 	}
 
-	void recordShadowSecondaryCmdBuffers(std::vector<VkCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordShadowSecondaryCommandBuffers(std::vector<VkCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		size_t size = secondaries.size();
 
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
@@ -2910,7 +2918,7 @@ private:
 		}
 	}
 
-	void recordCompSecondaryCmdBuffers(VkCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordCompSecondaryCommandBuffers(VkCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		if (startCommand) {
 			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording composition secondary command buffer!");
@@ -2954,23 +2962,68 @@ private:
 		}
 	}
 
+	void recordSecondaryCommandBuffers() {
+		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
+
+		// FOR THE SHADOW PASS
+		VkCommandBufferInheritanceInfo shadowInheritInfo{};
+		shadowInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		shadowInheritInfo.renderPass = shadowMapPipeline.renderPass;
+		shadowInheritInfo.framebuffer = VK_NULL_HANDLE;
+		shadowInheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo shadowBeginInfo{};
+		shadowBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
+
+		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, &descs.sets[1], 1, true, true);
+
+		// FOR THE MAIN & SKYBOX PASS
+		VkCommandBufferInheritanceInfo mainInheritInfo{};
+		mainInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		mainInheritInfo.renderPass = mainPassPipeline.renderPass;
+		mainInheritInfo.framebuffer = VK_NULL_HANDLE;
+		mainInheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo mainBeginInfo{};
+		mainBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		mainBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		mainBeginInfo.pInheritanceInfo = &mainInheritInfo;
+
+		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary, &mainBeginInfo) != VK_SUCCESS) {
+			throw std::runtime_error("failed to begin recording secondary command buffer!");
+		}
+
+		const VkDeviceSize skyboxOffset = 0;
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
+		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+		vkCmdBindVertexBuffers(secondary, 0, 1, &skybox.vertBuffer, &skyboxOffset);
+		vkCmdBindIndexBuffer(secondary, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
+
+		recordMainSecondaryCommandBuffers(secondary, mainPassPipeline, mainBeginInfo, mainDS.data(), mainDS.size(), false, true);
+
+		// FOR THE WBOIT PASS
+		VkCommandBufferInheritanceInfo wboitInheritInfo{};
+		wboitInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		wboitInheritInfo.renderPass = wboitPipeline.renderPass;
+		wboitInheritInfo.framebuffer = VK_NULL_HANDLE;
+		wboitInheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo wboitBeginInfo{};
+		wboitBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		wboitBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
+
+		recordMainSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
+	}
+
 
 	void recordShadowCommandBuffers() {
-		const std::array<VkDescriptorSet, 1> shadowDS = { descs.sets[1] };
-
-		VkCommandBufferInheritanceInfo inheritInfo{};
-		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = shadowMapPipeline.renderPass;
-		inheritInfo.framebuffer = VK_NULL_HANDLE;
-		inheritInfo.subpass = 0;
-
-		VkCommandBufferBeginInfo beginInfoS{};
-		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-		beginInfoS.pInheritanceInfo = &inheritInfo;
-
-		recordShadowSecondaryCmdBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, beginInfoS, shadowDS.data(), 1, true, true);
-
 		VkCommandBufferBeginInfo beginInfoP{};
 		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfoP.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
@@ -3017,36 +3070,6 @@ private:
 
 	void recordMainCommandBuffers() { //records and submits the main command buffers
 		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
-		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
-
-		const VkDeviceSize skyboxOffset = 0;
-
-		VkCommandBufferInheritanceInfo inheritInfo{};
-		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = mainPassPipeline.renderPass;
-		inheritInfo.framebuffer = VK_NULL_HANDLE;
-		inheritInfo.subpass = 0;
-
-		VkCommandBufferBeginInfo beginInfoS{};
-		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-		beginInfoS.pInheritanceInfo = &inheritInfo;
-
-		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
-		if (vkBeginCommandBuffer(secondary, &beginInfoS) != VK_SUCCESS) {
-			throw std::runtime_error("failed to begin recording secondary command buffer!");
-		}
-
-		// FOR THE SKYBOX PASS
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-		vkCmdBindVertexBuffers(secondary, 0, 1, &skybox.vertBuffer, &skyboxOffset);
-		vkCmdBindIndexBuffer(secondary, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
-
-		// FOR THE MAIN PASS
-		recordMainSecondaryCmdBuffers(secondary, mainPassPipeline, beginInfoS, mainDS.data(), mainDS.size(), false, true);
 
 		VkCommandBufferBeginInfo beginInfoP{};
 		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3086,7 +3109,6 @@ private:
 
 	void recordWBOITCommandBuffers() {
 		std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
-		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
 		VkDeviceSize offset[] = { 0, 0 };
 
 		VkCommandBufferBeginInfo beginInfo{};
@@ -3094,23 +3116,10 @@ private:
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 
-		VkCommandBufferInheritanceInfo inheritInfo{};
-		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = wboitPipeline.renderPass;
-		inheritInfo.framebuffer = VK_NULL_HANDLE;
-		inheritInfo.subpass = 0;
-
-		VkCommandBufferBeginInfo beginInfoS{};
-		beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-		beginInfoS.pInheritanceInfo = &inheritInfo;
-
-		recordMainSecondaryCmdBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, beginInfoS, wboitDS.data(), wboitDS.size(), true, true);
-
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
-			tfCmd.emplace([&, i, clearValues, wboitDS, offset, beginInfo]() {
+			tfCmd.emplace([&, i, clearValues, offset, beginInfo]() {
 #endif
 				VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
 				if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -3162,12 +3171,12 @@ private:
 		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 		beginInfoS.pInheritanceInfo = &inheritInfo;
 
-		recordCompSecondaryCmdBuffers(compCommandBuffers.secondary[0], beginInfoS, &compDS, 1, true, true);
+		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, &compDS, 1, true, true);
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
-			tfCmd.emplace([&, i, clearValues, compDS, beginInfo]() {
+			tfCmd.emplace([&, i, clearValues, beginInfo]() {
 #endif
 				VkCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
 				if (vkBeginCommandBuffer(compCommandBuffer, &beginInfo) != VK_SUCCESS) {
@@ -3632,6 +3641,7 @@ private:
 		// setup the framebuffers and command buffers
 		createFrameBuffers(true);
 		createCommandBuffers();
+		recordSecondaryCommandBuffers();
 		recordAllCommandBuffers();
 
 		auto duration = utils::duration<milliseconds>(now);
