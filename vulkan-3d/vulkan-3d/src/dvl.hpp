@@ -40,7 +40,6 @@ public:
 			tangent(tang)
 		{}
 		bool operator==(const Vertex& other) const {
-			const float epsilon = 0.00001f; // tolerance for floating point equality
 			return pos == other.pos &&
 				tex == other.tex &&
 				col == other.col &&

@@ -6,6 +6,7 @@
 constexpr float PI = 3.14159265359f;
 constexpr float DEG_TO_RAD = 0.01745329251f;
 constexpr float RAD_TO_DEG = 57.2957795131f;
+constexpr float EPSILON = 0.0000001f;
 
 class dml {
 public:
@@ -24,9 +25,8 @@ public:
 		}
 
 		bool operator==(const vec2& other) const {
-			const float epsilon = 0.00001f;
-			return std::abs(x - other.x) < epsilon &&
-				std::abs(y - other.y) < epsilon;
+			return std::abs(x - other.x) < EPSILON &&
+				std::abs(y - other.y) < EPSILON;
 		}
 
 		vec2 operator+(const vec2& other) const {
@@ -145,10 +145,9 @@ public:
 		}
 
 		bool operator==(const vec3& other) const {
-			const float epsilon = 0.00001f;
-			return std::abs(x - other.x) < epsilon &&
-				std::abs(y - other.y) < epsilon &&
-				std::abs(z - other.z) < epsilon;
+			return std::abs(x - other.x) < EPSILON &&
+				std::abs(y - other.y) < EPSILON &&
+				std::abs(z - other.z) < EPSILON;
 		}
 
 		friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
@@ -176,11 +175,10 @@ public:
 		}
 
 		bool operator==(const vec4& other) const {
-			const float epsilon = 0.00001f;
-			return std::abs(x - other.x) < epsilon &&
-				std::abs(y - other.y) < epsilon &&
-				std::abs(z - other.z) < epsilon &&
-				std::abs(w - other.w) < epsilon;
+			return std::abs(x - other.x) < EPSILON &&
+				std::abs(y - other.y) < EPSILON &&
+				std::abs(z - other.z) < EPSILON &&
+				std::abs(w - other.w) < EPSILON;
 		}
 
 		bool operator!=(const vec4& other) const {
@@ -348,11 +346,10 @@ public:
 		}
 
 		bool operator==(const mat4& other) const {
-			const float epsilon = 0.00001f;
 			bool equal = true;
 			for (int i = 0; i < 4; i++) {
 				for (int j = 0; j < 4; j++) {
-					equal = equal && std::abs(m[j][i] - other.m[j][i]) < epsilon;
+					equal = equal && std::abs(m[j][i] - other.m[j][i]) < EPSILON;
 				}
 			}
 			return equal;
@@ -516,7 +513,7 @@ public:
 		float length = v.length();
 
 		// check for zero length to avoid division by zero
-		if (length < std::numeric_limits<float>::epsilon()) {
+		if (length < EPSILON) {
 			return vec3(0.0f, 0.0f, 0.0f);
 		}
 
@@ -578,7 +575,7 @@ public:
 
 	static vec4 inverseQ(const vec4& q) { // quaternion inversion
 		float length = q.length();
-		if (length == 0) {
+		if (length < EPSILON) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
 		}
 
@@ -599,7 +596,7 @@ public:
 
 	static vec4 normalize(const vec4& v) {
 		float length = v.length();
-		if (length == 0) {
+		if (length < EPSILON) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f);
 		}
 
@@ -754,7 +751,7 @@ public:
 		float d = det4(m); // get the determinant of the matrix
 
 		// if the determinant is 0, its not invertible
-		if (d == 0.0f) {
+		if (std::abs(d) < EPSILON) {
 			std::cerr << "Matrix is not invertible!" << std::endl;
 			return m;
 		}
