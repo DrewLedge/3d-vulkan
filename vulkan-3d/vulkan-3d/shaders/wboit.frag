@@ -23,7 +23,7 @@ struct LightData {
 	float quadraticAttenuation;
 };
 
-layout (set=1, binding = 1) buffer LightBuffer {
+layout (set=1, binding = 1) readonly buffer LightBuffer {
     LightData lights[];
 };
 

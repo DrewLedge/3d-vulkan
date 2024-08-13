@@ -3496,10 +3496,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-	}
+		}
 
 		vkDeviceWaitIdle(device);
-}
+	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
