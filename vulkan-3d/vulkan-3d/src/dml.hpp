@@ -9,10 +9,50 @@ constexpr float RAD_TO_DEG = 57.2957795131f;
 
 class dml {
 public:
-	struct vec3;
 	struct vec2;
+	struct vec3;
 	struct vec4;
 	struct mat4;
+
+	struct vec2 {
+		float x, y;
+		vec2(float x, float y) : x(x), y(y) {}
+
+		friend std::ostream& operator<<(std::ostream& os, const vec2& v) {
+			os << "(" << v.x << ", " << v.y << ")";
+			return os;
+		}
+
+		bool operator==(const vec2& other) const {
+			const float epsilon = 0.00001f;
+			return std::abs(x - other.x) < epsilon &&
+				std::abs(y - other.y) < epsilon;
+		}
+
+		vec2 operator+(const vec2& other) const {
+			return vec2(x + other.x, y + other.y);
+		}
+
+		vec2 operator-(const vec2& other) const {
+			return vec2(x - other.x, y - other.y);
+		}
+
+		vec2 operator*(float scalar) const {
+			return vec2(x * scalar, y * scalar);
+		}
+
+		vec2 operator*(const vec2& other) const {
+			return vec2(x * other.x, y * other.y);
+		}
+
+		float length() const {
+			return std::sqrt(x * x + y * y);
+		}
+
+		vec2 operator/(float scalar) const {
+			return vec2(x / scalar, y / scalar);
+		}
+	};
 
 	struct alignas(16) vec3 {
 		float x, y, z;
@@ -21,8 +61,8 @@ public:
 
 		vec3 operator+(const vec3& other) const {
 			return vec3(x + other.x, y + other.y, z + other.z);
-
 		}
+
 		vec3& operator+=(float scalar) {
 			x += scalar;
 			y += scalar;
@@ -33,9 +73,11 @@ public:
 		vec3 operator-(const vec3& other) const {
 			return vec3(x - other.x, y - other.y, z - other.z);
 		}
+
 		friend vec3 operator-(const vec3& v, float scalar) {
 			return vec3(v.x - scalar, v.y - scalar, v.z - scalar);
 		}
+
 		friend vec3 operator+(const vec3& v, float scalar) {
 			return vec3(v.x + scalar, v.y + scalar, v.z + scalar);
 		}
@@ -43,9 +85,11 @@ public:
 		vec3 operator*(float scalar) const {
 			return vec3(x * scalar, y * scalar, z * scalar);
 		}
+
 		friend vec3 operator*(float scalar, const vec3& v) {
 			return vec3(v.x * scalar, v.y * scalar, v.z * scalar);
 		}
+
 		vec3 operator*(const vec3& other) const {
 			return vec3(x * other.x, y * other.y, z * other.z);
 		}
@@ -53,6 +97,7 @@ public:
 		vec3 operator/(float scalar) const {
 			return vec3(x / scalar, y / scalar, z / scalar);
 		}
+
 		friend vec3 operator/(float scalar, const vec3& v) {
 			return vec3(scalar / v.x, scalar / v.y, scalar / v.z);
 		}
@@ -63,30 +108,35 @@ public:
 			z += other.z;
 			return *this;
 		}
+
 		vec3& operator-=(const vec3& other) {
 			x -= other.x;
 			y -= other.y;
 			z -= other.z;
 			return *this;
 		}
+
 		vec3& operator*=(float scalar) {
 			x *= scalar;
 			y *= scalar;
 			z *= scalar;
 			return *this;
 		}
+
 		vec3& operator/=(float scalar) {
 			x /= scalar;
 			y /= scalar;
 			z /= scalar;
 			return *this;
 		}
+
 		vec3& operator*=(const vec3& other) {
 			x *= other.x;
 			y *= other.y;
 			z *= other.z;
 			return *this;
 		}
+
 		vec3& operator/=(const vec3& other) {
 			x /= other.x;
 			y /= other.y;
@@ -106,52 +156,11 @@ public:
 			return os;
 		}
 
-		vec3 translate(float tx, float ty, float tz) const {
-			return vec3(x + tx, y + ty, z + tz);
-		}
-		vec3 multiply(float sx, float sy, float sz) const {
-			return vec3(x * sx, y * sy, z * sz);
-		}
-
 		float length() const {
 			return std::sqrt(x * x + y * y + z * z);
 		}
-
 	};
-	struct vec2 {
-		float x, y;
-		friend std::ostream& operator<<(std::ostream& os, const vec2& v) {
-			os << "(" << v.x << ", " << v.y << ")";
-			return os;
-		}
-		bool operator==(const vec2& other) const {
-			const float epsilon = 0.00001f;
-			return std::abs(x - other.x) < epsilon &&
-				std::abs(y - other.y) < epsilon;
-		}
-		vec2(float x, float y) : x(x), y(y) {}
-		vec2 operator+(const vec2& other) const {
-			return vec2(x + other.x, y + other.y);
-		}
 
-		vec2 operator-(const vec2& other) const {
-			return vec2(x - other.x, y - other.y);
-		}
-
-		vec2 operator*(float scalar) const {
-			return vec2(x * scalar, y * scalar);
-		}
-
-		vec2 operator*(const vec2& other) const {
-			return vec2(x * other.x, y * other.y);
-		}
-		float length() const {
-			return std::sqrt(x * x + y * y);
-		}
-		vec2 operator/(float scalar) const {
-			return vec2(x / scalar, y / scalar);
-		}
-	};
 	struct vec4 {
 		float x, y, z, w;
 
@@ -189,6 +198,7 @@ public:
 		vec4 operator/(float scalar) const {
 			return vec4(x / scalar, y / scalar, z / scalar, w / scalar);
 		}
+
 		vec4& operator+=(const vec4& other) {
 			x += other.x;
 			y += other.y;
@@ -196,6 +206,7 @@ public:
 			w += other.w;
 			return *this;
 		}
+
 		vec4& operator-=(const vec4& other) {
 			x -= other.x;
 			y -= other.y;
@@ -203,6 +214,7 @@ public:
 			w -= other.w;
 			return *this;
 		}
+
 		vec4& operator*=(float scalar) {
 			x *= scalar;
 			y *= scalar;
@@ -210,6 +222,7 @@ public:
 			w *= scalar;
 			return *this;
 		}
+
 		vec4& operator/=(float scalar) {
 			x /= scalar;
 			y /= scalar;
@@ -217,6 +230,7 @@ public:
 			w /= scalar;
 			return *this;
 		}
+
 		vec4 operator*(const vec4& other) const {
 			vec4 result;
 			result.x = w * other.x + x * other.w + y * other.z - z * other.y;
@@ -263,6 +277,9 @@ public:
 			return os;
 		}
 
+		float length() const {
+			return std::sqrt(x * x + y * y + z * z + w * w);
+		}
 	};
 
 	struct mat3 {
@@ -363,6 +380,7 @@ public:
 			}
 			return result;
 		}
+
 		mat4& operator*=(const mat4& other) {
 			mat4 temp;
 			for (int i = 0; i < 4; i++) {
@@ -429,10 +447,10 @@ public:
 	};
 
 	// ------------------ VECTOR3 FORMULAS ------------------ //
-	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector (right-handed coordinate system)
+	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector
 		// convert pitch and yaw from degrees to radians
-		float pitch = radians(rotation.x); // x rot
-		float yaw = radians(rotation.y); // y rot
+		float pitch = radians(rotation.x);
+		float yaw = radians(rotation.y);
 
 		vec3 direction;
 		direction.x = cos(yaw) * cos(pitch);
@@ -441,23 +459,25 @@ public:
 		return direction;
 	}
 
-	static vec3 getForward(const vec3& camData) { // computes camera's forward direction (left handed coordinate system) (only use for camera)
+	static vec3 getForward(const vec3& camData) { // computes camera's forward direction
 		float pitch = camData.x;
 		float yaw = camData.y;
-		return vec3(
-			-std::sin(yaw) * std::cos(pitch),
-			-std::sin(pitch),
-			std::cos(yaw) * std::cos(pitch)
-		);
+
+		vec3 forward;
+		forward.x = -std::sin(yaw) * std::cos(pitch);
+		forward.y = -std::sin(pitch);
+		forward.z = std::cos(yaw) * std::cos(pitch);
+
+		return forward;
 	}
 
-	static vec3 getRight(const vec3& camData) { // computes camera's right direction (left handed coordinate system) (only use for camera)
+	static vec3 getRight(const vec3& camData) { // computes camera's right direction
 		vec3 forward = getForward(camData);
 		vec3 up(0.0f, -1.0f, 0.0f);
 		return cross(forward, up);
 	}
 
-	static vec3 getUp(const vec3& camData) { // computes camera's up direction (left handed coordinate system) (only use for camera)
+	static vec3 getUp(const vec3& camData) { // computes camera's up direction
 		vec3 forward = getForward(camData);
 		vec3 right = getRight(camData);
 		return cross(right, forward);
@@ -466,28 +486,34 @@ public:
 	static vec3 radians(const vec3& v) {
 		return v * DEG_TO_RAD;
 	}
+
 	static float radians(const float degree) {
 		return degree * DEG_TO_RAD;
 	}
+
 	static float degrees(const float radian) {
 		return radian * RAD_TO_DEG;
 	}
+
 	static vec3 cross(const vec3& a, const vec3& b) {
-		return vec3(
-			a.y * b.z - a.z * b.y,
-			a.z * b.x - a.x * b.z,
-			a.x * b.y - a.y * b.x
-		);
+		vec3 res;
+		res.x = a.y * b.z - a.z * b.y;
+		res.y = a.z * b.x - a.x * b.z;
+		res.z = a.x * b.y - a.y * b.x;
+
+		return res;
 	}
+
 	static float dot(const vec3& a, const vec3& b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z;
 	}
+
 	static float dot(const vec4& a, const vec4& b) {
 		return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
 	}
 
 	static vec3 normalize(const vec3& v) {
-		float length = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
+		float length = v.length();
 
 		// check for zero length to avoid division by zero
 		if (length < std::numeric_limits<float>::epsilon()) {
@@ -504,12 +530,14 @@ public:
 
 	// ------------------ VECTOR4 FORMULAS ------------------ //
 	static vec4 quatCast(const mat4& mat) {
+		// calc the trace of the matrix, which is the sum of the diagonal elements
+		// when the trace is positive, it has more numerical stability, and is more straightforward to calc
 		float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
 		vec4 quaternion;
 
-		if (trace > 0.0f) { // if trace is positive
-			float s = sqrt(trace + 1.0f); // compute scale factor
-			quaternion.w = s * 0.5f; // quaternion scale part
+		if (trace > 0.0f) {
+			float s = sqrt(trace + 1.0f);
+			quaternion.w = s * 0.5f;
 			s = 0.5f / s;
 
 			// get the quaternion vector parts
@@ -517,17 +545,18 @@ public:
 			quaternion.y = (mat.m[0][2] - mat.m[2][0]) * s;
 			quaternion.z = (mat.m[1][0] - mat.m[0][1]) * s;
 		}
-		else { // if trace is negative
+		else {
 			int i = 0;
 
 			// find the greatest diagonal element to ensure better stability when computing square root
 			if (mat.m[1][1] > mat.m[0][0]) i = 1;
 			if (mat.m[2][2] > mat.m[i][i]) i = 2;
-			int j = (i + 1) % 3;
-			int k = (i + 2) % 3;
+
+			int j = (i + 1) % 3; // the next diagonal element ater i (wraps around)
+			int k = (i + 2) % 3; // the diagonal element after j (wraps around)
 
 			float s = sqrt(mat.m[i][i] - mat.m[j][j] - mat.m[k][k] + 1.0f);
-			quaternion[i] = s * 0.5f; // quaternion scale part
+			quaternion[i] = s * 0.5f;
 			s = 0.5f / s;
 
 			// get the quaternion vector parts
@@ -535,11 +564,9 @@ public:
 			quaternion[j] = (mat.m[j][i] + mat.m[i][j]) * s;
 			quaternion[k] = (mat.m[k][i] + mat.m[i][k]) * s;
 		}
-		// normalize the quaternion
-		float length = sqrt(quaternion.w * quaternion.w + quaternion.x * quaternion.x + quaternion.y * quaternion.y + quaternion.z * quaternion.z);
-		quaternion /= length;
 
 		// return the calculated quaternion
+		quaternion = normalize(quaternion);
 		return quaternion;
 	}
 
@@ -550,7 +577,7 @@ public:
 	}
 
 	static vec4 inverseQ(const vec4& q) { // quaternion inversion
-		float length = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+		float length = q.length();
 		if (length == 0) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
 		}
@@ -571,7 +598,7 @@ public:
 	}
 
 	static vec4 normalize(const vec4& v) {
-		float length = sqrt(v.x * v.x + v.y * v.y + v.z * v.z + v.w * v.w);
+		float length = v.length();
 		if (length == 0) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f);
 		}
@@ -580,17 +607,6 @@ public:
 	}
 
 	// ------------------ MATRIX4 FORMULAS ------------------ // 
-	static mat4 outerProduct(const vec4& a, const vec4& b) {
-		mat4 result;
-		for (int i = 0; i < 4; i++) {
-			result.m[i][0] = a[i] * b.x;
-			result.m[i][1] = a[i] * b.y;
-			result.m[i][2] = a[i] * b.z;
-			result.m[i][3] = a[i] * b.w;
-		}
-		return result;
-	}
-
 	static mat4 translate(const vec3 t) {
 		mat4 result;
 		result.m[3][0] = t.x;
@@ -598,6 +614,7 @@ public:
 		result.m[3][2] = t.z;
 		return result;
 	}
+
 	static mat4 scale(const vec3 s) {
 		mat4 result;
 		result.m[0][0] = s.x;
@@ -606,6 +623,7 @@ public:
 		result.m[3][3] = 1.0f;
 		return result;
 	}
+
 	static mat4 rotate(const vec3 s) {
 		mat4 result;
 		float radX = radians(s.x);
