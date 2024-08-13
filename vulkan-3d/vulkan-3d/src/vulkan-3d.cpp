@@ -25,19 +25,19 @@
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
-#include <optional> //allows to create optional values in a more efficient way than using pointers
+#include <optional>
 #include <vector>
 #include <string>
 #include <iostream>
 #include <cstdlib>
-#include <fstream> //allows to read and write files
+#include <fstream>
 #include <array>
-#include <chrono> //time library
+#include <chrono>
 #include <unordered_map>
 #include <unordered_set>
 #include <mutex>
 #include <random>
-#include <ctime> //random seed based on time
+#include <ctime>
 #include <cmath>
 #include <memory>
 
@@ -3338,6 +3338,8 @@ private:
 		createFrameBuffers(false);
 
 		initializeMouseInput(true);
+
+		recordSecondaryCommandBuffers();
 	}
 
 	void drawFrame() { // draw frame function
@@ -3494,10 +3496,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-		}
+	}
 
 		vkDeviceWaitIdle(device);
-	}
+}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen

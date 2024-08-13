@@ -264,6 +264,40 @@ public:
 		}
 
 	};
+
+	struct mat3 {
+		union {
+			struct {
+				float m[3][3];
+			};
+			float flat[9];
+		};
+
+		mat3() {
+			for (int i = 0; i < 3; i++) {
+				for (int j = 0; j < 3; j++) {
+					m[j][i] = (i == j) ? 1.0f : 0.0f;
+				}
+			}
+		}
+
+		mat3(const mat3& other) {
+			for (int i = 0; i < 3; i++) {
+				for (int j = 0; j < 3; j++) {
+					m[j][i] = other.m[j][i];
+				}
+			}
+		}
+
+		mat3(float zero) {
+			for (int i = 0; i < 3; i++) {
+				for (int j = 0; j < 3; j++) {
+					m[j][i] = 0.0f;
+				}
+			}
+		}
+	};
+
 	struct mat4 {
 		union {
 			struct {
@@ -296,13 +330,6 @@ public:
 			}
 		}
 
-		vec4 getRow(int index) const {
-			if (index < 0 || index > 3) {
-				throw std::out_of_range("Index out of range!");
-			}
-			return vec4(m[index][0], m[index][1], m[index][2], m[index][3]);
-		}
-
 		bool operator==(const mat4& other) const {
 			const float epsilon = 0.00001f;
 			bool equal = true;
@@ -313,6 +340,17 @@ public:
 			}
 			return equal;
 		}
+
+		mat4 operator*(const float val) {
+			mat4 result;
+			for (int i = 0; i < 4; i++) {
+				for (int j = 0; j < 4; j++) {
+					result.m[j][i] = m[j][i] * val;
+				}
+			}
+			return result;
+		}
+
 		mat4 operator*(const mat4& other) const {
 			mat4 result;
 			for (int i = 0; i < 4; i++) {
@@ -642,6 +680,7 @@ public:
 
 		return result;
 	}
+
 	static mat4 spotPerspective(float verticalFov, float aspectRatio, float n, float f) {
 		float fovRad = radians(verticalFov);
 		float focalLength = 1.0f / tan(fovRad / 2.0f);
@@ -658,61 +697,66 @@ public:
 		proj.m[3][2] = b;
 		proj.m[2][3] = -1.0f;
 		return proj;
-
 	}
 
-	static float submatrixDet(mat4 m, int excludeRow, int excludeCol) {
-		float det, sub[3][3];
+	static mat3 mat4ToMat3(const mat4& m, int excludeRow, int excludeCol) {
+		mat3 res;
 		int x = 0, y = 0;
 		for (int i = 0; i < 4; i++) {
 			if (i == excludeRow) continue; // skip the excluded row
 			y = 0;
 			for (int j = 0; j < 4; j++) {
 				if (j == excludeCol) continue; // skip the excluded column
-				sub[x][y] = m.m[i][j];
+				res.m[x][y] = m.m[i][j];
 				y++;
 			}
 			x++;
 		}
-		// get the determinant of the submatrix
-		det = sub[0][0] * (sub[1][1] * sub[2][2] - sub[2][1] * sub[1][2]) - sub[0][1] * (sub[1][0] * sub[2][2] - sub[2][0] * sub[1][2]) + sub[0][2] * (sub[1][0] * sub[2][1] - sub[2][0] * sub[1][1]);
-		return det;
+		return res;
 	}
 
-	static mat4 inverseMatrix(mat4 m) {
-		// help from: https://www.mathsisfun.com/algebra/matrix-inverse-minors-cofactors-adjugate.html
-		mat4 cofactor;
-		float det = 0.0f;
+	static float det3(const mat3& m) { // func to calc the determinant of a 3x3 matrix
+		float d1 = m.m[0][0] * (m.m[1][1] * m.m[2][2] - m.m[2][1] * m.m[1][2]);
+		float d2 = m.m[0][1] * (m.m[1][0] * m.m[2][2] - m.m[2][0] * m.m[1][2]);
+		float d3 = m.m[0][2] * (m.m[1][0] * m.m[2][1] - m.m[2][0] * m.m[1][1]);
+		return d1 - d2 + d3;
+	}
 
-		// calculate determinant
+	static float det4(const mat4& m) { // func to calc the determinant of a 4x4 matrix
+		float res = 0.0f;
 		for (int i = 0; i < 4; i++) {
-			det += ((i % 2 == 0 ? 1 : -1) * m.m[0][i] * submatrixDet(m, 0, i));
+			mat3 sub = mat4ToMat3(m, 0, i);
+			int sign = (i % 2 == 0 ? 1 : -1);
+			res += (sign * m.m[0][i] * det3(sub));
 		}
+		return res;
+	}
 
-		if (det == 0.0f) { // if matrix is not invertible, return original matrix
-			std::cerr << "Matrix not invertible!" << std::endl;
+	static mat4 inverseMatrix(const mat4& m) {
+		float d = det4(m); // get the determinant of the matrix
+
+		// if the determinant is 0, its not invertible
+		if (d == 0.0f) {
+			std::cerr << "Matrix is not invertible!" << std::endl;
 			return m;
 		}
 
-		float invDet = 1.0f / det;
-
-		// calculate cofactor matrix
+		// calculate the adjugate matrix
+		// the adjugate is gotten from calculating the determinant of the submatrices and multiplying by the sign (which forms a checkerboard pattern)
+		mat4 adjugate;
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
 				int sign = ((i + j) % 2 == 0) ? 1 : -1;
-				cofactor.m[i][j] = sign * submatrixDet(m, i, j);
+				mat3 sub = mat4ToMat3(m, i, j);
+
+				// the adjugate is the tranpose of the cofactor (thus why its ij instead of ji)
+				adjugate.m[i][j] = sign * det3(sub);
 			}
 		}
 
-		// multiply by 1/det to get inverse
-		mat4 inverse;
-		for (int i = 0; i < 4; i++) {
-			for (int j = 0; j < 4; j++) {
-				inverse.m[j][i] = invDet * cofactor.m[j][i];
-			}
-		}
-
-		return inverse;
+		// multiply the adjugate by the inversed determinant
+		float invDet = 1.0f / d;
+		return adjugate * invDet;
 	}
 
 	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
