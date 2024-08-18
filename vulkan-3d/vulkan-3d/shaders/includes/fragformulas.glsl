@@ -25,21 +25,31 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 	return shadow;
 }
 
-float gAttenutation(float term, float alphaS) {
-	return 2.0 * term / (term + sqrt(alphaS + (1.0 - alphaS) * (term * term)));
+// outputs a float based on the self shadowing of microfacets
+// it accounts for the fact that some microfacets may be shadowed by others, which reduces the reflectance
+// without the geometric attenuation, rough surfaces would appear overly shiny
+float gAttenutation(float term, float alpha) {
+	return 2.0 * term / (term + sqrt(alpha + (1.0 - alpha) * (term * term)));
 }
 
-float roughnessTerm(float NdotH, float alphaS) {
-	return alphaS / (PI * pow(NdotH * NdotH * (alphaS - 1.0) + 1.0, 2.0));
+// outputs a float based on the statistical distribution of microfacet orientations
+// essentially, it determins how likely a microfacet is oriented in which it will reflect light
+// ndf is crucial for determining the intensity and shape of specular highlights
+float ndf(float NdotH, float alpha) {
+	return alpha / (PI * pow(NdotH * NdotH * (alpha - 1.0) + 1.0, 2.0));
 }
 
-vec3 frenselTerm(vec3 color, float metallic, float VdotH) {
-	vec3 F0 = mix(vec3(0.04), color, metallic);  // base reflectivity
-	return F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+// outputs a vec3 for to simulate how the reflectivity changes based on the viewing angle
+vec3 fresnelTerm(vec3 color, float metallic, float VdotH) {
+	// F0 represents the base reflectivity
+	// which is the amount of light the material reflects from straight on
+	// used to distinguish between metallic things and non metallic things (dielectrics)
+	vec3 F0 = mix(vec3(0.04), color, metallic);
+	return F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0); // uses schlick approximation to get the fresnel term
 }
 
 vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
-	float alpha2 = roughness * roughness;
+	float alpha = roughness * roughness;
 
 	// compute halfway vector
 	vec3 H = normalize(V + L);
@@ -50,20 +60,22 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float rou
 	float VdotH = max(dot(V, H), 0.0);
 	float NdotL = max(dot(N, L), 0.0);
 
-	// compute the roughness term
-	float D = roughnessTerm(NdotH, alpha2);
+	// normal distribution function
+	float ND = ndf(NdotH, alpha);
 
 	// geometric attenuation factor
 	float G = gAttenutation(NdotV, roughness) * gAttenutation(NdotL, roughness);
 
-	// compute the Fresnel term (schlick approximation)
-	vec3 F = frenselTerm(albedo.rgb, metallic, VdotH);
+	// fresnel term
+	vec3 F = fresnelTerm(albedo.rgb, metallic, VdotH);
 
-	// specular and diffuse terms
-	vec3 specular = (D * G * F) / (4.0 * max(NdotV * NdotL, 0.0001));
+	float norm = (4.0 * max(NdotV * NdotL, 0.0001)); // used to normalize the specular term
+
+	// specular and diffuse components
+	vec3 specular = (ND * G * F) / norm;
 	vec3 diffuse = (1.0 - metallic) * albedo.rgb / PI;
 
-	return (diffuse + specular); // output final color
+	return (diffuse + specular);
 }
 
 void getTextures() {
