@@ -2,6 +2,7 @@
 
 #pragma once
 #include <iostream>
+#include <vector>
 
 constexpr float PI = 3.14159265359f;
 constexpr float DEG_TO_RAD = 0.01745329251f;

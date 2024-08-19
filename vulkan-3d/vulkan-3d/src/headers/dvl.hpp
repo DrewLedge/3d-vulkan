@@ -1,12 +1,12 @@
 // Drew's Vertex Library (DVL)
 // Designed to work with Vulkan and GLTF 2.0
 
+#pragma once
+
 #include <vulkan/vulkan.h>
 #include <unordered_set>
-#include "utils.hpp"
-#include "dml.hpp"
-
-#pragma once
+#include <dml.hpp>
+#include <utils.hpp>
 
 class dvl {
 public:

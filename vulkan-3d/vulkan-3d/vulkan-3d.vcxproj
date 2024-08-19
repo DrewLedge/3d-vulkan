@@ -104,7 +104,7 @@
       <SDLCheck>true</SDLCheck>
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>$(ProjectDir)ext\imgui;$(ProjectDir)ext\GLM;$(ProjectDir)ext\GLFW\include;C:\VulkanSDK\1.3.290.0\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(ProjectDir)src\headers;$(ProjectDir)ext\taskflow;$(ProjectDir)ext\imgui;$(ProjectDir)ext\other;$(ProjectDir)ext\GLFW\include;C:\VulkanSDK\1.3.290.0\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <Link>
@@ -163,10 +163,10 @@
     <ClInclude Include="ext\imgui\imgui_impl_glfw.h" />
     <ClInclude Include="ext\imgui\imgui_impl_vulkan.h" />
     <ClInclude Include="ext\imgui\imgui_internal.h" />
-    <ClInclude Include="src\dml.hpp" />
-    <ClInclude Include="src\dvl.hpp" />
-    <ClInclude Include="src\vkhelper.hpp" />
-    <ClInclude Include="src\utils.hpp" />
+    <ClInclude Include="src\headers\dml.hpp" />
+    <ClInclude Include="src\headers\dvl.hpp" />
+    <ClInclude Include="src\headers\utils.hpp" />
+    <ClInclude Include="src\headers\vkhelper.hpp" />
     <ClInclude Include="stb_image.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

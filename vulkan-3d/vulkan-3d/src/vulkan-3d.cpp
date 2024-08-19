@@ -7,19 +7,19 @@
 //#define PROFILE_COMMAND_BUFFERS
 #define ENABLE_DEBUG
 
-#include "../ext/tiny_gltf.h" // load .obj and .mtl files
-#include "../ext/stb_image_resize.h"
+#include <tiny_gltf.h>
+#include <stb_image_resize.h>
 
 // headers
-#include "dml.hpp"
-#include "dvl.hpp"
-#include "utils.hpp"
-#include "vkhelper.hpp"
+#include <dml.hpp>
+#include <dvl.hpp>
+#include <utils.hpp>
+#include <vkhelper.hpp>
 
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include "../ext/taskflow/taskflow.hpp"
+#include <taskflow.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -3065,7 +3065,7 @@ private:
 #else
 				});
 #endif
-		}
+				}
 	}
 
 	void recordMainCommandBuffers() { //records and submits the main command buffers
@@ -3104,7 +3104,7 @@ private:
 #else
 				});
 #endif
-		}
+				}
 	}
 
 	void recordWBOITCommandBuffers() {
@@ -3148,7 +3148,7 @@ private:
 #else
 				});
 #endif
-		}
+				}
 	}
 
 	void recordCompCommandBuffers() {
@@ -3202,7 +3202,7 @@ private:
 #else
 				});
 #endif
-		}
+				}
 	}
 
 	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
@@ -3496,10 +3496,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-		}
+	}
 
 		vkDeviceWaitIdle(device);
-	}
+}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
