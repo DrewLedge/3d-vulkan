@@ -122,9 +122,9 @@
     <ClInclude Include="ext\imgui\imgui_internal.h">
       <Filter>Header Files\imgui</Filter>
     </ClInclude>
-    <ClInclude Include="src\dvl.hpp" />
-    <ClInclude Include="src\dml.hpp" />
-    <ClInclude Include="src\utils.hpp" />
-    <ClInclude Include="src\vkhelper.hpp" />
+    <ClInclude Include="src\headers\dml.hpp" />
+    <ClInclude Include="src\headers\dvl.hpp" />
+    <ClInclude Include="src\headers\utils.hpp" />
+    <ClInclude Include="src\headers\vkhelper.hpp" />
   </ItemGroup>
 </Project>
