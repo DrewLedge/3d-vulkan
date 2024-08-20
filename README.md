@@ -9,6 +9,7 @@ It uses the Vulkan Graphics API and is written in C++.
 - glTF 2.0 support
 - Efficient GPU utilization
 - Skyboxes
+- WBOIT
 
 ## Dependencies
 - Vulkan SDK
