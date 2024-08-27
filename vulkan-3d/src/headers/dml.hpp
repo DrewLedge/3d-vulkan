@@ -686,7 +686,6 @@ public:
 		float fovRad = radians(fov);
 		float tanHalf = tan(fovRad * 0.5f);
 
-		// column major
 		result.m[0][0] = 1.0f / (aspect * tanHalf);
 		result.m[1][1] = -1.0f / tanHalf;
 		result.m[2][2] = farPlane / (farPlane - nearPlane);
@@ -704,7 +703,6 @@ public:
 		float y = -focalLength;
 		float a = f / (n - f);
 		float b = (f * n) / (n - f);
-
 
 		mat4 proj;
 		proj.m[0][0] = x;

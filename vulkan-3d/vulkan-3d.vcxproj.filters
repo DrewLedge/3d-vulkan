@@ -57,9 +57,6 @@
     <ClCompile Include="src\vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\README.md">
-      <Filter>Source Files\Other files</Filter>
-    </None>
     <None Include="shaders\engine.frag">
       <Filter>Shaders</Filter>
     </None>
@@ -87,9 +84,6 @@
     <None Include="shaders\compile.bat">
       <Filter>Source Files\Other files</Filter>
     </None>
-    <None Include="..\..\.gitignore">
-      <Filter>Source Files\Other files</Filter>
-    </None>
     <None Include="shaders\includes\fragformulas.glsl">
       <Filter>Shader Libraries</Filter>
     </None>
@@ -101,6 +95,12 @@
     </None>
     <None Include="shaders\wboit.vert">
       <Filter>Shaders</Filter>
+    </None>
+    <None Include="..\.gitignore">
+      <Filter>Source Files\Other files</Filter>
+    </None>
+    <None Include="..\README.md">
+      <Filter>Source Files\Other files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

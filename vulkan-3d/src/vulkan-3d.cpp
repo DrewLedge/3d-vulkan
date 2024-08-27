@@ -5,7 +5,7 @@
 
 //#define PROFILE_MAIN_LOOP
 //#define PROFILE_COMMAND_BUFFERS
-#define ENABLE_DEBUG
+//#define ENABLE_DEBUG
 
 #include <tiny_gltf.h>
 #include <stb_image_resize.h>
@@ -222,8 +222,8 @@ private:
 	};
 
 	struct ShadowMapDim {
-		uint32_t mapWidth = 2048;
-		uint32_t mapHeight = 2048;
+		uint32_t width = 2048;
+		uint32_t height = 2048;
 	};
 
 	struct BufData {
@@ -560,8 +560,8 @@ private:
 			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
 		}
 
-		setPlayer(6);
-		setPlayer(9);
+		// setPlayer(6);
+		// setPlayer(9);
 	}
 
 	bool isRTSupported(VkPhysicalDevice device) {
@@ -1049,7 +1049,7 @@ private:
 		// shadowmaps
 		if (init) {
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 				vkhelper::createImageView(lights[i]->shadowMapData, vkhelper::DEPTH);
 				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkhelper::DEPTH);
 			}
@@ -1135,7 +1135,7 @@ private:
 			l.target = l.pos + (dml::quatToDir(cam.quat) * -1);
 		}
 		// spotlight shadow mapping math code
-		float aspectRatio = static_cast<float>(shadowProps.mapWidth) / static_cast<float>(shadowProps.mapHeight);
+		float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
 		float nearPlane = 0.01f, farPlane = 100.0f;
 
 		dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
@@ -1627,32 +1627,35 @@ private:
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
 		vertShaderModule = createShaderModule(vertShaderCode);
 		fragShaderModule = createShaderModule(fragShaderCode);
+
 		// shader stage setup 
-		VkPipelineShaderStageCreateInfo vertShader{}; //creates a struct for the vertex shader stage info
+		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule; //assign the vertex shader module
+		vertShader.module = vertShaderModule;
 		vertShader.pName = "main";
-		VkPipelineShaderStageCreateInfo fragShader{};
+
+		VkPipelineShaderStageCreateInfo fragShader{}; //fragment shader stage info
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
 		fragShader.module = fragShaderModule;
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
-		// Vertex input setup (tells Vulkan how to read/organize vertex data based on the stride, offset, and rate)
+		// input binding data: tells Vulkan how to read/organize data based on the binding, stride and rate
 		VkVertexInputBindingDescription vertBindDesc{};
 		vertBindDesc.binding = 0;
-		vertBindDesc.stride = sizeof(dvl::Vertex); // Number of bytes from one entry to the next
-		vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // The rate when data is loaded
+		vertBindDesc.stride = sizeof(dvl::Vertex); // number of bytes from one vertex (entry) to the next
+		vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX; // data is per vertex
 
 		VkVertexInputBindingDescription instanceBindDesc{};
 		instanceBindDesc.binding = 1;
-		instanceBindDesc.stride = sizeof(ModelMat);
-		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+		instanceBindDesc.stride = sizeof(ModelMat);// number of bytes from one model matrix (entry) to the next
+		instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE; // data is per instance
 
 		std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
+		// vertex input attributes: defines how the vertex & instance data is structured
 		std::vector<VkVertexInputAttributeDescription> attrDesc;
 		attrDesc.resize(10);
 
@@ -1695,28 +1698,39 @@ private:
 			attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
 		}
 
+		// render flag
 		attrDesc[9].binding = 1;
 		attrDesc[9].location = 9;
 		attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
 		attrDesc[9].offset = offsetof(ModelMat, render);
 
+		// vertex input state: defines the structure of vertex data for the pipeline
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+
+		// specify the vertex binding descriptions
+		// tells the gpu how to move through the vertex buffer
 		vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
 		vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
-		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
 
-		//input assembly setup (assembles the vertices into primitives)
-		VkPipelineInputAssemblyStateCreateInfo inputAssem{}; //create a struct for the input assembly state
-		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO; //assign the struct type to the input assembly state
+		// specify the vertex attribute descriptions
+		// tells the gpu how to interpret individual attributes for each vertex or instance
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+
+		// input assembly setup: assembles the vertices into primitives
+		// in this case, the primitives represent triangles
+		VkPipelineInputAssemblyStateCreateInfo inputAssem{};
+		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
 		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
-		inputAssem.primitiveRestartEnable = VK_FALSE; //if true, then a special index value of 0xFFFF or 0xFFFFFFFF is treated as a restart index
+		inputAssem.primitiveRestartEnable = VK_FALSE;
 
-		//viewport and scissors setup (defines the region of the framebuffer that the output will be rendered to)
+		//scissors setup: defines a region of the framebuffer in which rendering is allowed to happen
 		VkRect2D scissor{};
-		scissor.offset = { 0, 0 }; // top-left corner offset
+		scissor.offset = { 0, 0 };
 		scissor.extent = swap.extent;
+
+		// viewport state: defines how the rendered output is mapped to the framebuffer
 		VkPipelineViewportStateCreateInfo vpState{};
 		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 		vpState.viewportCount = 1;
@@ -1724,84 +1738,68 @@ private:
 		vpState.scissorCount = 1;
 		vpState.pScissors = &scissor;
 
-		//rasterizer setup: Transforms 3D primitives into 3D fragments for display on the screen
+		//rasterizer setup: transforms 3D primitives into into fragments to display on the screen
 		VkPipelineRasterizationStateCreateInfo rasterizer{};
 		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
 		rasterizer.depthClampEnable = VK_FALSE; //if true, fragments that are beyond the near and far planes are clamped
-		rasterizer.rasterizerDiscardEnable = VK_FALSE; //if true, geometry never passes through the rasterizer
+		rasterizer.rasterizerDiscardEnable = VK_FALSE; //if true, geometry never passes through the rasterizer and all primitives would be discarded
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; //fill the area of the poly with fragments
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
-		rasterizer.depthBiasEnable = VK_TRUE; //if false, no depth bias is applied to fragments
-		rasterizer.depthBiasConstantFactor = 0.0f; //const value that is added to the depth value of a frag
-		rasterizer.depthBiasClamp = 0.0f;
-		rasterizer.depthBiasSlopeFactor = 0.0f;
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE; //polygons with vertices in clockwise order, will be considered front facing
+		rasterizer.depthBiasEnable = VK_TRUE; //allows the application of depth bias to fragments
 
-		//multisampling/anti-aliasing setup: Aggregates multiple samples per pixel, considering alpha values, color, and depth information, and outputs a single colored pixel
+		// multisampling setup: samples multiple points in each pixel and combines them to reduce jagged and blunt edges
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		multiSamp.sampleShadingEnable = VK_FALSE;
-		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use per fragment
+		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use per fragment (1 = no mulisampling)
 		multiSamp.minSampleShading = 1.0f; //min fraction for sample shading; closer to one is smoother
-		multiSamp.pSampleMask = nullptr; //array of sample mask values
-		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, blending semi-transparent pixels based on alpha values
-		multiSamp.alphaToOneEnable = VK_FALSE; //used for testing right alpha values
+		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, which uses the alpha component to determine the sample coverage
+		multiSamp.alphaToOneEnable = VK_FALSE; //if enabled, forces the alpha component of the color attachment to 1
+		multiSamp.sampleShadingEnable = VK_FALSE;// if enabled, would force per sample shading instad of per fragment shading
 
-		//depth and stencil testing setup: Allows for fragments to be discarded based on depth and stencil values
+		//depth and stencil testing setup: allows for fragments to be discarded based on depth and stencil values
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 		dStencil.depthTestEnable = VK_TRUE; //enable depth testing
 		dStencil.depthWriteEnable = VK_TRUE; //enable writing to the depth buffer
-		dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //comparison operator that allows for overwriting of new depth values
-		dStencil.depthBoundsTestEnable = VK_FALSE; //if true, depth values are clamped to min and max depth bounds
+		dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //fragments with smaller depth values pass the depth test
+		dStencil.depthBoundsTestEnable = VK_FALSE; //if true, discards fragments whose depth values fall outside the min and max bounds
 		dStencil.minDepthBounds = 0.0f; //min depth bound
-		dStencil.maxDepthBounds = 1.0f;
-		dStencil.stencilTestEnable = VK_FALSE; //enable stencil testing
-		dStencil.front.failOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test fails
-		dStencil.front.passOp = VK_STENCIL_OP_KEEP; // stencil operation to perform if the stencil test passes
-		dStencil.front.depthFailOp = VK_STENCIL_OP_KEEP; //stencil operation to perform if the stencil test passes, but the depth test fails
-		dStencil.front.compareOp = VK_COMPARE_OP_ALWAYS; //comparison operator to use for the stencil test
-		dStencil.front.compareMask = 0; // 0 means don't compare against anything
-		dStencil.front.writeMask = 0; // 0 means don't write anything to the stencil buffer
-		dStencil.front.reference = 0; //reference value to use for the stencil test
-		dStencil.back.failOp = VK_STENCIL_OP_KEEP; // what to do if the stencil test fails
-		dStencil.back.passOp = VK_STENCIL_OP_KEEP;
-		dStencil.back.depthFailOp = VK_STENCIL_OP_KEEP; //what to do if the stencil test passes, but the depth test fails
-		dStencil.back.compareOp = VK_COMPARE_OP_ALWAYS;
-		dStencil.back.compareMask = 0;
-		dStencil.back.writeMask = 0;
-		dStencil.back.reference = 0;
+		dStencil.maxDepthBounds = 1.0f; //max depth bound
+		dStencil.stencilTestEnable = VK_FALSE; // disable stencil testing
 
-		//color blending setup: Combines the output of the fragment shader with the color that is already in the viewbuffer
-		VkPipelineColorBlendAttachmentState colorBA{}; //color blend attachment struct
+		//color blend attachment: tells the gpu how the outputted color from the frag shader will be combined with the data in the framebuffer
+		VkPipelineColorBlendAttachmentState colorBA{};
 		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
 		colorBA.blendEnable = VK_TRUE; //enable blending
-		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for color channels
-		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA; //dst is the color already in the framebuffer and src is the color being output from the fragment shader
-		colorBA.colorBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
-		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA; //blending factors for alpha channel
+
+		//blending factors for color channels (src = color being output, dst= color already in the framebuffer)
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
+
+		//blending factors for the alpha channel (src = alpha being output, dst= alpha already in the framebuffer)
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-		colorBA.alphaBlendOp = VK_BLEND_OP_ADD; //blending operation to perform
-		VkPipelineColorBlendStateCreateInfo colorBS{}; //color blend state struct
+		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+
+		// color blend state: global pipeline blend settings
+		VkPipelineColorBlendStateCreateInfo colorBS{};
 		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-		colorBS.logicOpEnable = VK_FALSE; //doesnt apply bitwise operation to blending
+		colorBS.logicOpEnable = VK_FALSE; //disable logic operations for color blending
 		colorBS.logicOp = VK_LOGIC_OP_COPY;
 		colorBS.attachmentCount = 1; //number of color blend attachments
-		colorBS.pAttachments = &colorBA; //array of color blend attachments
-		colorBS.blendConstants[0] = 0.0f; //constant values to use in blending operations
-		colorBS.blendConstants[1] = 0.0f;
-		colorBS.blendConstants[2] = 0.0f;
-		colorBS.blendConstants[3] = 0.0f;
+		colorBS.pAttachments = &colorBA;
 
+		// push constants: small pieces of data that can be sent directly to the gpu
 		VkPushConstantRange pushConstantRange{};
 		pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
 		pushConstantRange.offset = 0;
+		pushConstantRange.size = sizeof(int) * 2; // 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
 
-		// 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
-		pushConstantRange.size = sizeof(int) * 2;
-
-		//pipeline layout setup: Allows for uniform variables to be passed into the shader
+		// pipeline layout setup: defines the connection between shader stages and resources
+		// this data includes: descriptorsets and push constants
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -1814,7 +1812,7 @@ private:
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
 
-		//render pass setup: Describes the attachments used by the pipeline and how many samples to use for each attachment
+		// color attachment: specifies the properties of the color image used in the render pass
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = swap.imageFormat; //format of the color attachment
 		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
@@ -1829,7 +1827,7 @@ private:
 		colorAttachmentRef.attachment = 0; //index of the attachment description in the attachment descriptions array
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; //layout to use for the attachment during the subpass
 
-		// define depth attachment:
+		// depth attachment: specifies the properties of the depth image used in the render pass
 		VkAttachmentDescription depthAttachment{};
 		depthAttachment.format = depthFormat;
 		depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -1844,29 +1842,30 @@ private:
 		depthAttachmentRef.attachment = 1;
 		depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+		// subpass: a part of a renderpass that contains a set of attachments and specifies the context in which they are used
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; //type of pipeline to bind to
-		subpass.colorAttachmentCount = 1; //number of color attachments
-		subpass.pColorAttachments = &colorAttachmentRef; //array of color attachment references
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &colorAttachmentRef;
 		subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
-		//define the render pass
+		//render pass setup: describes the attachments (color & depth) and subpasses used by the pipeline
 		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
 		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
 		renderPassInf.pAttachments = attachments.data();
-		renderPassInf.subpassCount = 1; //number of subpasses
-		renderPassInf.pSubpasses = &subpass; //array of subpasses
+		renderPassInf.subpassCount = 1;
+		renderPassInf.pSubpasses = &subpass;
 		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &mainPassPipeline.renderPass);
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
 
-		//pipeline setup: Describes the pipeline to be created
+		//pipeline setup: the data needed to create the pipeline
 		VkGraphicsPipelineCreateInfo pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineInf.stageCount = 2; // Vertex and fragment shaders
+		pipelineInf.stageCount = 2; // two shaders - vertex and fragment
 		pipelineInf.pStages = stages;
 		pipelineInf.pVertexInputState = &vertexInputInfo;
 		pipelineInf.pInputAssemblyState = &inputAssem;
@@ -1951,15 +1950,15 @@ private:
 		VkViewport shadowVP{}; // shadow viewport
 		shadowVP.x = 0.0f;
 		shadowVP.y = 0.0f;
-		shadowVP.width = static_cast<float>(shadowProps.mapWidth);
-		shadowVP.height = static_cast<float>(shadowProps.mapHeight);
+		shadowVP.width = static_cast<float>(shadowProps.width);
+		shadowVP.height = static_cast<float>(shadowProps.height);
 		shadowVP.minDepth = 0.0f;
 		shadowVP.maxDepth = 1.0f;
 
 		VkRect2D shadowScissor{}; // shadow scissor
 		shadowScissor.offset = { 0, 0 };
-		shadowScissor.extent.width = shadowProps.mapWidth;
-		shadowScissor.extent.height = shadowProps.mapHeight;
+		shadowScissor.extent.width = shadowProps.width;
+		shadowScissor.extent.height = shadowProps.height;
 
 		VkPipelineViewportStateCreateInfo vpState{}; // viewport state
 		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
@@ -2783,11 +2782,11 @@ private:
 		dml::vec3 target = pos + (dml::quatToDir(cam.quat) * -1);
 		Light l = createLight(pos, target);
 
-		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.mapWidth, shadowProps.mapHeight, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
 		vkhelper::createImageView(l.shadowMapData, vkhelper::DEPTH);
 		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkhelper::DEPTH);
 
-		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.mapWidth, shadowProps.mapHeight);
+		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 
 		VkCommandPool p = createCommandPool();
 		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p);
@@ -3049,7 +3048,7 @@ private:
 				renderPassInfo.renderPass = shadowMapPipeline.renderPass;
 				renderPassInfo.framebuffer = lights[i]->frameBuffer;
 				renderPassInfo.renderArea.offset = { 0, 0 };
-				renderPassInfo.renderArea.extent = { shadowProps.mapWidth, shadowProps.mapHeight };
+				renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
 				renderPassInfo.clearValueCount = 1;
 				renderPassInfo.pClearValues = &clearValue;
 				vkCmdBeginRenderPass(shadowCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
@@ -3065,7 +3064,7 @@ private:
 #else
 				});
 #endif
-				}
+		}
 	}
 
 	void recordMainCommandBuffers() { //records and submits the main command buffers
@@ -3104,7 +3103,7 @@ private:
 #else
 				});
 #endif
-				}
+		}
 	}
 
 	void recordWBOITCommandBuffers() {
@@ -3148,7 +3147,7 @@ private:
 #else
 				});
 #endif
-				}
+		}
 	}
 
 	void recordCompCommandBuffers() {
@@ -3202,7 +3201,7 @@ private:
 #else
 				});
 #endif
-				}
+		}
 	}
 
 	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
@@ -3262,7 +3261,7 @@ private:
 		if (initial) {
 			// create the shadowmap framebuffers
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.mapWidth, shadowProps.mapHeight);
+				vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 			}
 		}
 
@@ -3496,10 +3495,10 @@ private:
 			updateUBO(); // update ubo matrices and populate the buffer
 			calcFps(startTime, previousTime, frameCount);
 #endif
-	}
+		}
 
 		vkDeviceWaitIdle(device);
-}
+	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen

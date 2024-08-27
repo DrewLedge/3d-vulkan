@@ -141,8 +141,8 @@
     <ClCompile Include="src\vulkan-3d.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\..\.gitignore" />
-    <None Include="..\..\README.md" />
+    <None Include="..\.gitignore" />
+    <None Include="..\README.md" />
     <None Include="shaders\compile.bat" />
     <None Include="shaders\composition.frag" />
     <None Include="shaders\composition.vert" />

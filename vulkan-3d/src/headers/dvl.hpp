@@ -39,6 +39,7 @@ public:
 			normal(normalVector),
 			tangent(tang)
 		{}
+
 		bool operator==(const Vertex& other) const {
 			return pos == other.pos &&
 				tex == other.tex &&
@@ -152,11 +153,10 @@ public:
 		Material material; //used to store all the textures/materials of the mesh
 		std::vector<Vertex> vertices;
 		std::vector<uint32_t> indices;
-		std::string pathObj; // i.e "models/cube.obj"
 
-		dml::vec3 position;  // position of the mesh
-		dml::vec4 rotation;  // rotation of the mesh in quaternions
-		dml::vec3 scale;     // scale of the mesh
+		dml::vec3 position;
+		dml::vec4 rotation;
+		dml::vec3 scale;
 		dml::mat4 modelMatrix;
 
 		size_t textureCount; // number of textures in the mesh
@@ -173,7 +173,6 @@ public:
 			: material(),
 			vertices(),
 			indices(),
-			pathObj(""),
 			position(dml::vec3(0.0f, 0.0f, 0.0f)),  // set default position to origin
 			rotation(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),  // set default rotation to no rotation
 			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
@@ -191,7 +190,6 @@ public:
 			: material(other.material),
 			vertices(other.vertices),
 			indices(other.indices),
-			pathObj(other.pathObj),
 			position(other.position),
 			rotation(other.rotation),
 			scale(other.scale),
@@ -372,7 +370,7 @@ public:
 		return -1; // not found
 	}
 
-	static dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, dvl::Mesh& m) {
+	static dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, Mesh& m) {
 		int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
 		dml::mat4 modelMatrix;
 
@@ -435,10 +433,10 @@ public:
 	static Mesh loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
 		const uint32_t meshInd, const dml::vec3 scale, const dml::vec3 pos, const dml::vec4 rot) {
 
-		dvl::Mesh newObject;
+		Mesh newObject;
 
-		std::unordered_map<dvl::Vertex, uint32_t, dvl::VertHash> uniqueVertices;
-		std::vector<dvl::Vertex> tempVertices;
+		std::unordered_map<Vertex, uint32_t, VertHash> uniqueVertices;
+		std::vector<Vertex> tempVertices;
 		std::vector<uint32_t> tempIndices;
 
 		//printFullHierarchy(model);
@@ -475,20 +473,20 @@ public:
 
 				switch (indexAccessor.componentType) {
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_BYTE:
-					dvl::calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					calculateTangents<uint8_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT:
-					dvl::calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					calculateTangents<uint16_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
 					break;
 				case TINYGLTF_COMPONENT_TYPE_UNSIGNED_INT:
-					dvl::calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
+					calculateTangents<uint32_t>(positionData, texCoordData, tangents, rawIndices, indexAccessor.count);
 					break;
 				default:
 					LOG_WARNING("Unsupported index type: " + std::to_string(indexAccessor.type));
 					break;
 				}
 
-				dvl::normalizeTangents(tangents);
+				normalizeTangents(tangents);
 			}
 
 			for (size_t i = 0; i < indexAccessor.count; i++) {
@@ -508,7 +506,7 @@ public:
 					continue; // skip this iteration
 				}
 
-				dvl::Vertex vertex;
+				Vertex vertex;
 				vertex.pos = { positionData[3 * index], positionData[3 * index + 1], positionData[3 * index + 2] };
 				vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
 				vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
@@ -541,7 +539,7 @@ public:
 			}
 			if (primitive.material >= 0) { // if the primitive has a material
 				tinygltf::Material& material = model.materials[primitive.material];
-				dvl::Material texture;
+				Material texture;
 
 				// base color texture
 				if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
