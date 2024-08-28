@@ -283,7 +283,7 @@ public:
 	}
 
 	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
-		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage) {
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkSampleCountFlagBits& sample) {
 
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -297,7 +297,7 @@ public:
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageInfo.usage = usage;
-		imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+		imageInfo.samples = sample;
 		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		if (cubeMap) imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
@@ -320,9 +320,9 @@ public:
 	}
 
 	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
-		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool) {
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool, const VkSampleCountFlagBits& sample) {
 
-		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage);
+		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
 		transitionImageLayout(cPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
 	}
 

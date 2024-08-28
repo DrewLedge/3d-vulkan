@@ -458,7 +458,7 @@ private:
 	std::vector<int> meshTexStartInd;
 	size_t totalTextureCount = 0;
 	unsigned char* imageData = nullptr;
-
+	dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
 	// skybox data
 	float* skyboxData = nullptr;
 	SkyboxObject skybox = {};
@@ -725,6 +725,7 @@ private:
 
 		VkPhysicalDeviceFeatures deviceFeatures{};
 		deviceFeatures.imageCubeArray = VK_TRUE;
+		deviceFeatures.sampleRateShading = VK_TRUE;
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
 		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -1032,24 +1033,34 @@ private:
 		static bool init = true;
 
 		// main pass color image
-		vkhelper::createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, commandPool);
+		vkhelper::createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			commandPool, mainPassTextures.color.sampleCount);
 		vkhelper::createImageView(mainPassTextures.color, swap.imageFormat);
 		vkhelper::createSampler(mainPassTextures.color.sampler, mainPassTextures.color.mipLevels);
 
 		// main pass depth image
-		vkhelper::createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			mainPassTextures.depth.sampleCount);
 		vkhelper::createImageView(mainPassTextures.depth, vkhelper::DEPTH);
 		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, vkhelper::DEPTH);
 
 		// weighted color image
-		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			wboit.weightedColor.sampleCount);
 		vkhelper::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
 		vkhelper::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
+
+		// composition image
+		vkhelper::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			compTex.sampleCount);
+		vkhelper::createImageView(compTex, swap.imageFormat);
+		vkhelper::createSampler(compTex.sampler, compTex.mipLevels);
 
 		// shadowmaps
 		if (init) {
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+					lights[i]->shadowMapData.sampleCount);
 				vkhelper::createImageView(lights[i]->shadowMapData, vkhelper::DEPTH);
 				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkhelper::DEPTH);
 			}
@@ -1492,7 +1503,7 @@ private:
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
 		}
 
-		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
 
 		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
 		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
@@ -1556,7 +1567,7 @@ private:
 				break;
 			}
 
-			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
+			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
 
 			// initialize img and barrier data before buffer copy:
 			VkBufferImageCopy region{};
@@ -1753,10 +1764,10 @@ private:
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use per fragment (1 = no mulisampling)
-		multiSamp.minSampleShading = 1.0f; //min fraction for sample shading; closer to one is smoother
 		multiSamp.alphaToCoverageEnable = VK_TRUE; //enables alpha-to-coverage, which uses the alpha component to determine the sample coverage
 		multiSamp.alphaToOneEnable = VK_FALSE; //if enabled, forces the alpha component of the color attachment to 1
 		multiSamp.sampleShadingEnable = VK_FALSE;// if enabled, would force per sample shading instad of per fragment shading
+		multiSamp.minSampleShading = 1.0f; //min fraction for sample shading; closer to one is smoother
 
 		//depth and stencil testing setup: allows for fragments to be discarded based on depth and stencil values
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
@@ -2469,12 +2480,11 @@ private:
 
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-		multiSamp.sampleShadingEnable = VK_FALSE;
-		multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-		multiSamp.minSampleShading = 1.0f;
-		multiSamp.pSampleMask = nullptr;
+		multiSamp.rasterizationSamples = compTex.sampleCount;
 		multiSamp.alphaToCoverageEnable = VK_FALSE;
 		multiSamp.alphaToOneEnable = VK_FALSE;
+		multiSamp.sampleShadingEnable = VK_TRUE;
+		multiSamp.minSampleShading = 0.2f;
 
 		VkPipelineDepthStencilStateCreateInfo dStencil{};
 		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
@@ -2504,27 +2514,43 @@ private:
 
 		VkAttachmentDescription colorAttachment{};
 		colorAttachment.format = swap.imageFormat;
-		colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorAttachment.samples = compTex.sampleCount;
 		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
 		VkAttachmentReference colorAttachmentRef{};
 		colorAttachmentRef.attachment = 0;
 		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+		VkAttachmentDescription colorResolve = {};
+		colorResolve.format = swap.imageFormat;
+		colorResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		VkAttachmentReference colorResolveAttachmentRef{};
+		colorResolveAttachmentRef.attachment = 1;
+		colorResolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
 		VkSubpassDescription subpass{};
 		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
 		subpass.colorAttachmentCount = 1;
 		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pResolveAttachments = &colorResolveAttachmentRef;
 
+		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, colorResolve };
 		VkRenderPassCreateInfo renderPassInf{};
 		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-		renderPassInf.attachmentCount = 1;
-		renderPassInf.pAttachments = &colorAttachment;
+		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
 		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &compPipelineData.renderPass);
@@ -2590,6 +2616,7 @@ private:
 		initInfo.MinImageCount = swap.imageCount;
 		initInfo.ImageCount = swap.imageCount;
 		initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
+		initInfo.MSAASamples = compTex.sampleCount;
 		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
 
 		// upload fonts, etc:
@@ -2782,7 +2809,8 @@ private:
 		dml::vec3 target = pos + (dml::quatToDir(cam.quat) * -1);
 		Light l = createLight(pos, target);
 
-		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT);
+		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			l.shadowMapData.sampleCount);
 		vkhelper::createImageView(l.shadowMapData, vkhelper::DEPTH);
 		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkhelper::DEPTH);
 
@@ -3277,7 +3305,8 @@ private:
 		size_t swapSize = swap.imageViews.size();
 		if (initial) swap.framebuffers.resize(swapSize);
 		for (size_t i = 0; i < swapSize; i++) {
-			vkhelper::createFB(compPipelineData.renderPass, swap.framebuffers[i], &swap.imageViews[i], 1, swap.extent.width, swap.extent.height);
+			std::vector<VkImageView> attachments = { compTex.imageView, swap.imageViews[i] };
+			vkhelper::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
 		}
 	}
 
@@ -3593,15 +3622,13 @@ private:
 				vertCount += o->vertices.size();
 			}
 
-			double startS = ((double)vertCount / fps) / 1000;
-			double memEfficiency = vertCount / (1024.0 * 1024.0); // convert to mb
-			double finalS = 100 * ((startS) / memEfficiency / lights.size());
+			double score = fps * (((vertCount) / 400000.0) + lights.size());
 
 			utils::sep();
 			std::cout << "Vertex count: " << vertCount << std::endl;
 			std::cout << "Object count: " << objects.size() << std::endl;
 			std::cout << "Light count: " << lights.size() << " / " << MAX_LIGHTS << std::endl;
-			std::cout << "Score: " << finalS << std::endl;
+			std::cout << "Score: " << score << std::endl;
 		}
 
 		// lock / unlock mouse

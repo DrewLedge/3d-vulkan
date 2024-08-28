@@ -92,8 +92,9 @@ public:
 		bool found;
 		uint16_t width;
 		uint16_t height;
+		VkSampleCountFlagBits sampleCount;
 
-		Texture()
+		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
 			: sampler(VK_NULL_HANDLE),
 			image(VK_NULL_HANDLE),
 			memory(VK_NULL_HANDLE),
@@ -105,7 +106,8 @@ public:
 			gltfImage(),
 			found(false),
 			width(1024),
-			height(1024)
+			height(1024),
+			sampleCount(s)
 		{}
 
 		bool operator==(const Texture& other) const {
@@ -118,8 +120,8 @@ public:
 				&& stagingBuffer == other.stagingBuffer
 				&& stagingBufferMem == other.stagingBufferMem
 				&& width == other.width
-				&& height == other.height;
-
+				&& height == other.height
+				&& sampleCount == other.sampleCount;
 		}
 	};
 
