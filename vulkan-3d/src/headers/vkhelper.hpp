@@ -63,6 +63,35 @@ public:
 	};
 
 	// ------------------ SWAP CHAIN ------------------ //
+	static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height) {
+		VkExtent2D actualExtent = { width, height };
+
+		// clamp the width and height to the min and max image extent
+		actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
+		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
+
+		return actualExtent; //return the actual extent
+	}
+
+	static VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+		for (const VkSurfaceFormatKHR& format : availableFormats) {
+			if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+				return format;
+			}
+		}
+
+		return availableFormats[0];
+
+	}
+	static VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+		for (const VkPresentModeKHR& present : availablePresentModes) {
+			if (present == VK_PRESENT_MODE_MAILBOX_KHR) {
+				return present;
+			}
+		}
+
+		return VK_PRESENT_MODE_FIFO_KHR;
+	}
 
 	// gets the indices of each queue family (graphics, present, etc)
 	static QueueFamilyIndices findQueueFamilyIndices(const VkSurfaceKHR& surface, const VkPhysicalDevice& device) {

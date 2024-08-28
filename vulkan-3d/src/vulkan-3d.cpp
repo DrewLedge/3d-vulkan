@@ -577,7 +577,6 @@ private:
 		// check if the device supports ray tracing pipeline features
 		VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures{};
 		rtFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-		rtFeatures.pNext = nullptr;
 
 		// check if the device supports acceleration structure features
 		VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
@@ -586,11 +585,11 @@ private:
 
 		VkPhysicalDeviceFeatures2 deviceFeatures2{};
 		deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
-		deviceFeatures2.pNext = &rtFeatures;
+		deviceFeatures2.pNext = &asFeatures;
 
 		vkGetPhysicalDeviceFeatures2(device, &deviceFeatures2);
 
-		return rtFeatures.rayTracingPipeline == VK_TRUE;
+		return (rtFeatures.rayTracingPipeline == VK_TRUE && asFeatures.accelerationStructure == VK_TRUE);
 	}
 
 	void createInstance() {
@@ -626,6 +625,7 @@ private:
 			throw std::runtime_error("Failed to create instance!");
 		}
 	}
+
 	int scoreDevice(VkPhysicalDevice device) {
 		VkPhysicalDeviceProperties deviceProperties;
 		VkPhysicalDeviceFeatures deviceFeatures;
@@ -705,10 +705,24 @@ private:
 		utils::sep();
 	}
 
+	bool checkExtensionSupport(const char* extensionName) {
+		uint32_t extensionCount;
+		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
+		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
+		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
+
+		for (const auto& availableExtension : availableExtensions) {
+			if (strcmp(extensionName, availableExtension.extensionName) == 0) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	void createLogicalDevice() {
 		float queuePriority = 1.0f;
 		VkDeviceQueueCreateInfo queueInf{};
-		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO; //creates a structure to hold queue family info
+		queueInf.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
 		queueInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); // index of the graphics queue family
 		queueInf.queueCount = 1;
 		queueInf.pQueuePriorities = &queuePriority;
@@ -784,21 +798,7 @@ private:
 		utils::sep();
 	}
 
-	bool checkExtensionSupport(const char* extensionName) {
-		uint32_t extensionCount;
-		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, nullptr);
-		std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-		vkEnumerateDeviceExtensionProperties(physicalDevice, nullptr, &extensionCount, availableExtensions.data());
-
-		for (const auto& availableExtension : availableExtensions) {
-			if (strcmp(extensionName, availableExtension.extensionName) == 0) {
-				return true;
-			}
-		}
-		return false;
-	}
-
-	std::vector<char> readFile(const std::string& filename) { //reads shader code from file. it should reads SPIRV binary files
+	std::vector<char> readFile(const std::string& filename) { //outputs binary data from a SPIRV shader file
 		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
 		if (!file.is_open()) {
 			throw std::runtime_error("Failed to open file: " + filename);
@@ -824,27 +824,17 @@ private:
 		vkGetDeviceQueue(device, queueFamilyIndices.transferFamily.value(), 0, &transferQueue);
 	}
 
-	VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities) {
-		VkExtent2D actualExtent = { SCREEN_WIDTH, SCREEN_HEIGHT }; //extent=res
-
-		// clamp the width and height to the min and max image extent
-		actualExtent.width = std::clamp(actualExtent.width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width);
-		actualExtent.height = std::clamp(actualExtent.height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
-
-		return actualExtent; //return the actual extent
-	}
 	void createSC() {
 		vkhelper::SCsupportDetails swapChainSupport = vkhelper::querySCsupport(surface);
 
-		// choose the best surface format, present mode, and swap extent for the swap chain.
-		VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
-		VkPresentModeKHR present = chooseSwapPresentMode(swapChainSupport.presentModes);
-		VkExtent2D extent = chooseSwapExtent(swapChainSupport.capabilities);
+		// choose the best surface format, present mode, and swap extent for the swap chain
+		VkSurfaceFormatKHR surfaceFormat = vkhelper::chooseSwapSurfaceFormat(swapChainSupport.formats);
+		VkPresentModeKHR present = vkhelper::chooseSwapPresentMode(swapChainSupport.presentModes);
+		VkExtent2D extent = vkhelper::chooseSwapExtent(swapChainSupport.capabilities, SCREEN_WIDTH, SCREEN_HEIGHT);
 
 		// get the number of images for the sc. this is the minumum + 1
 		swap.imageCount = swapChainSupport.capabilities.minImageCount + 1;
 
-		// ensure the image count isnt higher than the max image count
 		if (swapChainSupport.capabilities.maxImageCount > 0 && swap.imageCount > swapChainSupport.capabilities.maxImageCount) {
 			swap.imageCount = swapChainSupport.capabilities.maxImageCount;
 		}
@@ -852,7 +842,7 @@ private:
 		// get the graphics queue family indices
 		uint32_t graphicsIndices[] = { queueFamilyIndices.graphicsFamily.value() };
 
-		// create the swap chain.
+		// create the swap chain
 		VkSwapchainCreateInfoKHR newinfo{};
 		newinfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
 		newinfo.surface = surface;
@@ -860,16 +850,19 @@ private:
 		newinfo.imageFormat = surfaceFormat.format;
 		newinfo.imageColorSpace = surfaceFormat.colorSpace;
 		newinfo.imageExtent = extent;
-		newinfo.imageArrayLayers = 1; //the num of layers each image has.
-		newinfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; //images will be used as color attachment
-		newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE; //image is owned by one queue family at a time and ownership must be explicitly transfered before using it in another queue family
+		newinfo.imageArrayLayers = 1;
+		newinfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+
+		// allows only 1 queue family to access the sc at a time
+		// this reduces synchronization overhead
+		newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		newinfo.queueFamilyIndexCount = 1;
-		newinfo.pQueueFamilyIndices = graphicsIndices;
-		newinfo.preTransform = swapChainSupport.capabilities.currentTransform;
-		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+		newinfo.pQueueFamilyIndices = graphicsIndices; // which queue families will handle the swap chain images
+		newinfo.preTransform = swapChainSupport.capabilities.currentTransform; // transform to apply to the swap chain before presentation
+		newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // set the alpha channel to opaque when compositing the final image
 		newinfo.presentMode = present;
-		newinfo.clipped = VK_TRUE; //if the window is obscured, the pixels that are obscured will not be drawn to
-		newinfo.oldSwapchain = VK_NULL_HANDLE; //if the swap chain is recreated, the old one is destroyed
+		newinfo.clipped = VK_TRUE; // if the window is obscured, the pixels that are obscured will not be drawn to
+		newinfo.oldSwapchain = VK_NULL_HANDLE;
 		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
 		}
@@ -877,40 +870,21 @@ private:
 		// get the swap chain images
 		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
 		swap.images.resize(swap.imageCount);
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); //gets the images in the swap chain
+		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); // get the images in the swap chain
 		swap.imageFormat = surfaceFormat.format;
 		swap.extent = extent;
 
-		// create the image views for the swap chain images
 		createSCImageViews();
 
 		// create the viewport for the swap chain
 		swapVP.x = 0.0f;
 		swapVP.y = 0.0f;
-		swapVP.width = static_cast<float>(swap.extent.width); // swap chain extent width for the viewport
+		swapVP.width = static_cast<float>(swap.extent.width);
 		swapVP.height = static_cast<float>(swap.extent.height);
 		swapVP.minDepth = 0.0f;
 		swapVP.maxDepth = 1.0f;
 	}
-	VkSurfaceFormatKHR  chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) { //choose the best surface format for the swap chain
-		for (const VkSurfaceFormatKHR& format : availableFormats) {
-			if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-				return format;
-			}
-		}
 
-		return availableFormats[0];
-
-	}
-	VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-		for (const VkPresentModeKHR& present : availablePresentModes) {
-			if (present == VK_PRESENT_MODE_MAILBOX_KHR) {
-				return present;
-			}
-		}
-
-		return VK_PRESENT_MODE_FIFO_KHR;
-	}
 	VkFormat findDepthFormat() {
 		std::vector<VkFormat> candidates = {
 			VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT //the formats that are supported
@@ -1460,18 +1434,6 @@ private:
 		}
 	}
 
-	void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
-		int texWidth, texHeight, texChannels;
-		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R32G32B32A32_SFLOAT format
-		t.width = texWidth;
-		t.height = texHeight;
-		if (!imgData) {
-			std::string error = stbi_failure_reason(); // get the detailed error
-			throw std::runtime_error("failed to load HDR image: " + path + "! Reason: " + error);
-		}
-	}
-
-
 	void createStagingBuffer(dvl::Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
 		VkBufferCreateInfo bufferInf{};
 		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
@@ -1483,65 +1445,6 @@ private:
 		else {
 			vkhelper::createBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
 		}
-	}
-
-	void createTexturedCubemap(dvl::Texture& tex) {
-		getImageDataHDR(tex.path, tex, skyboxData);
-		if (skyboxData == nullptr) {
-			throw std::runtime_error("failed to load image data!");
-		}
-		createStagingBuffer(tex, true);
-
-		// clculate the size of one face of the cubemap
-		uint32_t faceWidth = tex.width / 4;
-		uint32_t faceHeight = tex.height / 3;
-		auto bpp = sizeof(float) * 4; // four floats for R32G32B32A32_SFLOAT
-		VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
-
-		// ensure the atlas dimensions are valid for a horizontal cross layout
-		if (faceHeight != faceWidth) {
-			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
-		}
-
-		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
-
-		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
-		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
-
-		std::array<VkBufferImageCopy, 6> regions;
-		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = {
-			 {{2, 1}, // -x
-			 {0, 1}, // +x
-			 {1, 0}, // +y
-			 {1, 2}, // -y
-			 {1, 1}, // -z
-			 {3, 1}} // +z
-		};
-
-		for (uint32_t i = 0; i < regions.size(); i++) {
-			VkBufferImageCopy& region = regions[i];
-
-			uint32_t offsetX = faceOffsets[i].first * faceWidth;
-			uint32_t offsetY = faceOffsets[i].second * faceHeight;
-
-			region.bufferOffset = offsetY * tex.width * bpp + offsetX * bpp;
-			region.bufferRowLength = tex.width;
-			region.bufferImageHeight = 0;
-			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			region.imageSubresource.mipLevel = 0;
-			region.imageSubresource.baseArrayLayer = i;
-			region.imageSubresource.layerCount = 1;
-
-			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { faceWidth, faceHeight, 1 };
-
-			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-		}
-		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
-
-		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
-		stbi_image_free(skyboxData);
-		skyboxData = nullptr;
 	}
 
 	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkhelper::TextureType type = vkhelper::BASE) {
@@ -1626,11 +1529,74 @@ private:
 		}
 	}
 
-	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
-		if (err == 0)
-			return;
-		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
-		assert(err == 0); //if true, continue, if false, throw error
+	void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
+		int texWidth, texHeight, texChannels;
+		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R32G32B32A32_SFLOAT format
+		t.width = texWidth;
+		t.height = texHeight;
+		if (!imgData) {
+			std::string error = stbi_failure_reason(); // get the detailed error
+			throw std::runtime_error("failed to load HDR image: " + path + "! Reason: " + error);
+		}
+	}
+
+	void createTexturedCubemap(dvl::Texture& tex) {
+		getImageDataHDR(tex.path, tex, skyboxData);
+		if (skyboxData == nullptr) {
+			throw std::runtime_error("failed to load image data!");
+		}
+		createStagingBuffer(tex, true);
+
+		// clculate the size of one face of the cubemap
+		uint32_t faceWidth = tex.width / 4;
+		uint32_t faceHeight = tex.height / 3;
+		auto bpp = sizeof(float) * 4; // four floats for R32G32B32A32_SFLOAT
+		VkDeviceSize faceSize = static_cast<VkDeviceSize>(faceWidth) * faceHeight * bpp;
+
+		// ensure the atlas dimensions are valid for a horizontal cross layout
+		if (faceHeight != faceWidth) {
+			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
+		}
+
+		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
+
+		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
+		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+
+		std::array<VkBufferImageCopy, 6> regions;
+		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = {
+			 {{2, 1}, // -x
+			 {0, 1}, // +x
+			 {1, 0}, // +y
+			 {1, 2}, // -y
+			 {1, 1}, // -z
+			 {3, 1}} // +z
+		};
+
+		for (uint32_t i = 0; i < regions.size(); i++) {
+			VkBufferImageCopy& region = regions[i];
+
+			uint32_t offsetX = faceOffsets[i].first * faceWidth;
+			uint32_t offsetY = faceOffsets[i].second * faceHeight;
+
+			region.bufferOffset = offsetY * tex.width * bpp + offsetX * bpp;
+			region.bufferRowLength = tex.width;
+			region.bufferImageHeight = 0;
+			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			region.imageSubresource.mipLevel = 0;
+			region.imageSubresource.baseArrayLayer = i;
+			region.imageSubresource.layerCount = 1;
+
+			region.imageOffset = { 0, 0, 0 };
+			region.imageExtent = { faceWidth, faceHeight, 1 };
+
+			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+		}
+		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
+
+		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
+		stbi_image_free(skyboxData);
+		skyboxData = nullptr;
 	}
 
 	void createGraphicsPipeline() {
@@ -2588,13 +2554,19 @@ private:
 		}
 	}
 
-
 	void setupPipelines(bool shadow) {
 		createGraphicsPipeline();
 		createCompositionPipeline();
 		createSkyboxPipeline();
 		if (shadow) createShadowPipeline();
 		createWBOITPipeline();
+	}
+
+	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
+		if (err == 0)
+			return;
+		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
+		assert(err == 0); //if true, continue, if false, throw error
 	}
 
 	void imguiSetup() {
