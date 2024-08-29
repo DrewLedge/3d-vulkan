@@ -682,6 +682,17 @@ public:
 		return result;
 	}
 
+	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
+		vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
+		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
+		vec4 orientation = yRot * xRot;
+		orientation = normalize(orientation);
+		mat4 rotation = rotateQuat(orientation);
+
+		mat4 translation = translate(position);
+		return rotation * translation;
+	}
+
 	static mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
 		mat4 result(0);
 		float fovRad = radians(fov);
@@ -754,17 +765,6 @@ public:
 		// multiply the adjugate by the inversed determinant
 		float invDet = 1.0f / d;
 		return adjugate * invDet;
-	}
-
-	static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
-		vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
-		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
-		vec4 orientation = yRot * xRot;
-		orientation = normalize(orientation);
-		mat4 rotation = rotateQuat(orientation);
-
-		mat4 translation = translate(position);
-		return rotation * translation;
 	}
 
 	static vec3 getCamWorldPos(const mat4& viewMat) {

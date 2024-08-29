@@ -335,7 +335,7 @@ private:
 		{}
 	};
 
-	struct MainPassTex {
+	struct OpaquePassTex {
 		dvl::Texture depth;
 		dvl::Texture color;
 	};
@@ -388,17 +388,17 @@ private:
 	VkViewport swapVP{};
 
 	// rendering pipeline data
-	PipelineData mainPassPipeline;
+	PipelineData opaquePassPipeline;
 	PipelineData shadowMapPipeline;
 	PipelineData compPipelineData;
 	PipelineData wboitPipeline;
 
-	VkFramebuffer mainPassFB = VK_NULL_HANDLE;
-	MainPassTex mainPassTextures = {};
+	VkFramebuffer opaquePassFB = VK_NULL_HANDLE;
+	OpaquePassTex opaquePassTextures = {};
 
 	// command buffers and command pool
 	VkCommandPool commandPool = VK_NULL_HANDLE;
-	CommandBufferSet mainPassCommandBuffers;
+	CommandBufferSet opaquePassCommandBuffers;
 	CommandBufferSet shadowMapCommandBuffers;
 	CommandBufferSet wboitCommandBuffers;
 	CommandBufferSet compCommandBuffers;
@@ -731,10 +731,6 @@ private:
 		queueInf.queueCount = 1;
 		queueInf.pQueuePriorities = &queuePriority;
 
-		//VkPhysicalDeviceMaintenance4FeaturesKHR maintenance4{};
-		//maintenance4.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES_KHR;
-		//maintenance4.maintenance4 = VK_TRUE;
-
 		VkPhysicalDeviceNestedCommandBufferFeaturesEXT nestedCommandBufferFeatures{};
 		nestedCommandBufferFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT;
 		nestedCommandBufferFeatures.nestedCommandBufferSimultaneousUse = VK_TRUE;
@@ -767,7 +763,6 @@ private:
 		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
 		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
 		VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
-		//VK_KHR_MAINTENANCE_4_EXTENSION_NAME,
 		};
 
 		if (rtSupported) {
@@ -994,17 +989,17 @@ private:
 		depthFormat = vkhelper::findDepthFormat();
 		static bool init = true;
 
-		// main pass color image
-		vkhelper::createImage(mainPassTextures.color.image, mainPassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			commandPool, mainPassTextures.color.sampleCount);
-		vkhelper::createImageView(mainPassTextures.color, swap.imageFormat);
-		vkhelper::createSampler(mainPassTextures.color.sampler, mainPassTextures.color.mipLevels);
+		// opaque pass color image
+		vkhelper::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			commandPool, opaquePassTextures.color.sampleCount);
+		vkhelper::createImageView(opaquePassTextures.color, swap.imageFormat);
+		vkhelper::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
 
-		// main pass depth image
-		vkhelper::createImage(mainPassTextures.depth.image, mainPassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			mainPassTextures.depth.sampleCount);
-		vkhelper::createImageView(mainPassTextures.depth, vkhelper::DEPTH);
-		vkhelper::createSampler(mainPassTextures.depth.sampler, mainPassTextures.depth.mipLevels, vkhelper::DEPTH);
+		// opaque pass depth image
+		vkhelper::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			opaquePassTextures.depth.sampleCount);
+		vkhelper::createImageView(opaquePassTextures.depth, vkhelper::DEPTH);
+		vkhelper::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkhelper::DEPTH);
 
 		// weighted color image
 		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1250,17 +1245,17 @@ private:
 
 		const uint32_t texCompSize = 2;
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
-		std::array<dvl::Texture, texCompSize> compositionTextures = { mainPassTextures.color, wboit.weightedColor };
+		std::array<dvl::Texture, texCompSize> compositionTextures = { opaquePassTextures.color, wboit.weightedColor };
 		for (size_t i = 0; i < compositionPassImageInfo.size(); i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			compositionPassImageInfo[i].imageView = compositionTextures[i].imageView;
 			compositionPassImageInfo[i].sampler = compositionTextures[i].sampler;
 		}
 
-		VkDescriptorImageInfo mainPassDepthInfo{};
-		mainPassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		mainPassDepthInfo.imageView = mainPassTextures.depth.imageView;
-		mainPassDepthInfo.sampler = mainPassTextures.depth.sampler;
+		VkDescriptorImageInfo opaquePassDepthInfo{};
+		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView;
+		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler;
 
 		const uint8_t size = 7;
 		descs.sets.resize(size);
@@ -1276,7 +1271,7 @@ private:
 		createDSLayoutPool(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
 		createDSLayoutPool(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
 		createDSLayoutPool(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
-		createDSLayoutPool(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for main pass depth
+		createDSLayoutPool(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for opaque pass depth
 
 		VkDescriptorSetAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1306,7 +1301,7 @@ private:
 		descriptorWrites[3] = vkhelper::createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
 		descriptorWrites[4] = vkhelper::createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
 		descriptorWrites[5] = vkhelper::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo.data(), compositionPassImageInfo.size());
-		descriptorWrites[6] = vkhelper::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, mainPassDepthInfo);
+		descriptorWrites[6] = vkhelper::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, opaquePassDepthInfo);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1726,7 +1721,7 @@ private:
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &mainPassPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &opaquePassPipeline.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
@@ -1776,7 +1771,7 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &mainPassPipeline.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &opaquePassPipeline.renderPass);
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -1793,12 +1788,12 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = mainPassPipeline.layout;
-		pipelineInf.renderPass = mainPassPipeline.renderPass;
+		pipelineInf.layout = opaquePassPipeline.layout;
+		pipelineInf.renderPass = opaquePassPipeline.renderPass;
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &mainPassPipeline.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &opaquePassPipeline.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -1970,7 +1965,7 @@ private:
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
 
-		// create the pipeline based off this pipeline and some data from the main pipeline
+		// create the pipeline based off this pipeline and some data from the opaque pipeline
 		VkGraphicsPipelineCreateInfo pipelineInfo{};
 		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
 		pipelineInfo.stageCount = 2;
@@ -2108,7 +2103,7 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.layout = skybox.pipelineLayout;
-		pipelineInf.renderPass = mainPassPipeline.renderPass;
+		pipelineInf.renderPass = opaquePassPipeline.renderPass;
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
@@ -2608,7 +2603,7 @@ private:
 
 	void createCommandBuffers() {
 		allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
-		allocateCommandBuffers(mainPassCommandBuffers, swap.imageCount, 1);
+		allocateCommandBuffers(opaquePassCommandBuffers, swap.imageCount, 1);
 		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
@@ -2780,13 +2775,13 @@ private:
 		createLightBuffer();
 	}
 
-	void recordMainSecondaryCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordOpaqueSecondaryCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		if (startCommand) {
 			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
-				throw std::runtime_error("failed to begin recording main secondary command buffer!");
+				throw std::runtime_error("failed to begin recording opaque secondary command buffer!");
 			}
 		}
 
@@ -2828,7 +2823,7 @@ private:
 
 		if (endCommand) {
 			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
-				throw std::runtime_error("failed to record main secondary command buffer!");
+				throw std::runtime_error("failed to record opaque secondary command buffer!");
 			}
 		}
 	}
@@ -2925,7 +2920,7 @@ private:
 	}
 
 	void recordSecondaryCommandBuffers() {
-		const std::array<VkDescriptorSet, 4> mainDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
+		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
 		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
 		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
 
@@ -2943,20 +2938,20 @@ private:
 
 		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, &descs.sets[1], 1, true, true);
 
-		// FOR THE MAIN & SKYBOX PASS
-		VkCommandBufferInheritanceInfo mainInheritInfo{};
-		mainInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		mainInheritInfo.renderPass = mainPassPipeline.renderPass;
-		mainInheritInfo.framebuffer = VK_NULL_HANDLE;
-		mainInheritInfo.subpass = 0;
+		// FOR THE OPAQUE & SKYBOX PASS
+		VkCommandBufferInheritanceInfo opaqueInheritInfo{};
+		opaqueInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass;
+		opaqueInheritInfo.framebuffer = VK_NULL_HANDLE;
+		opaqueInheritInfo.subpass = 0;
 
-		VkCommandBufferBeginInfo mainBeginInfo{};
-		mainBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		mainBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		mainBeginInfo.pInheritanceInfo = &mainInheritInfo;
+		VkCommandBufferBeginInfo opaqueBeginInfo{};
+		opaqueBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		opaqueBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		opaqueBeginInfo.pInheritanceInfo = &opaqueInheritInfo;
 
-		VkCommandBuffer& secondary = mainPassCommandBuffers.secondary[0];
-		if (vkBeginCommandBuffer(secondary, &mainBeginInfo) != VK_SUCCESS) {
+		VkCommandBuffer& secondary = opaquePassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary, &opaqueBeginInfo) != VK_SUCCESS) {
 			throw std::runtime_error("failed to begin recording secondary command buffer!");
 		}
 
@@ -2967,7 +2962,7 @@ private:
 		vkCmdBindIndexBuffer(secondary, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
 		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
-		recordMainSecondaryCommandBuffers(secondary, mainPassPipeline, mainBeginInfo, mainDS.data(), mainDS.size(), false, true);
+		recordOpaqueSecondaryCommandBuffers(secondary, opaquePassPipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
 
 		// FOR THE WBOIT PASS
 		VkCommandBufferInheritanceInfo wboitInheritInfo{};
@@ -2981,7 +2976,7 @@ private:
 		wboitBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
 
-		recordMainSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
+		recordOpaqueSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
 	}
 
 
@@ -3030,7 +3025,7 @@ private:
 		}
 	}
 
-	void recordMainCommandBuffers() { //records and submits the main command buffers
+	void recordOpaqueCommandBuffers() {
 		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 
 		VkCommandBufferBeginInfo beginInfoP{};
@@ -3042,24 +3037,24 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, beginInfoP]() {
 #endif
-				VkCommandBuffer& mainCommandBuffer = mainPassCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(mainCommandBuffer, &beginInfoP) != VK_SUCCESS) {
+				VkCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
+				if (vkBeginCommandBuffer(opaqueCommandBuffer, &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = mainPassPipeline.renderPass;
-				renderPassInfo.framebuffer = mainPassFB;
+				renderPassInfo.renderPass = opaquePassPipeline.renderPass;
+				renderPassInfo.framebuffer = opaquePassFB;
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(mainCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(mainCommandBuffer, static_cast<uint32_t>(mainPassCommandBuffers.secondary.size()), mainPassCommandBuffers.secondary.data());
-				vkCmdEndRenderPass(mainCommandBuffer);
-				if (vkEndCommandBuffer(mainCommandBuffer) != VK_SUCCESS) {
+				vkCmdBeginRenderPass(opaqueCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(opaqueCommandBuffer, static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
+				vkCmdEndRenderPass(opaqueCommandBuffer);
+				if (vkEndCommandBuffer(opaqueCommandBuffer) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3097,7 +3092,7 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkhelper::transitionImageLayout(wboitCommandBuffer, mainPassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+				vkhelper::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 				vkCmdExecuteCommands(wboitCommandBuffer, static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
@@ -3230,9 +3225,9 @@ private:
 			}
 		}
 
-		// create the main pass framebuffer
-		std::vector<VkImageView> attachmentsM = { mainPassTextures.color.imageView, mainPassTextures.depth.imageView };
-		vkhelper::createFB(mainPassPipeline.renderPass, mainPassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
+		// create the opaque pass framebuffer
+		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView, opaquePassTextures.depth.imageView };
+		vkhelper::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
 
 		// create the wboit framebuffer
 		std::vector<VkImageView> attachmentsW = { wboit.weightedColor.imageView };
@@ -3273,8 +3268,8 @@ private:
 		vkDeviceWaitIdle(device); // wait for thr device to be idle
 
 		// free the textures
-		freeTexture(mainPassTextures.color);
-		freeTexture(mainPassTextures.depth);
+		freeTexture(opaquePassTextures.color);
+		freeTexture(opaquePassTextures.depth);
 		freeTexture(wboit.weightedColor);
 
 		for (auto imageView : swap.imageViews) {
@@ -3330,7 +3325,7 @@ private:
 			submitInfos.push_back(sub);
 		}
 
-		submitInfos.push_back(vkhelper::createSubmitInfo(&mainPassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
+		submitInfos.push_back(vkhelper::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
 		submitInfos.push_back(vkhelper::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
 		submitInfos.push_back(vkhelper::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
 
@@ -3372,7 +3367,7 @@ private:
 		std::cout << "recordShadowCommandBuffers: " << utils::durationString(duration) << std::endl;
 
 		now = utils::now();
-		recordMainCommandBuffers();
+		recordOpaqueCommandBuffers();
 		duration = utils::duration<microseconds>(now);
 		std::cout << "recordCommandBuffers: " << utils::durationString(duration) << std::endl;
 
@@ -3387,7 +3382,7 @@ private:
 		std::cout << "recordCompCommandBuffers: " << utils::durationString(duration) << std::endl;
 #else
 		recordShadowCommandBuffers();
-		recordMainCommandBuffers();
+		recordOpaqueCommandBuffers();
 		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
 
