@@ -93,8 +93,8 @@ struct CamData {
 		lastY(0.0f),
 		locked(true),
 		fov(60.0f),
-		nearP(0.1f),
-		farP(1000.0f)
+		nearP(0.01f),
+		farP(100.0f)
 	{}
 
 	dml::mat4 getViewMatrix() {
@@ -550,9 +550,9 @@ private:
 		createObjTask(tfMesh, "sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
 		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
 		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQ({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
 		meshExecutor.run(tfMesh).wait();
 
@@ -1094,7 +1094,7 @@ private:
 	void calcShadowMats(Light& l) {
 		if (l.followPlayer) {
 			l.pos = dml::getCamWorldPos(cam.viewMatrix);
-			l.target = l.pos + (dml::quatToDir(cam.quat) * -1);
+			l.target = l.pos + dml::quatToDir(cam.quat);
 		}
 		// spotlight shadow mapping math code
 		float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
@@ -1106,7 +1106,7 @@ private:
 		}
 
 		l.view = dml::lookAt(l.pos, l.target, up);
-		l.proj = dml::spotPerspective(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
+		l.proj = dml::projection(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
 	}
 
 	void updateUBO() {
@@ -1665,7 +1665,7 @@ private:
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL; //fill the area of the poly with fragments
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_BACK_BIT; //cull the back faces of triangle
-		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE; //polygons with vertices in clockwise order, will be considered front facing
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE; //polygons with vertices in counter clockwise order, will be considered front facing
 		rasterizer.depthBiasEnable = VK_TRUE; //allows the application of depth bias to fragments
 
 		// multisampling setup: samples multiple points in each pixel and combines them to reduce jagged and blunt edges
@@ -2222,7 +2222,7 @@ private:
 		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
 		rasterizer.lineWidth = 1.0f;
 		rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
-		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
 		rasterizer.depthBiasEnable = VK_FALSE;
 		rasterizer.depthBiasConstantFactor = 0.0f;
 		rasterizer.depthBiasClamp = 0.0f;
@@ -2678,7 +2678,7 @@ private:
 		m->startObj = false;
 		m->rotation = rotation;
 
-		dml::mat4 newModel = dml::translate(pos) * dml::rotateQ(rotation) * dml::scale(scale);
+		dml::mat4 newModel = dml::translate(pos) * dml::rotateQuat(rotation) * dml::scale(scale);
 		m->modelMatrix = newModel * m->modelMatrix;
 		objects.push_back(std::move(m));
 	}
@@ -2741,7 +2741,7 @@ private:
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
-		dml::vec3 target = pos + (dml::quatToDir(cam.quat) * -1);
+		dml::vec3 target = pos + dml::quatToDir(cam.quat);
 		Light l = createLight(pos, target);
 
 		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -3501,8 +3501,8 @@ private:
 			xoff *= sens;
 			yoff *= sens;
 
-			cam.rightAngle += xoff;
-			cam.upAngle += yoff;
+			cam.rightAngle -= xoff;
+			cam.upAngle -= yoff;
 		}
 	}
 
@@ -3528,18 +3528,18 @@ private:
 			cam.pos += forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.pos -= right * cameraSpeed;
+			cam.pos += right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.pos += right * cameraSpeed;
+			cam.pos -= right * cameraSpeed;
 		}
 
 		// up and down movement
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-			cam.pos.y += 1 * cameraSpeed;
+			cam.pos.y -= 1 * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-			cam.pos.y -= 1 * cameraSpeed;
+			cam.pos.y += 1 * cameraSpeed;
 		}
 
 		// realtime object loading

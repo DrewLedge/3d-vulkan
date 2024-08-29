@@ -358,7 +358,7 @@ public:
 		}
 		// calculate the matricies
 		dml::mat4 translationMatrix = dml::translate(t);
-		dml::mat4 rotationMatrix = dml::rotateQ(r); // quaternion rotation
+		dml::mat4 rotationMatrix = dml::rotateQuat(r); // quaternion rotation
 		dml::mat4 scaleMatrix = dml::scale(s);
 		return translationMatrix * rotationMatrix * scaleMatrix;
 	}
@@ -378,7 +378,7 @@ public:
 
 		// get the matricies for object positioning
 		dml::mat4 translationMatrix = dml::translate(m.position);
-		dml::mat4 rotationMatrix = dml::rotateQ(m.rotation);
+		dml::mat4 rotationMatrix = dml::rotateQuat(m.rotation);
 		dml::mat4 scaleMatrix = dml::scale(m.scale * 0.03f); // 0.03 scales it down to a reasonable size
 
 		// walk up the node hierarchy to accumulate transformations

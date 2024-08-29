@@ -445,7 +445,7 @@ public:
 	};
 
 	// ------------------ VECTOR3 FORMULAS ------------------ //
-	static vec3 eulerToDir(const vec3& rotation) { // converts Euler rot to direction vector
+	static vec3 eulerToDir(const vec3& rotation) { // converts euler angle to direction vector
 		// convert pitch and yaw from degrees to radians
 		float pitch = radians(rotation.x);
 		float yaw = radians(rotation.y);
@@ -457,9 +457,9 @@ public:
 		return direction;
 	}
 
-	static vec3 getForward(const vec3& camData) { // computes camera's forward direction
-		float pitch = camData.x;
-		float yaw = camData.y;
+	static vec3 getForward(const vec3& rot) {
+		float pitch = rot.x;
+		float yaw = rot.y;
 
 		vec3 forward;
 		forward.x = -std::sin(yaw) * std::cos(pitch);
@@ -469,15 +469,15 @@ public:
 		return forward;
 	}
 
-	static vec3 getRight(const vec3& camData) { // computes camera's right direction
-		vec3 forward = getForward(camData);
+	static vec3 getRight(const vec3& rot) {
+		vec3 forward = getForward(rot);
 		vec3 up(0.0f, -1.0f, 0.0f);
 		return cross(forward, up);
 	}
 
-	static vec3 getUp(const vec3& camData) { // computes camera's up direction
-		vec3 forward = getForward(camData);
-		vec3 right = getRight(camData);
+	static vec3 getUp(const vec3& rot) {
+		vec3 forward = getForward(rot);
+		vec3 right = getRight(rot);
 		return cross(right, forward);
 	}
 
@@ -513,7 +513,6 @@ public:
 	static vec3 normalize(const vec3& v) {
 		float length = v.length();
 
-		// check for zero length to avoid division by zero
 		if (length < EPSILON) {
 			return vec3(0.0f, 0.0f, 0.0f);
 		}
@@ -522,11 +521,13 @@ public:
 	}
 
 	static vec3 quatToDir(const vec4& quat) {
-		mat4 o = rotateQ(quat).transpose();
+		mat4 o = rotateQuat(quat).transpose();
 		return o * vec3(0.0f, 0.0f, -1.0f);
 	}
 
 	// ------------------ VECTOR4 FORMULAS ------------------ //
+
+	// function to turn a lookat matrix into a quaternion
 	static vec4 quatCast(const mat4& mat) {
 		// calc the trace of the matrix, which is the sum of the diagonal elements
 		// when the trace is positive, it has more numerical stability, and is more straightforward to calc
@@ -568,13 +569,13 @@ public:
 		return quaternion;
 	}
 
-	static vec4 targetToQ(const vec3& position, const vec3& target) {
+	static vec4 targetToQuat(const vec3& position, const vec3& target) {
 		vec3 up = { 0.0f, 1.0f, 0.0f };
 		mat4 l = lookAt(target, position, up);
 		return quatCast(l);
 	}
 
-	static vec4 inverseQ(const vec4& q) { // quaternion inversion
+	static vec4 inverseQuat(const vec4& q) {
 		float length = q.length();
 		if (length < EPSILON) {
 			return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
@@ -650,7 +651,7 @@ public:
 		return result;
 	}
 
-	static mat4 rotateQ(const vec4 q) { // quaternian rotation
+	static mat4 rotateQuat(const vec4 q) { // quaternian rotation
 		mat4 result;
 
 		float w = q.w;
@@ -688,29 +689,11 @@ public:
 
 		result.m[0][0] = 1.0f / (aspect * tanHalf);
 		result.m[1][1] = -1.0f / tanHalf;
-		result.m[2][2] = farPlane / (farPlane - nearPlane);
-		result.m[3][2] = -(2 * farPlane * nearPlane) / (farPlane - nearPlane);
-		result.m[2][3] = 1.0f;
-		result.m[3][3] = 0.0f;
+		result.m[2][2] = farPlane / (nearPlane - farPlane);
+		result.m[3][2] = (farPlane * nearPlane) / (nearPlane - farPlane);
+		result.m[2][3] = -1.0f;
 
 		return result;
-	}
-
-	static mat4 spotPerspective(float verticalFov, float aspectRatio, float n, float f) {
-		float fovRad = radians(verticalFov);
-		float focalLength = 1.0f / tan(fovRad / 2.0f);
-		float x = focalLength / aspectRatio;
-		float y = -focalLength;
-		float a = f / (n - f);
-		float b = (f * n) / (n - f);
-
-		mat4 proj;
-		proj.m[0][0] = x;
-		proj.m[1][1] = y;
-		proj.m[2][2] = a;
-		proj.m[3][2] = b;
-		proj.m[2][3] = -1.0f;
-		return proj;
 	}
 
 	static mat3 mat4ToMat3(const mat4& m, int excludeRow, int excludeCol) {
@@ -778,10 +761,9 @@ public:
 		vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
 		vec4 orientation = yRot * xRot;
 		orientation = normalize(orientation);
-		mat4 rotation = rotateQ(orientation);
+		mat4 rotation = rotateQuat(orientation);
 
-		mat4 translation;
-		translation = translate(position * -1);
+		mat4 translation = translate(position);
 		return rotation * translation;
 	}
 
