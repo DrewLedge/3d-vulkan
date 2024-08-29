@@ -50,6 +50,8 @@ constexpr uint32_t MAX_LIGHTS = 300;
 constexpr uint32_t SCREEN_WIDTH = 3200;
 constexpr uint32_t SCREEN_HEIGHT = 1800;
 
+const std::string ENGINE_VER = "v1.0.0";
+
 const std::string SHADER_DIR = "shaders/compiled/";
 const std::string MODEL_DIR = "assets/models/";
 const std::string SKYBOX_DIR = "assets/skyboxes/";
@@ -58,7 +60,7 @@ const std::string FONT_DIR = "assets/fonts/";
 bool rtSupported = false; // a bool if raytracing is supported on the device
 
 struct CamData {
-	dml::vec3 camPos; //x, y, z
+	dml::vec3 pos; //x, y, z
 	dml::vec4 quat;
 	float upAngle;
 	float rightAngle;
@@ -79,7 +81,7 @@ struct CamData {
 	float farP;
 
 	CamData()
-		: camPos(0.0f, 0.0f, 0.0f),
+		: pos(0.0f, 0.0f, 0.0f),
 		quat(0.0f, 0.0f, 0.0f, 1.0f),
 		upAngle(0.0f),
 		rightAngle(0.0f),
@@ -96,7 +98,7 @@ struct CamData {
 	{}
 
 	dml::mat4 getViewMatrix() {
-		return dml::viewMatrix(camPos, dml::radians(upAngle), dml::radians(rightAngle));
+		return dml::viewMatrix(pos, dml::radians(upAngle), dml::radians(rightAngle));
 	}
 
 	void updateQuaternion() {
@@ -276,6 +278,7 @@ private:
 			}
 		{}
 	};
+
 	struct DSObject {
 		std::vector<VkDescriptorSetLayout> layouts;
 		std::vector<VkDescriptorSet> sets;
@@ -285,7 +288,7 @@ private:
 	struct PipelineData {
 		VkRenderPass renderPass;
 		VkPipelineLayout layout;
-		VkPipeline graphicsPipeline;
+		VkPipeline pipeline;
 	};
 
 	struct SCData {
@@ -426,10 +429,6 @@ private:
 	VkShaderModule fragShaderModule = VK_NULL_HANDLE;
 	VkShaderModule vertShaderModule = VK_NULL_HANDLE;
 
-	// depth buffering
-	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
-	WBOITData wboit = {};
-
 	// descriptor sets and pools
 	DSObject descs = {};
 	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
@@ -459,6 +458,9 @@ private:
 	size_t totalTextureCount = 0;
 	unsigned char* imageData = nullptr;
 	dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
+	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+	WBOITData wboit = {};
+
 	// skybox data
 	float* skyboxData = nullptr;
 	SkyboxObject skybox = {};
@@ -471,7 +473,7 @@ private:
 	uint32_t fps = 0;
 	double lastFrame = 0.0;
 
-	// mutexes and multithreading
+	// mutexes and taskflow
 	std::mutex modelMtx;
 	std::mutex compositionMutex;
 
@@ -486,7 +488,9 @@ private:
 		glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 		glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
 
-		window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Vulkan", nullptr, nullptr);
+		std::string engineName = "3d-vulkan " + ENGINE_VER;
+
+		window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
 		ImGui::StyleColorsDark();
@@ -885,22 +889,6 @@ private:
 		swapVP.maxDepth = 1.0f;
 	}
 
-	VkFormat findDepthFormat() {
-		std::vector<VkFormat> candidates = {
-			VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT //the formats that are supported
-		};
-
-		for (VkFormat format : candidates) {
-			VkFormatProperties props;
-			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props); //get the format properties
-
-			if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) { // if the format has the depth stencil attachment bit
-				return format;
-			}
-		}
-		throw std::runtime_error("failed to find suitable depth format!");
-	}
-
 	void loadSkybox(std::string path) {
 		skybox.cubemap.path = SKYBOX_DIR + path;
 		createTexturedCubemap(skybox.cubemap);
@@ -1003,7 +991,7 @@ private:
 	}
 
 	void setupTextures() {
-		depthFormat = findDepthFormat();
+		depthFormat = vkhelper::findDepthFormat();
 		static bool init = true;
 
 		// main pass color image
@@ -1043,41 +1031,30 @@ private:
 	}
 
 	void createSCImageViews() { //create the image views for the swap chain images
-		swap.imageViews.resize(swap.images.size()); // resize swapChainImageViews to hold all the image views
+		swap.imageViews.resize(swap.images.size());
 		for (size_t i = 0; i < swap.images.size(); i++) {
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 			newinfo.image = swap.images[i]; // assign the current swap chain image
 			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			newinfo.format = swap.imageFormat;
-			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY; // image will maintain its original component ordering
+
+			// image will maintain its original component ordering
+			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
 			newinfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-			newinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; // set the aspect mask to color
+
+			newinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			newinfo.subresourceRange.baseMipLevel = 0;
 			newinfo.subresourceRange.levelCount = 1;
 			newinfo.subresourceRange.baseArrayLayer = 0;
 			newinfo.subresourceRange.layerCount = 1;
 			VkResult result = vkCreateImageView(device, &newinfo, nullptr, &swap.imageViews[i]);
 			if (result != VK_SUCCESS) {
-				throw std::runtime_error("Failed to create image views!");
+				throw std::runtime_error("Failed to create image views for the swapchain!!");
 			}
 		}
-	}
-
-	VkShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
-		VkShaderModuleCreateInfo createInfo{};
-		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-		createInfo.codeSize = code.size();
-		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); //convert the char array to uint32_t array
-
-		VkShaderModule shaderModule;
-		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shader module!");
-		}
-
-		return shaderModule;
 	}
 
 	void createLightBuffer() {
@@ -1133,7 +1110,7 @@ private:
 	}
 
 	void updateUBO() {
-		// calc matrixes for lights
+		// calc matricies for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			Light& l = *lights[i];
 			calcShadowMats(l);
@@ -1155,11 +1132,11 @@ private:
 		memcpy(cData, &camMatData, sizeof(camMatData));
 		vkUnmapMemory(device, cam.bufferMem);
 
-		// calc matrixes for objects
+		// calc matricies for objects
 		for (size_t i = 0; i < objects.size(); i++) {
 			int render = 0;
 			if (objects[i]->player) {
-				dml::mat4 t = dml::translate(cam.camPos);
+				dml::mat4 t = dml::translate(cam.pos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i]->scale);
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
@@ -1191,40 +1168,6 @@ private:
 		memcpy(&dest.constantAttenuation, &src.constantAttenuation, sizeof(float));
 		memcpy(&dest.linearAttenuation, &src.linearAttenuation, sizeof(float));
 		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
-	}
-
-	void guiDSLayout() { //descriptor set layout for imgui
-		VkDescriptorSetLayoutBinding imguiBinding{};
-		imguiBinding.binding = 0;
-		imguiBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		imguiBinding.descriptorCount = 1;
-		imguiBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // access through the fragment shader
-
-		VkDescriptorSetLayoutCreateInfo imguiLayoutInfo{};
-		imguiLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		imguiLayoutInfo.bindingCount = 1;
-		imguiLayoutInfo.pBindings = &imguiBinding;
-
-		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, &imguiDescriptorSetLayout) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
-		}
-	}
-
-	void guiDSPool() { // descriptor pool for imgui
-		VkDescriptorPoolSize poolSize{};
-		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-		poolSize.descriptorCount = 1;
-
-		VkDescriptorPoolCreateInfo poolInfo{};
-		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; // descriptor sets can be freed individually
-		poolInfo.maxSets = 1;
-		poolInfo.poolSizeCount = 1;
-		poolInfo.pPoolSizes = &poolSize;
-
-		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create Imgui descriptor pool!");
-		}
 	}
 
 	std::vector<dvl::Texture> getAllTextures() {
@@ -1345,7 +1288,7 @@ private:
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
 			varCountInfo.descriptorSetCount = 1;
 			varCountInfo.pDescriptorCounts = &descCountArr[i];
-			allocInfo.pNext = &varCountInfo; // variableCountInfo is added to the pNext chain
+			allocInfo.pNext = &varCountInfo;
 
 			allocInfo.descriptorPool = descs.pools[i];
 			allocInfo.pSetLayouts = &descs.layouts[i];
@@ -1384,10 +1327,9 @@ private:
 	}
 
 	void getGLTFImageData(const tinygltf::Image& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
-		int width = gltfImage.width; // Set the texture's width, height, and channels
+		int width = gltfImage.width;
 		int height = gltfImage.height;
 		int channels = gltfImage.component;
-
 
 		// delete previously allocated memory if any
 		if (imgData != nullptr) {
@@ -1434,7 +1376,7 @@ private:
 		}
 	}
 
-	void createStagingBuffer(dvl::Texture& tex, bool cubeMap) { // buffer to transfer data from the CPU (imageData) to the GPU sta
+	void createStagingBuffer(dvl::Texture& tex, bool cubeMap) {
 		VkBufferCreateInfo bufferInf{};
 		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
@@ -1472,7 +1414,7 @@ private:
 
 			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
 
-			// initialize img and barrier data before buffer copy:
+			// init the VkBufferImageCopy struct for the styaging buffer to image copying
 			VkBufferImageCopy region{};
 			region.bufferOffset = 0;
 			region.bufferRowLength = 0;
@@ -1482,7 +1424,7 @@ private:
 			region.imageSubresource.baseArrayLayer = 0;
 			region.imageSubresource.layerCount = 1;
 			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 }; //gets the 2d image extent
+			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
 
 			VkCommandBuffer tempBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
@@ -1491,10 +1433,14 @@ private:
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
+
+			// create mipmaps for the image if enabled
 			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
 					vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
 
+					// if the cutrrent mip level isnt the last, blit the image to generate the next mip level
+					// bliting is the process of transfering the image data from one image to another usually with a form of scaling or filtering
 					if (j < tex.mipLevels - 1) {
 						VkImageBlit blit{};
 						blit.srcOffsets[0] = { 0, 0, 0 };
@@ -1504,7 +1450,10 @@ private:
 						blit.srcSubresource.baseArrayLayer = 0;
 						blit.srcSubresource.layerCount = 1;
 						blit.dstOffsets[0] = { 0, 0, 0 };
-						blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 }; //if the mip level is greater than 1, divide by 2, otherwise set to 1
+
+						// divide the width and height by 2 if over 1
+						blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+
 						blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 						blit.dstSubresource.mipLevel = j + 1;
 						blit.dstSubresource.baseArrayLayer = 0;
@@ -1531,11 +1480,11 @@ private:
 
 	void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
 		int texWidth, texHeight, texChannels;
-		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4); // load RGBA (alpha not used) for the R32G32B32A32_SFLOAT format
+		imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4);
 		t.width = texWidth;
 		t.height = texHeight;
 		if (!imgData) {
-			std::string error = stbi_failure_reason(); // get the detailed error
+			std::string error = stbi_failure_reason();
 			throw std::runtime_error("failed to load HDR image: " + path + "! Reason: " + error);
 		}
 	}
@@ -1547,7 +1496,7 @@ private:
 		}
 		createStagingBuffer(tex, true);
 
-		// clculate the size of one face of the cubemap
+		// calculate the size of one face of the cubemap
 		uint32_t faceWidth = tex.width / 4;
 		uint32_t faceHeight = tex.height / 3;
 		auto bpp = sizeof(float) * 4; // four floats for R32G32B32A32_SFLOAT
@@ -1555,7 +1504,7 @@ private:
 
 		// ensure the atlas dimensions are valid for a horizontal cross layout
 		if (faceHeight != faceWidth) {
-			throw std::runtime_error("Cubemap atlas dimensions are invalid!");
+			throw std::runtime_error("Cubemap atlas dimensions are invalid!!");
 		}
 
 		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
@@ -1564,14 +1513,7 @@ private:
 		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
-		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = {
-			 {{2, 1}, // -x
-			 {0, 1}, // +x
-			 {1, 0}, // +y
-			 {1, 2}, // -y
-			 {1, 1}, // -z
-			 {3, 1}} // +z
-		};
+		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = { {{2, 1}, {0, 1}, {1, 0}, {1, 2}, {1, 1}, {3, 1}} };
 
 		for (uint32_t i = 0; i < regions.size(); i++) {
 			VkBufferImageCopy& region = regions[i];
@@ -1602,8 +1544,8 @@ private:
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
-		vertShaderModule = createShaderModule(vertShaderCode);
-		fragShaderModule = createShaderModule(fragShaderCode);
+		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
+		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
 
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
@@ -1856,7 +1798,7 @@ private:
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &mainPassPipeline.graphicsPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &mainPassPipeline.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -1866,8 +1808,8 @@ private:
 		// get shader data
 		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
 		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
-		VkShaderModule shadowVertShaderModule = createShaderModule(vertShaderSPV);
-		VkShaderModule shadowFragShaderModule = createShaderModule(fragShaderSPV);
+		VkShaderModule shadowVertShaderModule = vkhelper::createShaderModule(vertShaderSPV);
+		VkShaderModule shadowFragShaderModule = vkhelper::createShaderModule(fragShaderSPV);
 
 		VkPipelineShaderStageCreateInfo vertStage{};
 		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -1916,8 +1858,8 @@ private:
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
 		vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
 		vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
-		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size()); // get the size of the attribute description array
-		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data(); // assign the vertex input attribute descriptions
+		vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+		vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
 
 		VkPipelineInputAssemblyStateCreateInfo inputAssem{};
 		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2045,7 +1987,7 @@ private:
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline.graphicsPipeline) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline.pipeline) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map pipeline!!!!");
 		}
 	}
@@ -2053,8 +1995,8 @@ private:
 	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
-		vertShaderModule = createShaderModule(vertShaderCode);
-		fragShaderModule = createShaderModule(fragShaderCode);
+		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
+		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2177,8 +2119,8 @@ private:
 	void createWBOITPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "wboit_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "wboit_frag_shader.spv");
-		vertShaderModule = createShaderModule(vertShaderCode);
-		fragShaderModule = createShaderModule(fragShaderCode);
+		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
+		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2385,7 +2327,7 @@ private:
 		pipelineInf.layout = wboitPipeline.layout;
 		pipelineInf.renderPass = wboitPipeline.renderPass;
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &wboitPipeline.graphicsPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &wboitPipeline.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for WBOIT!");
 		}
@@ -2394,8 +2336,8 @@ private:
 	void createCompositionPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "composition_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "composition_frag_shader.spv");
-		vertShaderModule = createShaderModule(vertShaderCode);
-		fragShaderModule = createShaderModule(fragShaderCode);
+		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
+		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2548,7 +2490,7 @@ private:
 		pipelineInf.layout = compPipelineData.layout;
 		pipelineInf.renderPass = compPipelineData.renderPass;
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &compPipelineData.graphicsPipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &compPipelineData.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for the composition pass!!!!!!!!");
 		}
@@ -2562,15 +2504,49 @@ private:
 		createWBOITPipeline();
 	}
 
-	static void check_vk_result(VkResult err) { //used to debug imgui errors that have to do with vulkan 
+	static void check_vk_result(VkResult err) { // used to debug imgui errors that have to do with vulkan 
 		if (err == 0)
 			return;
 		std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
-		assert(err == 0); //if true, continue, if false, throw error
+		assert(err == 0); // if true, continue, if false, throw error
+	}
+
+	void guiDSLayout() { //descriptor set layout for imgui
+		VkDescriptorSetLayoutBinding imguiBinding{};
+		imguiBinding.binding = 0;
+		imguiBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		imguiBinding.descriptorCount = 1;
+		imguiBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT; // access through the fragment shader
+
+		VkDescriptorSetLayoutCreateInfo imguiLayoutInfo{};
+		imguiLayoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+		imguiLayoutInfo.bindingCount = 1;
+		imguiLayoutInfo.pBindings = &imguiBinding;
+
+		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, &imguiDescriptorSetLayout) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
+		}
+	}
+
+	void guiDSPool() { // descriptor pool for imgui
+		VkDescriptorPoolSize poolSize{};
+		poolSize.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		poolSize.descriptorCount = 1;
+
+		VkDescriptorPoolCreateInfo poolInfo{};
+		poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+		poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT; // descriptor sets can be freed individually
+		poolInfo.maxSets = 1;
+		poolInfo.poolSizeCount = 1;
+		poolInfo.pPoolSizes = &poolSize;
+
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+			throw std::runtime_error("Failed to create Imgui descriptor pool!");
+		}
 	}
 
 	void imguiSetup() {
-		// descriptor set creation for the gui:
+		// descriptor set creation for imgui:
 		guiDSLayout();
 		guiDSPool();
 
@@ -2592,7 +2568,7 @@ private:
 		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
 
 		// upload fonts, etc:
-		VkCommandPool guiCommandPool = createCommandPool();
+		VkCommandPool guiCommandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 		VkCommandBuffer guiCommandBuffer = vkhelper::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
 		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
@@ -2611,24 +2587,11 @@ private:
 		}
 	}
 
-	VkCommandPool createCommandPool() {
-		VkCommandPool cPool;
-		VkCommandPoolCreateInfo poolInf{};
-		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-		poolInf.queueFamilyIndex = queueFamilyIndices.graphicsFamily.value(); //the queue family that will be using this command pool
-		poolInf.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // enable reset command buffer flag
-		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &cPool);
-		if (result != VK_SUCCESS) {
-			throw std::runtime_error("failed to create command pool!");
-		}
-		return cPool;
-	}
-
 	void allocateCommandBuffers(CommandBufferSet& cmdBuffers, size_t primaryCount, size_t secondaryCount = 0) {
 		cmdBuffers.primary.resize(primaryCount);
 
 		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools[i] = createCommandPool();
+			cmdBuffers.primary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 			cmdBuffers.primary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
 		}
 
@@ -2637,7 +2600,7 @@ private:
 			cmdBuffers.secondary.resize(secondaryCount);
 
 			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools[i] = createCommandPool();
+				cmdBuffers.secondary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 				cmdBuffers.secondary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 			}
 		}
@@ -2788,12 +2751,12 @@ private:
 
 		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 
-		VkCommandPool p = createCommandPool();
+		VkCommandPool p = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p);
 		shadowMapCommandBuffers.primary.buffers.push_back(c);
 		shadowMapCommandBuffers.primary.pools.push_back(p);
 
-		VkCommandPool p2 = createCommandPool();
+		VkCommandPool p2 = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 		VkCommandBuffer c2 = vkhelper::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
 		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
@@ -2827,7 +2790,7 @@ private:
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.graphicsPipeline);
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
 		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		// bind the vertex and instance buffers
@@ -2883,7 +2846,7 @@ private:
 				}
 			}
 
-			vkCmdBindPipeline(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.graphicsPipeline);
+			vkCmdBindPipeline(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
 			vkCmdBindDescriptorSets(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 			int lightIndex = static_cast<int>(i);
@@ -2924,7 +2887,7 @@ private:
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.graphicsPipeline);
+		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline);
 		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		vkCmdDraw(secondary, 6, 1, 0, 0);
@@ -3205,7 +3168,7 @@ private:
 	}
 
 	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
-		// set the pos and size of ther window
+		// set the pos and size of the window
 		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
 		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
 
@@ -3232,7 +3195,8 @@ private:
 			ImGuiWindowFlags_NoInputs |
 			ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-		// if font exists, use it. otherwise, use the default font
+		// if font exists, use it
+		// otherwise, use the default font
 		if (font != nullptr) {
 			ImGui::PushFont(font);
 		}
@@ -3251,8 +3215,9 @@ private:
 		ImGui::SetCursorPosX(centeredStartPos);
 		ImGui::TextUnformatted(textChar);
 
+		// if a custom background was set, revert it
 		if (bgColor.x != -1) {
-			ImGui::PopStyleColor();  // revert background color change
+			ImGui::PopStyleColor();
 		}
 		ImGui::End();
 	}
@@ -3305,7 +3270,7 @@ private:
 			glfwWaitEvents();
 		}
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
-		vkDeviceWaitIdle(device); // Wait for device idle
+		vkDeviceWaitIdle(device); // wait for thr device to be idle
 
 		// free the textures
 		freeTexture(mainPassTextures.color);
@@ -3342,11 +3307,11 @@ private:
 		recordSecondaryCommandBuffers();
 	}
 
-	void drawFrame() { // draw frame function
+	void drawFrame() {
 		uint32_t imageIndex;
 		vkResetFences(device, 1, &inFlightFences[currentFrame]);
 
-		// acquire an image from the swap chain
+		// acquire the next image from the swapchain
 		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
@@ -3357,7 +3322,7 @@ private:
 			throw std::runtime_error("failed to acquire swap chain image!");
 		}
 
-		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT }; // stage to wait: color attachment output stage
+		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		std::vector<VkSubmitInfo> submitInfos;
 
 		for (VkCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
@@ -3491,9 +3456,9 @@ private:
 			currentFrame = (currentFrame + 1) % swapSize;
 			glfwPollEvents();
 			drawFrame();
-			handleKeyboardInput(); // handle keyboard input
+			handleKeyboardInput();
 			recordAllCommandBuffers();
-			updateUBO(); // update ubo matrices and populate the buffer
+			updateUBO();
 			calcFps(startTime, previousTime, frameCount);
 #endif
 		}
@@ -3519,7 +3484,6 @@ private:
 		else {
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
 		}
-
 	}
 
 	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
@@ -3558,24 +3522,24 @@ private:
 
 		// camera movement
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.camPos -= forward * cameraSpeed;
+			cam.pos -= forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.camPos += forward * cameraSpeed;
+			cam.pos += forward * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.camPos -= right * cameraSpeed;
+			cam.pos -= right * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.camPos += right * cameraSpeed;
+			cam.pos += right * cameraSpeed;
 		}
 
 		// up and down movement
 		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-			cam.camPos.y += 1 * cameraSpeed;
+			cam.pos.y += 1 * cameraSpeed;
 		}
 		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-			cam.camPos.y -= 1 * cameraSpeed;
+			cam.pos.y -= 1 * cameraSpeed;
 		}
 
 		// realtime object loading
@@ -3594,7 +3558,7 @@ private:
 				vertCount += o->vertices.size();
 			}
 
-			double score = fps * (((vertCount) / 400000.0) + lights.size());
+			double score = fps * (((vertCount) / 200000.0) + lights.size());
 
 			utils::sep();
 			std::cout << "Vertex count: " << vertCount << std::endl;
@@ -3610,19 +3574,19 @@ private:
 		}
 	}
 
-	void initVulkan() { //initializes Vulkan functions
+	void initVulkan() {
 		// initialize Vulkan components
 		auto now = utils::now();
 		createInstance();
 		createSurface();
 		pickDevice();
 		createLogicalDevice();
-		initQueues(); //sets the queue family indices such as graphics and presentation
-		createSC(); //create swap chain
+		initQueues();
+		createSC();
 		setupFences();
 		createSemaphores();
 
-		commandPool = createCommandPool();
+		commandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
 		initializeMouseInput(true);
 		loadUniqueObjects();
 

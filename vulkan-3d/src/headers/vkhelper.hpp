@@ -224,6 +224,23 @@ public:
 	}
 
 	// ------------------ IMAGES ------------------ //
+	static VkFormat findDepthFormat() {
+		//the formats that are supported
+		std::vector<VkFormat> allowed = {
+			VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
+		};
+
+		for (VkFormat format : allowed) {
+			VkFormatProperties props;
+			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props); //get the format properties
+
+			if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) { // if the format has the depth stencil attachment bit
+				return format;
+			}
+		}
+		throw std::runtime_error("failed to find suitable depth format!");
+	}
+
 	static void transitionImageLayout(const VkCommandBuffer& commandBuffer, const VkImage& image, const VkFormat format, const VkImageLayout oldLayout,
 		const VkImageLayout newLayout, const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 
@@ -493,6 +510,19 @@ public:
 
 
 	// ------------------ COMMAND BUFFERS ------------------ //
+	static VkCommandPool createCommandPool(const uint32_t queueFamilyIndex) {
+		VkCommandPool cPool;
+		VkCommandPoolCreateInfo poolInf{};
+		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+		poolInf.queueFamilyIndex = queueFamilyIndex; // the queue family that will be using this command pool
+		poolInf.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // enable reset command buffer flag
+		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &cPool);
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create command pool!");
+		}
+		return cPool;
+	}
+
 	static VkCommandBuffer beginSingleTimeCommands(const VkCommandPool& cPool) {
 		VkCommandBuffer commandBuffer = allocateCommandBuffers(cPool);
 		VkCommandBufferBeginInfo beginInfo{};
@@ -708,5 +738,20 @@ public:
 		}
 
 		return d;
+	}
+
+	// ------------------ PIPELINES ------------------ //
+	static VkShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
+		VkShaderModuleCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+		createInfo.codeSize = code.size();
+		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); //convert the char array to uint32_t array
+
+		VkShaderModule shaderModule;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create shader module!");
+		}
+
+		return shaderModule;
 	}
 };
