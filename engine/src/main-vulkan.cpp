@@ -5,7 +5,7 @@
 
 //#define PROFILE_MAIN_LOOP
 //#define PROFILE_COMMAND_BUFFERS
-//#define ENABLE_DEBUG
+#define ENABLE_DEBUG
 
 #include <tiny_gltf.h>
 #include <stb_image_resize.h>

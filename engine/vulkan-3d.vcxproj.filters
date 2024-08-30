@@ -54,7 +54,7 @@
     <ClCompile Include="ext\imgui\imgui_widgets.cpp">
       <Filter>Source Files\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="src\vulkan-3d.cpp" />
+    <ClCompile Include="src\main-vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\engine.frag">

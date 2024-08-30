@@ -138,7 +138,7 @@
     <ClCompile Include="ext\imgui\imgui_impl_vulkan.cpp" />
     <ClCompile Include="ext\imgui\imgui_tables.cpp" />
     <ClCompile Include="ext\imgui\imgui_widgets.cpp" />
-    <ClCompile Include="src\vulkan-3d.cpp" />
+    <ClCompile Include="src\main-vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.gitignore" />

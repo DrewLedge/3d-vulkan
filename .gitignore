@@ -398,5 +398,5 @@ FodyWeavers.xsd
 
 # Other
 *.glb
-vulkan-3d/.vscode/settings.json
-vulkan-3d/imgui.ini
+engine/.vscode/settings.json
+engine/imgui.ini
