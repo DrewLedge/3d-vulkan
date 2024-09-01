@@ -499,6 +499,22 @@ private:
 		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
 	}
 
+	void validateFiles() {
+		// verify that the assets/models/ directory exists. if not, make it
+		std::string models = "assets/models/";
+
+		if (!std::filesystem::exists(models)) {
+			if (std::filesystem::create_directory(models)) {
+#ifdef ENABLE_DEBUG
+				std::cout << "Created directory: " << models << std::endl;
+#endif
+			}
+			else {
+				throw std::runtime_error("Failed to create directory" + models + "!");
+			}
+		}
+	}
+
 	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
 		loadModel(scale, pos, rotation, MODEL_DIR + path);
 	}
@@ -556,6 +572,10 @@ private:
 
 		meshExecutor.run(tfMesh).wait();
 
+		if (!objects.size()) {
+			throw std::runtime_error("Failed to load models!");
+		}
+
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
 		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
 		lights.push_back(std::make_unique<Light>(createPlayerLight()));
@@ -563,6 +583,7 @@ private:
 		for (auto& obj : objects) {
 			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
 		}
+
 
 		// setPlayer(6);
 		// setPlayer(9);
@@ -688,7 +709,7 @@ private:
 
 		// check if ray tracing is supported
 		rtSupported = isRTSupported(physicalDevice);
-		std::cout << "Raytacing is " << (rtSupported ? "supported" : "not supported") << "!!!!" << std::endl;
+		std::cout << "Raytacing is " << (rtSupported ? "supported" : "not supported") << "!" << std::endl;
 		utils::sep();
 	}
 
@@ -787,12 +808,12 @@ private:
 		newInfo.ppEnabledLayerNames = nullptr;
 		VkResult result = vkCreateDevice(physicalDevice, &newInfo, nullptr, &device);
 		if (result != VK_SUCCESS) {
-			throw std::runtime_error("Failed to create logical device!!");
+			throw std::runtime_error("Failed to create logical device!");
 		}
 
 		vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR");
 		if (vkCmdPushDescriptorSetKHR == nullptr) {
-			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!!!");
+			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!");
 		}
 		utils::sep();
 	}
@@ -954,10 +975,12 @@ private:
 		LOG_WARNING_IF(warn, !warn.empty());
 
 		if (!err.empty()) {
-			throw std::runtime_error(err);
+			std::cerr << err << std::endl;
+			return;
 		}
 		if (!ret) {
-			throw std::runtime_error("Failed to load GLTF model");
+			std::cerr << "Failed to load GLTF model" << std::endl;
+			return;
 		}
 
 		// get the index of the parent node for each node
@@ -1097,7 +1120,8 @@ private:
 
 		dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
 		if (l.pos == l.target) {
-			throw std::runtime_error("Light position and target are the same!");
+			std::cerr << "Light position and target are the same!" << std::endl;
+			return;
 		}
 
 		l.view = dml::lookAt(l.pos, l.target, up);
@@ -1290,7 +1314,7 @@ private:
 
 			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &descs.sets[i]);
 			if (result != VK_SUCCESS) {
-				throw std::runtime_error("Failed to allocate descriptor sets. Error code: " + std::to_string(result));
+				throw std::runtime_error("Failed to allocate descriptor sets!");
 			}
 		}
 
@@ -1983,7 +2007,7 @@ private:
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
 		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline.pipeline) != VK_SUCCESS) {
-			throw std::runtime_error("failed to create shadow map pipeline!!!!");
+			throw std::runtime_error("failed to create shadow map pipeline!");
 		}
 	}
 
@@ -2487,7 +2511,7 @@ private:
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &compPipelineData.pipeline);
 		if (pipelineResult != VK_SUCCESS) {
-			throw std::runtime_error("failed to create graphics pipeline for the composition pass!!!!!!!!");
+			throw std::runtime_error("failed to create graphics pipeline for the composition pass!");
 		}
 	}
 
@@ -3572,6 +3596,7 @@ private:
 	void initVulkan() {
 		// initialize Vulkan components
 		auto now = utils::now();
+		validateFiles();
 		createInstance();
 		createSurface();
 		pickDevice();
