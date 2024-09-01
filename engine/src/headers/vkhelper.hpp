@@ -5,6 +5,7 @@
 #include <vector>
 #include <stdexcept>
 #include <string>
+#include <optional>
 
 extern VkDevice device;
 extern VkQueue graphicsQueue;
@@ -216,6 +217,7 @@ public:
 		if constexpr (std::is_trivially_copyable_v<ObjType>) {
 			memcpy(data, object, size);
 		}
+
 		// if the object isnt trivially copyable
 		else {
 			memcpy(data, &object, size);
@@ -234,7 +236,8 @@ public:
 			VkFormatProperties props;
 			vkGetPhysicalDeviceFormatProperties(physicalDevice, format, &props); //get the format properties
 
-			if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) { // if the format has the depth stencil attachment bit
+			// if the format has the depth stencil attachment bit
+			if ((props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
 				return format;
 			}
 		}
@@ -340,7 +343,11 @@ public:
 		imageInfo.arrayLayers = arrayLayers;
 		imageInfo.mipLevels = mipLevels;
 		imageInfo.format = format;
+
+		// allows the gpu to format the image data in memory in the most efficient way
+		// this means that the cpu cant easily read or write to the image though
 		imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+
 		imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 		imageInfo.usage = usage;
 		imageInfo.samples = sample;
@@ -356,6 +363,8 @@ public:
 		VkMemoryAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInfo.allocationSize = memRequirements.size;
+
+		// memory is allocated on the gpu
 		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
 		if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
@@ -377,24 +386,28 @@ public:
 		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
 		samplerInf.minFilter = VK_FILTER_LINEAR; // minification filter
-		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT; // repeat the texture when out of bounds (horizontal)
-		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT; // (vertical)
-		samplerInf.anisotropyEnable = VK_FALSE; // warps textures to fit objects, etc
-		samplerInf.maxAnisotropy = 16;
+
+		// when the texture cords go out of bounds, repeat the texture
+		samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+		samplerInf.anisotropyEnable = VK_FALSE;
 		samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
 		samplerInf.unnormalizedCoordinates = VK_FALSE;
 		switch (type) {
 		case DEPTH:
+			// when the texture cords go out of bounds, clamp the uv cords to the edge of the texture
 			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+
+			// instead of directly returning a sampled image, the sampler will compare a refrence value to the sampled value
+			// this is particularly useful for shadowmapping
 			samplerInf.compareEnable = VK_TRUE;
 			samplerInf.compareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
-			samplerInf.borderColor = VK_BORDER_COLOR_FLOAT_OPAQUE_WHITE;
 			break;
 		case CUBEMAP:
 			samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-			samplerInf.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE; // prevent seams at the edges
+			samplerInf.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
 			break;
 		}
 		samplerInf.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
@@ -416,7 +429,7 @@ public:
 
 		switch (type) {
 		case BASE:
-			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB; // for base texture
+			viewInf.format = VK_FORMAT_R8G8B8A8_SRGB;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			break;
 		case DEPTH:
@@ -428,7 +441,7 @@ public:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			break;
 		case METALLIC:
-			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM; // for metallic roughness
+			viewInf.format = VK_FORMAT_R8G8B8A8_UNORM;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			break;
 		case EMISSIVE:
@@ -440,7 +453,7 @@ public:
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			break;
 		case CUBEMAP:
-			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT; // for cubemaps
+			viewInf.format = VK_FORMAT_R32G32B32A32_SFLOAT;
 			viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 			viewInf.viewType = VK_IMAGE_VIEW_TYPE_CUBE;
 			viewInf.subresourceRange.layerCount = 6;
@@ -469,7 +482,7 @@ public:
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
-		viewInf.format = swapFormat; // format of the swap chain
+		viewInf.format = swapFormat;
 		viewInf.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		viewInf.subresourceRange.baseMipLevel = 0;
 
@@ -649,9 +662,9 @@ public:
 		binding.descriptorCount = descriptorCount;
 		binding.stageFlags = stageFlags;
 
+		// if descriptorCount is over 1, set the binding flag to indicate a variable descriptor count
+		// this is used when the number of things sent to the shader isnt known when the pipeline is created
 		VkDescriptorBindingFlagsEXT bindingFlags = 0;
-
-		//if the descriptor count is variable, set the flag
 		if (descriptorCount > 1) {
 			bindingFlags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
 		}
@@ -659,11 +672,11 @@ public:
 		VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo{};
 		bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
 		bindingFlagsInfo.bindingCount = 1;
-		bindingFlagsInfo.pBindingFlags = &bindingFlags; // if 0, no flags are set
+		bindingFlagsInfo.pBindingFlags = &bindingFlags;
 
 		VkDescriptorSetLayoutCreateInfo layoutInfo{};
 		layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-		layoutInfo.pNext = &bindingFlagsInfo; // bindingFlagsInfo is added to the pNext chain
+		layoutInfo.pNext = &bindingFlagsInfo;
 		layoutInfo.bindingCount = 1;
 		layoutInfo.pBindings = &binding;
 		if (pushDescriptors) layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
