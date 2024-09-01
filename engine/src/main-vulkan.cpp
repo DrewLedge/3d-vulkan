@@ -5,7 +5,7 @@
 
 //#define PROFILE_MAIN_LOOP
 //#define PROFILE_COMMAND_BUFFERS
-#define ENABLE_DEBUG
+//#define ENABLE_DEBUG
 
 #include <tiny_gltf.h>
 #include <stb_image_resize.h>
@@ -97,7 +97,7 @@ struct CamData {
 		farP(100.0f)
 	{}
 
-	dml::mat4 getViewMatrix() {
+	const dml::mat4 getViewMatrix() {
 		return dml::viewMatrix(pos, dml::radians(upAngle), dml::radians(rightAngle));
 	}
 
