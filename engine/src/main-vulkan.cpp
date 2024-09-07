@@ -228,18 +228,11 @@ private:
 		uint32_t height = 2048;
 	};
 
-	struct BufData {
-		uint32_t vertexOffset;
-		uint32_t vertexCount;
-		uint32_t indexOffset;
-		uint32_t indexCount;
-	};
-
 	struct SkyboxObject { // skybox struct
 		dvl::Texture cubemap;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
-		BufData bufferData; // buffer data for the skybox (vert offsets, etc)
+		vkhelper::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
 		VkBuffer vertBuffer;
 		VkDeviceMemory vertBufferMem;
 		VkBuffer indBuffer;
@@ -436,7 +429,7 @@ private:
 	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
 
 	// scene data and objects
-	std::vector<BufData> bufferData;
+	std::vector<vkhelper::BufData> bufferData;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
 	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
@@ -1079,29 +1072,18 @@ private:
 		lightData.lightCords.resize(lights.size());
 		lightData.memSize = lights.size() * sizeof(LightDataObject);
 
-		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, false);
 	}
 
 	void setupBuffers() {
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, false);
+		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, false);
 
 		createLightBuffer();
 
 		// skybox buffer data
-		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-
-		char* vertexData;
-		vkMapMemory(device, skybox.vertBufferMem, 0, sizeof(dml::vec3) * skybox.bufferData.vertexCount, 0, reinterpret_cast<void**>(&vertexData));
-		memcpy(vertexData, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount);
-		vkUnmapMemory(device, skybox.vertBufferMem);
-
-		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
-
-		char* indexData;
-		vkMapMemory(device, skybox.indBufferMem, 0, sizeof(uint32_t) * skybox.bufferData.indexCount, 0, reinterpret_cast<void**>(&indexData));
-		memcpy(indexData, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount);
-		vkUnmapMemory(device, skybox.indBufferMem);
+		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue);
+		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue);
 	}
 
 	void calcCameraMats() {
@@ -1395,16 +1377,15 @@ private:
 		}
 	}
 
-	void createStagingBuffer(dvl::Texture& tex, bool cubeMap) {
-		VkBufferCreateInfo bufferInf{};
+	void createImageStagingBuffer(dvl::Texture& tex, bool cubeMap) {
 		auto bpp = cubeMap ? sizeof(float) * 4 : 4;
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
 		if (cubeMap) {
-			vkhelper::createBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize);
 		}
 		else {
-			vkhelper::createBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize);
 		}
 	}
 
@@ -1416,7 +1397,7 @@ private:
 			else {
 				getGLTFImageData(tex.gltfImage, tex, imageData);
 			}
-			createStagingBuffer(tex, false);
+			createImageStagingBuffer(tex, false);
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
 			VkFormat imgFormat;
 			switch (type) {
@@ -1513,7 +1494,7 @@ private:
 		if (skyboxData == nullptr) {
 			throw std::runtime_error("failed to load image data!");
 		}
-		createStagingBuffer(tex, true);
+		createImageStagingBuffer(tex, true);
 
 		// calculate the size of one face of the cubemap
 		uint32_t faceWidth = tex.width / 4;
@@ -2654,16 +2635,24 @@ private:
 			}
 		}
 
+		VkBuffer stagingVertBuffer;
+		VkDeviceMemory stagingVertBufferMem;
+
+		VkBuffer stagingIndexBuffer;
+		VkDeviceMemory stagingIndexBufferMem;
+
+		const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
 		// create and map the vertex buffer
-		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT); // create the combined vertex buffer
+		vkhelper::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags);
 		char* vertexData;
-		vkMapMemory(device, vertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
+		vkMapMemory(device, stagingVertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
-		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT); // create the combined index buffer
+		vkhelper::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags);
 		char* indexData;
-		vkMapMemory(device, indBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+		vkMapMemory(device, stagingIndexBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
 
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -2685,8 +2674,31 @@ private:
 			indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
 			currentIndexOffset += bufferData[bufferInd].indexCount;
 		}
-		vkUnmapMemory(device, vertBufferMem);
-		vkUnmapMemory(device, indBufferMem);
+		vkUnmapMemory(device, stagingVertBufferMem);
+		vkUnmapMemory(device, stagingIndexBufferMem);
+
+		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		VkBufferCopy copyRegion{};
+
+		// copy the vert staging buffer into the dst vert buffer
+		copyRegion.size = totalVertexBufferSize;
+		vkCmdCopyBuffer(commandBuffer, stagingVertBuffer, vertBuffer, 1, &copyRegion);
+
+		// copy the index staging buffer into the dst index buffer
+		copyRegion.size = totalIndexBufferSize;
+		vkCmdCopyBuffer(commandBuffer, stagingIndexBuffer, indBuffer, 1, &copyRegion);
+
+		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+
+		// free the staging buffers
+		vkDestroyBuffer(device, stagingVertBuffer, nullptr);
+		vkDestroyBuffer(device, stagingIndexBuffer, nullptr);
+
+		vkFreeMemory(device, stagingVertBufferMem, nullptr);
+		vkFreeMemory(device, stagingIndexBufferMem, nullptr);
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {

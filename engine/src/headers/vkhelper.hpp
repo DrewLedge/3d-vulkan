@@ -24,6 +24,13 @@ public:
 		ALPHA
 	} TextureType;
 
+	struct BufData {
+		uint32_t vertexOffset;
+		uint32_t vertexCount;
+		uint32_t indexOffset;
+		uint32_t indexCount;
+	};
+
 	struct QueueFamilyIndices {
 		std::optional<uint32_t> graphicsFamily;
 		std::optional<uint32_t> presentFamily;
@@ -171,7 +178,7 @@ public:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags) {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = size;
@@ -191,7 +198,7 @@ public:
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
-		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, memFlags);
 
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the buffer!");
@@ -203,13 +210,19 @@ public:
 		}
 	}
 
+	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size) {
+		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags);
+	}
+
 	template<typename ObjType>
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage) {
-		createBuffer(buffer, bufferMem, size, usage);
+	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size) {
+		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags);
 
 		// once memory is bound, map and fill it
 		void* data;
-		if (vkMapMemory(device, bufferMem, 0, size, 0, &data) != VK_SUCCESS) {
+		if (vkMapMemory(device, stagingBufferMem, 0, size, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to map memory for buffer!");
 		}
 
@@ -222,7 +235,47 @@ public:
 		else {
 			memcpy(data, &object, size);
 		}
-		vkUnmapMemory(device, bufferMem);
+		vkUnmapMemory(device, stagingBufferMem);
+	}
+
+	template<typename ObjType>
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
+		const VkCommandPool& commandPool, const VkQueue& queue, bool staging = true) {
+		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+		if (staging) {
+			VkBuffer stagingBuffer;
+			VkDeviceMemory stagingBufferMem;
+			createStagingBuffer(stagingBuffer, stagingBufferMem, object, size);
+
+			// copy the data from the staging buffer to the dst buffer
+			VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+			VkBufferCopy copyRegion{};
+			copyRegion.size = size;
+			vkCmdCopyBuffer(commandBuffer, stagingBuffer, buffer, 1, &copyRegion);
+			endSingleTimeCommands(commandBuffer, commandPool, queue);
+
+			// free the staging buffer
+			vkDestroyBuffer(device, stagingBuffer, nullptr);
+			vkFreeMemory(device, stagingBufferMem, nullptr);
+		}
+		else {
+			void* data;
+			if (vkMapMemory(device, bufferMem, 0, size, 0, &data) != VK_SUCCESS) {
+				throw std::runtime_error("Failed to map memory for buffer!");
+			}
+
+			// check if the object is trivally copyable
+			if constexpr (std::is_trivially_copyable_v<ObjType>) {
+				memcpy(data, object, size);
+			}
+
+			// if the object isnt trivially copyable
+			else {
+				memcpy(data, &object, size);
+			}
+			vkUnmapMemory(device, bufferMem);
+		}
 	}
 
 	// ------------------ IMAGES ------------------ //
