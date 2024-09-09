@@ -58,6 +58,7 @@ const std::string SKYBOX_DIR = "assets/skyboxes/";
 const std::string FONT_DIR = "assets/fonts/";
 
 bool rtSupported = false; // a bool if raytracing is supported on the device
+bool rtEnabled = true; // a bool if raytracing has been enabled
 
 struct CamData {
 	dml::vec3 pos; //x, y, z
@@ -426,10 +427,16 @@ private:
 	DSObject descs = {};
 	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
 	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
+
+	// vulkan function pointers
 	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
+	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
+	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
+	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
 
 	// scene data and objects
 	std::vector<vkhelper::BufData> bufferData;
+	std::vector<VkAccelerationStructureKHR> blas;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
 	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
@@ -702,7 +709,8 @@ private:
 
 		// check if ray tracing is supported
 		rtSupported = isRTSupported(physicalDevice);
-		std::cout << "Raytacing is " << (rtSupported ? "supported" : "not supported") << "!" << std::endl;
+		rtEnabled = rtEnabled && rtSupported;
+		std::cout << "Raytacing is " << (rtEnabled ? "enabled" : "not enabled") << "!" << std::endl;
 		utils::sep();
 	}
 
@@ -751,9 +759,28 @@ private:
 		nestedCommandBufferFeatures.nestedCommandBuffer = VK_TRUE;
 		nestedCommandBufferFeatures.nestedCommandBufferRendering = VK_TRUE;
 
+		VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
+		bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+		bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
+		bufferDeviceAddressFeatures.pNext = &nestedCommandBufferFeatures;
+
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{};
+		VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures{};
+
+		if (rtEnabled) {
+			accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+			accelerationStructureFeatures.accelerationStructure = VK_TRUE;
+			accelerationStructureFeatures.pNext = &bufferDeviceAddressFeatures;
+
+			rayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+			rayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
+			rayTracingPipelineFeatures.pNext = &accelerationStructureFeatures;
+		}
+
 		VkPhysicalDeviceFeatures deviceFeatures{};
 		deviceFeatures.imageCubeArray = VK_TRUE;
 		deviceFeatures.sampleRateShading = VK_TRUE;
+
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
 		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
 		descIndexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
@@ -761,7 +788,9 @@ private:
 		descIndexing.runtimeDescriptorArray = VK_TRUE;
 		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE;
 		descIndexing.descriptorBindingPartiallyBound = VK_TRUE;
-		descIndexing.pNext = &nestedCommandBufferFeatures;
+
+		if (rtEnabled) descIndexing.pNext = &rayTracingPipelineFeatures;
+		else descIndexing.pNext = &bufferDeviceAddressFeatures;
 
 		VkDeviceCreateInfo newInfo{};
 		newInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -772,17 +801,27 @@ private:
 
 		// specify the device extensions to enable
 		std::vector<const char*> deviceExtensions = {
-		VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-		VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
-		VK_KHR_MAINTENANCE3_EXTENSION_NAME,
-		VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
-		VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
+			VK_KHR_SWAPCHAIN_EXTENSION_NAME,
+			VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+			VK_KHR_MAINTENANCE3_EXTENSION_NAME,
+			VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME,
+			VK_EXT_NESTED_COMMAND_BUFFER_EXTENSION_NAME,
+			VK_EXT_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME,
 		};
 
-		if (rtSupported) {
+		if (rtEnabled) {
 			deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+
+			// functions pointers
+			vkCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCreateAccelerationStructureKHR");
+			vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkDestroyAccelerationStructureKHR");
+			vkGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureBuildSizesKHR");
+
+			if (!vkCreateAccelerationStructureKHR) throw std::runtime_error("failed to load vkCreateAccelerationStructureKHR()!");
+			if (!vkDestroyAccelerationStructureKHR) throw std::runtime_error("failed to load vkDestroyAccelerationStructureKHR()!");
+			if (!vkGetAccelerationStructureBuildSizesKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureBuildSizesKHR()!");
 		}
 
 		for (auto& e : deviceExtensions) {
@@ -1072,18 +1111,18 @@ private:
 		lightData.lightCords.resize(lights.size());
 		lightData.memSize = lights.size() * sizeof(LightDataObject);
 
-		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, false);
+		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 	}
 
 	void setupBuffers() {
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, false);
-		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, false);
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 
 		createLightBuffer();
 
 		// skybox buffer data
-		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue);
-		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue);
+		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
 	}
 
 	void calcCameraMats() {
@@ -1382,10 +1421,10 @@ private:
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
 		if (cubeMap) {
-			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize);
+			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, 0);
 		}
 		else {
-			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize);
+			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, 0);
 		}
 	}
 
@@ -2613,10 +2652,66 @@ private:
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
+	void createBLAS(VkAccelerationStructureKHR& blas, const vkhelper::BufData& bufferData) {
+		// get the device addresses of the vertex and index buffers
+		// the stride and offset are used to go to the starting point of the mesh
+		// the device address represents the location of the data on the device
+		// this allows the data within the gpu to be accessed very efficiently
+		VkDeviceAddress vertexAddress = vkhelper::bufferDeviceAddress(vertBuffer) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
+		VkDeviceAddress indexAddress = vkhelper::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
+
+		// acceleration structure geometry - specifies the device addresses and data inside of the vertex and index buffers
+		VkAccelerationStructureGeometryKHR geometry = {};
+		geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+		geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+		geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+		geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+		geometry.geometry.triangles.vertexData.deviceAddress = vertexAddress;
+		geometry.geometry.triangles.vertexStride = sizeof(dvl::Vertex);
+		geometry.geometry.triangles.maxVertex = bufferData.vertexCount;
+		geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
+		geometry.geometry.triangles.indexData.deviceAddress = indexAddress;
+
+		// BLAS build info - specifies the acceleration structure type, the flags, and the geometry
+		VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
+		buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		buildInfo.geometryCount = 1;
+		buildInfo.pGeometries = &geometry;
+
+		// size requirements for the BLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
+		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
+		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &bufferData.indexCount, &sizeInfo);
+
+		// create a buffer for the BLAS - the buffer used in the creation of the blas
+		VkBuffer blasBuffer;
+		VkDeviceMemory blasMem;
+		VkBufferUsageFlags usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		vkhelper::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, usage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+
+		// create the BLAS
+		VkAccelerationStructureCreateInfoKHR createInfo = {};
+		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
+		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		createInfo.buffer = blasBuffer;
+		createInfo.size = sizeInfo.accelerationStructureSize;
+		vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &blas);
+
+		// scratch buffer - used to store intermediate data thats used when creating the BLAS
+		VkBuffer scratchBuffer;
+		VkDeviceMemory scratchMem;
+		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		vkhelper::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+	}
+
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
 		bufferData.resize(getUniqueModels());
+		if (rtEnabled) blas.resize(getUniqueModels());
 		uniqueModelIndex.clear();
 		modelHashToBufferIndex.clear();
 
@@ -2644,13 +2739,13 @@ private:
 		const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 		// create and map the vertex buffer
-		vkhelper::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags);
+		vkhelper::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* vertexData;
 		vkMapMemory(device, stagingVertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
-		vkhelper::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags);
+		vkhelper::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* indexData;
 		vkMapMemory(device, stagingIndexBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
@@ -2677,8 +2772,14 @@ private:
 		vkUnmapMemory(device, stagingVertBufferMem);
 		vkUnmapMemory(device, stagingIndexBufferMem);
 
-		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+		VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+
+		VkMemoryAllocateFlags vertM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
+		VkMemoryAllocateFlags indexM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
+
+		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
+		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
 		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 		VkBufferCopy copyRegion{};
@@ -2699,6 +2800,16 @@ private:
 
 		vkFreeMemory(device, stagingVertBufferMem, nullptr);
 		vkFreeMemory(device, stagingIndexBufferMem, nullptr);
+
+		if (rtEnabled) {
+			for (size_t i = 0; i < objects.size(); i++) {
+				size_t modelInd = uniqueModelIndex[objects[i]->meshHash];
+				if (modelInd != i) continue; // skip if not the first instance of the model
+				size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
+
+				createBLAS(blas[bufferInd], bufferData[bufferInd]);
+			}
+		}
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {

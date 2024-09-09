@@ -178,7 +178,15 @@ public:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags) {
+	static VkDeviceAddress bufferDeviceAddress(const VkBuffer& buffer) {
+		VkBufferDeviceAddressInfo bufferDeviceAddressInfo{};
+		bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		bufferDeviceAddressInfo.buffer = buffer;
+
+		return vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
+	}
+
+	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = size;
@@ -194,11 +202,22 @@ public:
 		VkMemoryRequirements memoryRequirements;
 		vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
 
+		// mem allocation flags
+		VkMemoryAllocateFlagsInfo allocFlagsInfo{};
+		if (memAllocFlags) {
+			allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+			allocFlagsInfo.flags = memAllocFlags;
+		}
+
 		// allocate mem for the buffer
 		VkMemoryAllocateInfo allocateInfo{};
 		allocateInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocateInfo.allocationSize = memoryRequirements.size;
 		allocateInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, memFlags);
+
+		if (memAllocFlags) {
+			allocateInfo.pNext = &allocFlagsInfo;
+		}
 
 		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the buffer!");
@@ -210,15 +229,15 @@ public:
 		}
 	}
 
-	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size) {
+	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags);
+		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 	}
 
 	template<typename ObjType>
-	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size) {
+	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags);
+		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 
 		// once memory is bound, map and fill it
 		void* data;
@@ -240,13 +259,13 @@ public:
 
 	template<typename ObjType>
 	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
-		const VkCommandPool& commandPool, const VkQueue& queue, bool staging = true) {
-		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		const VkCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
+		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
 		if (staging) {
 			VkBuffer stagingBuffer;
 			VkDeviceMemory stagingBufferMem;
-			createStagingBuffer(stagingBuffer, stagingBufferMem, object, size);
+			createStagingBuffer(stagingBuffer, stagingBufferMem, object, size, memAllocFlags);
 
 			// copy the data from the staging buffer to the dst buffer
 			VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
