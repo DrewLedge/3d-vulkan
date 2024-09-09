@@ -595,12 +595,12 @@ public:
 
 
 	// ------------------ COMMAND BUFFERS ------------------ //
-	static VkCommandPool createCommandPool(const uint32_t queueFamilyIndex) {
+	static VkCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlags& createFlags) {
 		VkCommandPool cPool;
 		VkCommandPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInf.queueFamilyIndex = queueFamilyIndex; // the queue family that will be using this command pool
-		poolInf.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT; // enable reset command buffer flag
+		poolInf.flags = createFlags;
 		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &cPool);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool!");

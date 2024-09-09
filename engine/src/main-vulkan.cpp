@@ -433,6 +433,7 @@ private:
 	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
 	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
 	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
+	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
 
 	// scene data and objects
 	std::vector<vkhelper::BufData> bufferData;
@@ -818,10 +819,12 @@ private:
 			vkCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCreateAccelerationStructureKHR");
 			vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkDestroyAccelerationStructureKHR");
 			vkGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureBuildSizesKHR");
+			vkCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(instance, "vkCmdBuildAccelerationStructuresKHR");
 
 			if (!vkCreateAccelerationStructureKHR) throw std::runtime_error("failed to load vkCreateAccelerationStructureKHR()!");
 			if (!vkDestroyAccelerationStructureKHR) throw std::runtime_error("failed to load vkDestroyAccelerationStructureKHR()!");
 			if (!vkGetAccelerationStructureBuildSizesKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureBuildSizesKHR()!");
+			if (!vkCmdBuildAccelerationStructuresKHR) throw std::runtime_error("failed to load vkCmdBuildAccelerationStructuresKHR()!");
 		}
 
 		for (auto& e : deviceExtensions) {
@@ -2607,7 +2610,7 @@ private:
 		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
 
 		// upload fonts, etc:
-		VkCommandPool guiCommandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+		VkCommandPool guiCommandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkCommandBuffer guiCommandBuffer = vkhelper::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
 		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
@@ -2630,7 +2633,7 @@ private:
 		cmdBuffers.primary.resize(primaryCount);
 
 		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+			cmdBuffers.primary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 			cmdBuffers.primary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
 		}
 
@@ -2639,7 +2642,7 @@ private:
 			cmdBuffers.secondary.resize(secondaryCount);
 
 			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+				cmdBuffers.secondary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 				cmdBuffers.secondary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 			}
 		}
@@ -2653,9 +2656,10 @@ private:
 	}
 
 	void createBLAS(VkAccelerationStructureKHR& blas, const vkhelper::BufData& bufferData) {
-		// get the device addresses of the vertex and index buffers
+		uint32_t primitiveCount = bufferData.indexCount / 3;
+
+		// get the device addresses (location of the data on the device) of the vertex and index buffers
 		// the stride and offset are used to go to the starting point of the mesh
-		// the device address represents the location of the data on the device
 		// this allows the data within the gpu to be accessed very efficiently
 		VkDeviceAddress vertexAddress = vkhelper::bufferDeviceAddress(vertBuffer) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
 		VkDeviceAddress indexAddress = vkhelper::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
@@ -2664,7 +2668,7 @@ private:
 		VkAccelerationStructureGeometryKHR geometry = {};
 		geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
 		geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
-		geometry.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+		geometry.flags = 0; // 0 means there are no special flags for the geometry
 		geometry.geometry.triangles.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
 		geometry.geometry.triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
 		geometry.geometry.triangles.vertexData.deviceAddress = vertexAddress;
@@ -2673,18 +2677,23 @@ private:
 		geometry.geometry.triangles.indexType = VK_INDEX_TYPE_UINT32;
 		geometry.geometry.triangles.indexData.deviceAddress = indexAddress;
 
+		VkBuildAccelerationStructureFlagsKHR accelerationFlags = 0;
+		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // allows the blas to be compacted
+		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR; // optimizes the blas for faster path tracing
+		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR; // allows the blas to dynamically be updated for dynamic scenes
+
 		// BLAS build info - specifies the acceleration structure type, the flags, and the geometry
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
 		buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-		buildInfo.flags = VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR;
+		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR; // blas
+		buildInfo.flags = accelerationFlags;
 		buildInfo.geometryCount = 1;
 		buildInfo.pGeometries = &geometry;
 
 		// size requirements for the BLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &bufferData.indexCount, &sizeInfo);
+		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the BLAS - the buffer used in the creation of the blas
 		VkBuffer blasBuffer;
@@ -2705,7 +2714,25 @@ private:
 		VkDeviceMemory scratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkhelper::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+
+		// build range info - specifies the primitive count and offsets for the blas
+		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
+		buildRangeInfo.primitiveCount = primitiveCount;
+		buildRangeInfo.primitiveOffset = 0;
+		buildRangeInfo.transformOffset = 0;
+		buildRangeInfo.firstVertex = 0;
+		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
+
+		// set the dst of the build info to be the blas and add the scratch buffer address
+		buildInfo.dstAccelerationStructure = blas;
+		buildInfo.scratchData.deviceAddress = vkhelper::bufferDeviceAddress(scratchBuffer);
+
+		// build the BLAS
+		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
+		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
+
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
@@ -2772,8 +2799,8 @@ private:
 		vkUnmapMemory(device, stagingVertBufferMem);
 		vkUnmapMemory(device, stagingIndexBufferMem);
 
-		VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-		VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+		VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 
 		VkMemoryAllocateFlags vertM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 		VkMemoryAllocateFlags indexM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
@@ -2893,12 +2920,12 @@ private:
 
 		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 
-		VkCommandPool p = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+		VkCommandPool p = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p);
 		shadowMapCommandBuffers.primary.buffers.push_back(c);
 		shadowMapCommandBuffers.primary.pools.push_back(p);
 
-		VkCommandPool p2 = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+		VkCommandPool p2 = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkCommandBuffer c2 = vkhelper::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
 		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
@@ -3729,7 +3756,7 @@ private:
 		setupFences();
 		createSemaphores();
 
-		commandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value());
+		commandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		initializeMouseInput(true);
 		loadUniqueObjects();
 
