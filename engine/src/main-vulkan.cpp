@@ -436,6 +436,7 @@ private:
 	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
 	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
 	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
+	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
 
 	// scene data and objects
 	std::vector<vkhelper::BufData> bufferData;
@@ -522,7 +523,7 @@ private:
 		loadModel(scale, pos, rotation, MODEL_DIR + path);
 	}
 
-	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 0.6f) {
+	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
 		Light l;
 		l.col = color;
 		l.pos = pos;
@@ -537,7 +538,7 @@ private:
 		return l;
 	}
 
-	Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 0.6f) {
+	Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
 		Light l;
 		l.col = color;
 		l.baseIntensity = intensity;
@@ -824,6 +825,7 @@ private:
 			vkCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(instance, "vkCmdBuildAccelerationStructuresKHR");
 			vkCmdWriteAccelerationStructuresPropertiesKHR = (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)vkGetInstanceProcAddr(instance, "vkCmdWriteAccelerationStructuresPropertiesKHR");
 			vkCmdCopyAccelerationStructureKHR = (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCmdCopyAccelerationStructureKHR");
+			vkGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureDeviceAddressKHR");
 
 			if (!vkCreateAccelerationStructureKHR) throw std::runtime_error("failed to load vkCreateAccelerationStructureKHR()!");
 			if (!vkDestroyAccelerationStructureKHR) throw std::runtime_error("failed to load vkDestroyAccelerationStructureKHR()!");
@@ -831,6 +833,8 @@ private:
 			if (!vkCmdBuildAccelerationStructuresKHR) throw std::runtime_error("failed to load vkCmdBuildAccelerationStructuresKHR()!");
 			if (!vkCmdWriteAccelerationStructuresPropertiesKHR) throw std::runtime_error("failed to load vkCmdWriteAccelerationStructuresPropertiesKHR()!");
 			if (!vkCmdCopyAccelerationStructureKHR) throw std::runtime_error("failed to load vkCmdCopyAccelerationStructureKHR()!");
+			if (!vkGetAccelerationStructureDeviceAddressKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureDeviceAddressKHR()!");
+
 		}
 
 		for (auto& e : deviceExtensions) {
@@ -2662,7 +2666,7 @@ private:
 	}
 
 	VkAccelerationStructureKHR createBLAS(const vkhelper::BufData& bufferData) const {
-		VkAccelerationStructureKHR blas = VK_NULL_HANDLE;
+		VkAccelerationStructureKHR blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
 
 		// get the device addresses (location of the data on the device) of the vertex and index buffers
@@ -2765,7 +2769,7 @@ private:
 		vkhelper::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted BLAS
-		VkAccelerationStructureKHR compactedBLAS = VK_NULL_HANDLE;
+		VkAccelerationStructureKHR compactedBLAS{};
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
@@ -2786,6 +2790,43 @@ private:
 		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		return compactedBLAS;
+	}
+
+
+	void createTLAS() {
+		std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
+
+		for (size_t i = 0; i < objects.size(); i++) {
+			VkAccelerationStructureInstanceKHR meshInstance{};
+			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
+			std::cout << bufferInd << std::endl;
+
+			// copy the models model matrix into the instance data
+			memcpy(&meshInstance.transform, &objects[i]->modelMatrix, sizeof(VkTransformMatrixKHR));
+
+			// device address of the BLAS
+			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
+			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+			addrInfo.accelerationStructure = blas[bufferInd];
+			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+
+			// populate the instance data
+			meshInstance.accelerationStructureReference = blasAddress;
+			meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+			meshInstance.instanceCustomIndex = static_cast<uint32_t>(i);
+			meshInstance.instanceShaderBindingTableRecordOffset = 0;
+			meshInstance.mask = 0xFF;
+			meshInstances.push_back(meshInstance);
+		}
+
+		// create a buffer to hold all of the instances
+		VkDeviceSize iSize = meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
+		VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+		VkBuffer instanceBuffer;
+		VkDeviceMemory instanceBufferMem;
+
+		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 	}
 
 
@@ -2891,6 +2932,8 @@ private:
 
 				blas[bufferInd] = createBLAS(bufferData[bufferInd]);
 			}
+
+			createTLAS();
 		}
 	}
 
