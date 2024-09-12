@@ -440,8 +440,8 @@ private:
 
 	// scene data and objects
 	std::vector<vkhelper::BufData> bufferData;
-	std::vector<VkAccelerationStructureKHR> gBLAS;
-	VkAccelerationStructureKHR gTLAS = VK_NULL_HANDLE;
+	std::vector<VkAccelerationStructureKHR> BLAS;
+	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
 	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
@@ -2666,7 +2666,7 @@ private:
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
-	VkAccelerationStructureKHR createBLAS(const vkhelper::BufData& bufferData) const {
+	void createBLAS(const vkhelper::BufData& bufferData, size_t index) {
 		VkAccelerationStructureKHR blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
 
@@ -2770,31 +2770,28 @@ private:
 		vkhelper::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted BLAS
-		VkAccelerationStructureKHR compactedBLAS{};
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		compactedCreateInfo.buffer = compBlasBuffer;
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &compactedBLAS);
+		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &BLAS[index]);
 
 		// the info for the copying of the original blas to the compacted blas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
 		copyInfo.src = blas;
-		copyInfo.dst = compactedBLAS;
+		copyInfo.dst = BLAS[index];
 
 		// copy the original BLAS to the compacted one
 		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
 		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
-
-		return compactedBLAS;
 	}
 
 
-	VkAccelerationStructureKHR createTLAS() {
+	void createTLAS() {
 		std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -2808,7 +2805,7 @@ private:
 			// device address of the BLAS
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = gBLAS[bufferInd];
+			addrInfo.accelerationStructure = BLAS[bufferInd];
 			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data
@@ -2922,27 +2919,24 @@ private:
 		vkhelper::createBuffer(compTlasBuffer, compTlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted TLAS
-		VkAccelerationStructureKHR compactedTLAS{};
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		compactedCreateInfo.buffer = compTlasBuffer;
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &compactedTLAS);
+		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &TLAS);
 
 		// the info for the copying of the original tlas to the compacted tlas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
 		copyInfo.src = tlas;
-		copyInfo.dst = compactedTLAS;
+		copyInfo.dst = TLAS;
 
 		// copy the original TLAS to the compacted one
 		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
 		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
 		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
-
-		return compactedTLAS;
 	}
 
 
@@ -3043,17 +3037,17 @@ private:
 
 	void setupAccelerationStructures() {
 		if (!rtEnabled) return;
-		gBLAS.resize(getUniqueModels());
+		BLAS.resize(getUniqueModels());
 
 		for (size_t i = 0; i < objects.size(); i++) {
 			size_t modelInd = uniqueModelIndex[objects[i]->meshHash];
 			if (modelInd != i) continue; // skip if not the first instance of the model
 			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
 
-			gBLAS[bufferInd] = createBLAS(bufferData[bufferInd]);
+			createBLAS(bufferData[bufferInd], bufferInd);
 		}
 
-		gTLAS = createTLAS();
+		createTLAS();
 	}
 
 	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
@@ -3103,6 +3097,7 @@ private:
 		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateModelBuffers();
+		if (rtEnabled) createTLAS();
 		recordSecondaryCommandBuffers();
 	}
 
@@ -3979,6 +3974,7 @@ private:
 
 		// create buffers and textures
 		createModelBuffers();
+		setupAccelerationStructures();
 		setupTextures();
 		loadSkybox("night-sky.hdr");
 		setupBuffers();
