@@ -440,8 +440,6 @@ private:
 
 	// scene data and objects
 	std::vector<vkhelper::BufData> bufferData;
-	std::vector<VkAccelerationStructureKHR> BLAS;
-	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
 	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
@@ -449,6 +447,11 @@ private:
 	CamUBO camMatData = {};
 	LightDataSSBO lightData = {};
 	std::vector<std::unique_ptr<Light>> lights;
+
+	// path tracing
+	std::vector<VkAccelerationStructureKHR> BLAS;
+	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
+	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
 	ShadowMapDim shadowProps = {};
 	uint32_t modelIndex = 0; // index of where vertecies are loaded to
@@ -2692,12 +2695,12 @@ private:
 		VkBuildAccelerationStructureFlagsKHR accelerationFlags = 0;
 		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // allows the blas to be compacted
 		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR; // optimizes the blas for faster path tracing
-		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR; // allows the blas to be updated, without having to fully recreate it
 
 		// BLAS build info - specifies the acceleration structure type, the flags, and the geometry
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
 		buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
+		buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 		buildInfo.flags = accelerationFlags;
 		buildInfo.geometryCount = 1;
 		buildInfo.pGeometries = &geometry;
@@ -2790,10 +2793,7 @@ private:
 		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
-
-	void createTLAS() {
-		std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
-
+	void createMeshInstances() {
 		for (size_t i = 0; i < objects.size(); i++) {
 			VkAccelerationStructureInstanceKHR meshInstance{};
 			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
@@ -2816,18 +2816,21 @@ private:
 			meshInstance.mask = 0xFF;
 			meshInstances.push_back(meshInstance);
 		}
+	}
 
+
+	void createTLAS() {
 		// create a buffer to hold all of the instances
 		VkDeviceSize iSize = meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
 		VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-		VkBuffer instanceBuffer;
-		VkDeviceMemory instanceBufferMem;
+		VkBuffer tlasInstanceBuffer;
+		VkDeviceMemory tlasInstanceBufferMem;
 
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
+		vkhelper::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
 		VkAccelerationStructureKHR tlas;
-		VkDeviceAddress instanceAddress = vkhelper::bufferDeviceAddress(instanceBuffer);
+		VkDeviceAddress instanceAddress = vkhelper::bufferDeviceAddress(tlasInstanceBuffer);
 		uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
 
 		// acceleration structure geometry
@@ -2847,6 +2850,7 @@ private:
 		VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
 		buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
 		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+		buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
 		buildInfo.flags = accelerationFlags;
 		buildInfo.geometryCount = 1;
 		buildInfo.pGeometries = &geometry;
@@ -2939,6 +2943,33 @@ private:
 		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
+	void updateTLAS(size_t* objectsIndices, size_t objCount) {
+		for (size_t i = 0; i < objCount; i++) {
+			size_t index = objectsIndices[i];
+
+			VkAccelerationStructureInstanceKHR meshInstance{};
+			size_t bufferInd = modelHashToBufferIndex[objects[index]->meshHash];
+
+			// copy the models model matrix into the instance data
+			memcpy(&meshInstance.transform, &objects[index]->modelMatrix, sizeof(VkTransformMatrixKHR));
+
+			// device address of the BLAS
+			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
+			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+			addrInfo.accelerationStructure = BLAS[bufferInd];
+			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+
+			// populate the instance data
+			meshInstance.accelerationStructureReference = blasAddress;
+			meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+			meshInstance.instanceCustomIndex = static_cast<uint32_t>(index);
+			meshInstance.instanceShaderBindingTableRecordOffset = 0;
+			meshInstance.mask = 0xFF;
+			meshInstances.push_back(meshInstance);
+		}
+
+		createTLAS();
+	}
 
 	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
@@ -3047,6 +3078,7 @@ private:
 			createBLAS(bufferData[bufferInd], bufferInd);
 		}
 
+		createMeshInstances();
 		createTLAS();
 	}
 
@@ -3097,7 +3129,11 @@ private:
 		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		recreateModelBuffers();
-		if (rtEnabled) createTLAS();
+
+		if (rtEnabled) {
+			std::array<size_t, 2> indices = { objects.size() - 2, objects.size() - 1 };
+			updateTLAS(indices.data(), 2);
+		}
 		recordSecondaryCommandBuffers();
 	}
 
