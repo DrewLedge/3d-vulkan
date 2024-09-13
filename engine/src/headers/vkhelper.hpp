@@ -11,7 +11,7 @@ extern VkDevice device;
 extern VkQueue graphicsQueue;
 extern VkPhysicalDevice physicalDevice;
 
-class vkhelper {
+class vkh {
 public:
 	typedef enum {
 		BASE,
@@ -231,13 +231,13 @@ public:
 
 	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
+		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 	}
 
 	template<typename ObjType>
 	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		vkhelper::createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
+		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 
 		// once memory is bound, map and fill it
 		void* data;

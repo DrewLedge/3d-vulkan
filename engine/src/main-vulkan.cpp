@@ -233,7 +233,7 @@ private:
 		dvl::Texture cubemap;
 		VkPipelineLayout pipelineLayout;
 		VkPipeline pipeline;
-		vkhelper::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
+		vkh::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
 		VkBuffer vertBuffer;
 		VkDeviceMemory vertBufferMem;
 		VkBuffer indBuffer;
@@ -367,7 +367,7 @@ private:
 	VkQueue presentQueue = VK_NULL_HANDLE;
 	VkQueue computeQueue = VK_NULL_HANDLE;
 	VkQueue transferQueue = VK_NULL_HANDLE;
-	vkhelper::QueueFamilyIndices queueFamilyIndices;
+	vkh::QueueFamilyIndices queueFamilyIndices;
 
 	// key press objects
 	KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
@@ -439,7 +439,7 @@ private:
 	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
 
 	// scene data and objects
-	std::vector<vkhelper::BufData> bufferData;
+	std::vector<vkh::BufData> bufferData;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
 	std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
 	std::vector<uint32_t> playerModels;
@@ -686,7 +686,7 @@ private:
 		VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
 		int highestScore = -1;
 		for (const auto& device : devices) {
-			vkhelper::QueueFamilyIndices indices = vkhelper::findQueueFamilyIndices(surface, device);
+			vkh::QueueFamilyIndices indices = vkh::findQueueFamilyIndices(surface, device);
 			if (indices.allComplete()) {
 				VkPhysicalDeviceProperties deviceProperties;
 				vkGetPhysicalDeviceProperties(device, &deviceProperties);
@@ -703,7 +703,7 @@ private:
 		}
 
 		// get all of the queue family indices for the best selected device
-		queueFamilyIndices = vkhelper::findQueueFamilyIndices(surface, bestDevice);
+		queueFamilyIndices = vkh::findQueueFamilyIndices(surface, bestDevice);
 
 		// use the best device
 		physicalDevice = bestDevice;
@@ -894,12 +894,12 @@ private:
 	}
 
 	void createSC() {
-		vkhelper::SCsupportDetails swapChainSupport = vkhelper::querySCsupport(surface);
+		vkh::SCsupportDetails swapChainSupport = vkh::querySCsupport(surface);
 
 		// choose the best surface format, present mode, and swap extent for the swap chain
-		VkSurfaceFormatKHR surfaceFormat = vkhelper::chooseSwapSurfaceFormat(swapChainSupport.formats);
-		VkPresentModeKHR present = vkhelper::chooseSwapPresentMode(swapChainSupport.presentModes);
-		VkExtent2D extent = vkhelper::chooseSwapExtent(swapChainSupport.capabilities, SCREEN_WIDTH, SCREEN_HEIGHT);
+		VkSurfaceFormatKHR surfaceFormat = vkh::chooseSwapSurfaceFormat(swapChainSupport.formats);
+		VkPresentModeKHR present = vkh::chooseSwapPresentMode(swapChainSupport.presentModes);
+		VkExtent2D extent = vkh::chooseSwapExtent(swapChainSupport.capabilities, SCREEN_WIDTH, SCREEN_HEIGHT);
 
 		// get the number of images for the sc. this is the minumum + 1
 		swap.imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -957,8 +957,8 @@ private:
 	void loadSkybox(std::string path) {
 		skybox.cubemap.path = SKYBOX_DIR + path;
 		createTexturedCubemap(skybox.cubemap);
-		vkhelper::createImageView(skybox.cubemap, vkhelper::CUBEMAP);
-		vkhelper::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkhelper::CUBEMAP);
+		vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
+		vkh::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkh::CUBEMAP);
 
 		skybox.bufferData.vertexOffset = 0;
 		skybox.bufferData.vertexCount = 8;
@@ -972,36 +972,36 @@ private:
 		// load the textures
 		if (newObject.material.baseColor.found) {
 			createTexturedImage(newObject.material.baseColor, true);
-			vkhelper::createImageView(newObject.material.baseColor);
-			vkhelper::createSampler(newObject.material.baseColor.sampler, newObject.material.baseColor.mipLevels);
+			vkh::createImageView(newObject.material.baseColor);
+			vkh::createSampler(newObject.material.baseColor.sampler, newObject.material.baseColor.mipLevels);
 
 		}
 
 		if (newObject.material.metallicRoughness.found) {
-			createTexturedImage(newObject.material.metallicRoughness, true, vkhelper::METALLIC);
-			vkhelper::createImageView(newObject.material.metallicRoughness, vkhelper::METALLIC);
-			vkhelper::createSampler(newObject.material.metallicRoughness.sampler, newObject.material.metallicRoughness.mipLevels);
+			createTexturedImage(newObject.material.metallicRoughness, true, vkh::METALLIC);
+			vkh::createImageView(newObject.material.metallicRoughness, vkh::METALLIC);
+			vkh::createSampler(newObject.material.metallicRoughness.sampler, newObject.material.metallicRoughness.mipLevels);
 
 		}
 
 		if (newObject.material.normalMap.found) {
-			createTexturedImage(newObject.material.normalMap, true, vkhelper::NORMAL);
-			vkhelper::createImageView(newObject.material.normalMap, vkhelper::NORMAL);
-			vkhelper::createSampler(newObject.material.normalMap.sampler, newObject.material.normalMap.mipLevels);
+			createTexturedImage(newObject.material.normalMap, true, vkh::NORMAL);
+			vkh::createImageView(newObject.material.normalMap, vkh::NORMAL);
+			vkh::createSampler(newObject.material.normalMap.sampler, newObject.material.normalMap.mipLevels);
 
 		}
 
 		if (newObject.material.emissiveMap.found) {
-			createTexturedImage(newObject.material.emissiveMap, true, vkhelper::EMISSIVE);
-			vkhelper::createImageView(newObject.material.emissiveMap, vkhelper::EMISSIVE);
-			vkhelper::createSampler(newObject.material.emissiveMap.sampler, newObject.material.emissiveMap.mipLevels);
+			createTexturedImage(newObject.material.emissiveMap, true, vkh::EMISSIVE);
+			vkh::createImageView(newObject.material.emissiveMap, vkh::EMISSIVE);
+			vkh::createSampler(newObject.material.emissiveMap.sampler, newObject.material.emissiveMap.mipLevels);
 
 		}
 
 		if (newObject.material.occlusionMap.found) {
-			createTexturedImage(newObject.material.occlusionMap, true, vkhelper::OCCLUSION);
-			vkhelper::createImageView(newObject.material.occlusionMap, vkhelper::OCCLUSION);
-			vkhelper::createSampler(newObject.material.occlusionMap.sampler, newObject.material.occlusionMap.mipLevels);
+			createTexturedImage(newObject.material.occlusionMap, true, vkh::OCCLUSION);
+			vkh::createImageView(newObject.material.occlusionMap, vkh::OCCLUSION);
+			vkh::createSampler(newObject.material.occlusionMap.sampler, newObject.material.occlusionMap.mipLevels);
 
 		}
 
@@ -1058,40 +1058,40 @@ private:
 	}
 
 	void setupTextures() {
-		depthFormat = vkhelper::findDepthFormat();
+		depthFormat = vkh::findDepthFormat();
 		static bool init = true;
 
 		// opaque pass color image
-		vkhelper::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+		vkh::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
 			commandPool, opaquePassTextures.color.sampleCount);
-		vkhelper::createImageView(opaquePassTextures.color, swap.imageFormat);
-		vkhelper::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
+		vkh::createImageView(opaquePassTextures.color, swap.imageFormat);
+		vkh::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
 
 		// opaque pass depth image
-		vkhelper::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		vkh::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			opaquePassTextures.depth.sampleCount);
-		vkhelper::createImageView(opaquePassTextures.depth, vkhelper::DEPTH);
-		vkhelper::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkhelper::DEPTH);
+		vkh::createImageView(opaquePassTextures.depth, vkh::DEPTH);
+		vkh::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkh::DEPTH);
 
 		// weighted color image
-		vkhelper::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		vkh::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			wboit.weightedColor.sampleCount);
-		vkhelper::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
-		vkhelper::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
+		vkh::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
+		vkh::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
 
 		// composition image
-		vkhelper::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		vkh::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			compTex.sampleCount);
-		vkhelper::createImageView(compTex, swap.imageFormat);
-		vkhelper::createSampler(compTex.sampler, compTex.mipLevels);
+		vkh::createImageView(compTex, swap.imageFormat);
+		vkh::createSampler(compTex.sampler, compTex.mipLevels);
 
 		// shadowmaps
 		if (init) {
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkhelper::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				vkh::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 					lights[i]->shadowMapData.sampleCount);
-				vkhelper::createImageView(lights[i]->shadowMapData, vkhelper::DEPTH);
-				vkhelper::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkhelper::DEPTH);
+				vkh::createImageView(lights[i]->shadowMapData, vkh::DEPTH);
+				vkh::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkh::DEPTH);
 			}
 			init = false;
 		}
@@ -1128,18 +1128,18 @@ private:
 		lightData.lightCords.resize(lights.size());
 		lightData.memSize = lights.size() * sizeof(LightDataObject);
 
-		vkhelper::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 	}
 
 	void setupBuffers() {
-		vkhelper::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
-		vkhelper::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 
 		createLightBuffer();
 
 		// skybox buffer data
-		vkhelper::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
-		vkhelper::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+		vkh::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+		vkh::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
 	}
 
 	void calcCameraMats() {
@@ -1268,8 +1268,8 @@ private:
 
 	template<typename Stage>
 	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
-		descs.layouts[index] = vkhelper::createDSLayout(index, type, size, shaderStage);
-		descs.pools[index] = vkhelper::createDSPool(type, size);
+		descs.layouts[index] = vkh::createDSLayout(index, type, size, shaderStage);
+		descs.pools[index] = vkh::createDSPool(type, size);
 	}
 
 	void createDS() {
@@ -1357,13 +1357,13 @@ private:
 		}
 
 		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
-		descriptorWrites[0] = vkhelper::createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos.data(), imageInfos.size());
-		descriptorWrites[1] = vkhelper::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		descriptorWrites[2] = vkhelper::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), shadowInfos.size());
-		descriptorWrites[3] = vkhelper::createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
-		descriptorWrites[4] = vkhelper::createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
-		descriptorWrites[5] = vkhelper::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo.data(), compositionPassImageInfo.size());
-		descriptorWrites[6] = vkhelper::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, opaquePassDepthInfo);
+		descriptorWrites[0] = vkh::createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos.data(), imageInfos.size());
+		descriptorWrites[1] = vkh::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		descriptorWrites[2] = vkh::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), shadowInfos.size());
+		descriptorWrites[3] = vkh::createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
+		descriptorWrites[4] = vkh::createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
+		descriptorWrites[5] = vkh::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo.data(), compositionPassImageInfo.size());
+		descriptorWrites[6] = vkh::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, opaquePassDepthInfo);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1438,14 +1438,14 @@ private:
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
 		if (cubeMap) {
-			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, 0);
+			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, 0);
 		}
 		else {
-			vkhelper::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, 0);
+			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, 0);
 		}
 	}
 
-	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkhelper::TextureType type = vkhelper::BASE) {
+	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkh::TextureType type = vkh::BASE) {
 		if (tex.stagingBuffer == VK_NULL_HANDLE) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path, imageData);
@@ -1457,10 +1457,10 @@ private:
 			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
 			VkFormat imgFormat;
 			switch (type) {
-			case vkhelper::BASE:
+			case vkh::BASE:
 				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
 				break;
-			case vkhelper::EMISSIVE:
+			case vkh::EMISSIVE:
 				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
 				break;
 			default:
@@ -1468,7 +1468,7 @@ private:
 				break;
 			}
 
-			vkhelper::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
+			vkh::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
 
 			// init the VkBufferImageCopy struct for the styaging buffer to image copying
 			VkBufferImageCopy region{};
@@ -1482,9 +1482,9 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
 
-			VkCommandBuffer tempBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+			VkCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
 
-			vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
+			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
 			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
@@ -1493,7 +1493,7 @@ private:
 			// create mipmaps for the image if enabled
 			if (doMipmap) {
 				for (uint32_t j = 0; j < tex.mipLevels; j++) {
-					vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
+					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
 
 					// if the cutrrent mip level isnt the last, blit the image to generate the next mip level
 					// bliting is the process of transfering the image data from one image to another usually with a form of scaling or filtering
@@ -1517,7 +1517,7 @@ private:
 						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
-					vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
+					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
 
 					//for the next mip level, divide the width and height by 2, unless they are already 1
 					if (mipWidth > 1) mipWidth /= 2;
@@ -1525,10 +1525,10 @@ private:
 				}
 			}
 			else {
-				vkhelper::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
+				vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
 			}
 
-			vkhelper::endSingleTimeCommands(tempBuffer, commandPool, graphicsQueue);
+			vkh::endSingleTimeCommands(tempBuffer, commandPool, graphicsQueue);
 			stbi_image_free(imageData);
 			imageData = nullptr;
 		}
@@ -1563,10 +1563,10 @@ private:
 			throw std::runtime_error("Cubemap atlas dimensions are invalid!!");
 		}
 
-		vkhelper::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
+		vkh::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
 
-		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
-		VkCommandBuffer copyCmdBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		vkh::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
+		VkCommandBuffer copyCmdBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = { {{2, 1}, {0, 1}, {1, 0}, {1, 2}, {1, 1}, {3, 1}} };
@@ -1590,9 +1590,9 @@ private:
 
 			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
-		vkhelper::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
-		vkhelper::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
+		vkh::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
 		stbi_image_free(skyboxData);
 		skyboxData = nullptr;
 	}
@@ -1600,8 +1600,8 @@ private:
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
-		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
-		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
+		vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
@@ -1864,8 +1864,8 @@ private:
 		// get shader data
 		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
 		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
-		VkShaderModule shadowVertShaderModule = vkhelper::createShaderModule(vertShaderSPV);
-		VkShaderModule shadowFragShaderModule = vkhelper::createShaderModule(fragShaderSPV);
+		VkShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
+		VkShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
 
 		VkPipelineShaderStageCreateInfo vertStage{};
 		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2051,8 +2051,8 @@ private:
 	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
-		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
-		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
+		vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2175,8 +2175,8 @@ private:
 	void createWBOITPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "wboit_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "wboit_frag_shader.spv");
-		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
-		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
+		vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2392,8 +2392,8 @@ private:
 	void createCompositionPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "composition_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "composition_frag_shader.spv");
-		vertShaderModule = vkhelper::createShaderModule(vertShaderCode);
-		fragShaderModule = vkhelper::createShaderModule(fragShaderCode);
+		vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2624,10 +2624,10 @@ private:
 		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
 
 		// upload fonts, etc:
-		VkCommandPool guiCommandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer guiCommandBuffer = vkhelper::beginSingleTimeCommands(guiCommandPool);
+		VkCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
-		vkhelper::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
 
@@ -2647,8 +2647,8 @@ private:
 		cmdBuffers.primary.resize(primaryCount);
 
 		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-			cmdBuffers.primary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
+			cmdBuffers.primary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+			cmdBuffers.primary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
 		}
 
 		if (secondaryCount) {
@@ -2656,8 +2656,8 @@ private:
 			cmdBuffers.secondary.resize(secondaryCount);
 
 			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools[i] = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-				cmdBuffers.secondary.buffers[i] = vkhelper::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+				cmdBuffers.secondary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+				cmdBuffers.secondary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 			}
 		}
 	}
@@ -2669,15 +2669,15 @@ private:
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
-	void createBLAS(const vkhelper::BufData& bufferData, size_t index) {
+	void createBLAS(const vkh::BufData& bufferData, size_t index) {
 		VkAccelerationStructureKHR blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
 
 		// get the device addresses (location of the data on the device) of the vertex and index buffers
 		// the stride and offset are used to go to the starting point of the mesh
 		// this allows the data within the gpu to be accessed very efficiently
-		VkDeviceAddress vertexAddress = vkhelper::bufferDeviceAddress(vertBuffer) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
-		VkDeviceAddress indexAddress = vkhelper::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
+		VkDeviceAddress vertexAddress = vkh::bufferDeviceAddress(vertBuffer) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
+		VkDeviceAddress indexAddress = vkh::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
 
 		// acceleration structure geometry - specifies the device addresses and data inside of the vertex and index buffers
 		VkAccelerationStructureGeometryKHR geometry = {};
@@ -2714,7 +2714,7 @@ private:
 		VkBuffer blasBuffer;
 		VkDeviceMemory blasMem;
 		VkBufferUsageFlags blasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the BLAS
 		VkAccelerationStructureCreateInfoKHR createInfo = {};
@@ -2728,7 +2728,7 @@ private:
 		VkBuffer scratchBuffer;
 		VkDeviceMemory scratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// build range info - specifies the primitive count and offsets for the blas
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
@@ -2740,12 +2740,12 @@ private:
 
 		// set the dst of the build info to be the blas and add the scratch buffer address
 		buildInfo.dstAccelerationStructure = blas;
-		buildInfo.scratchData.deviceAddress = vkhelper::bufferDeviceAddress(scratchBuffer);
+		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(scratchBuffer);
 
 		// build and populate the BLAS with the geometry data
-		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
 		VkQueryPool queryPool;
@@ -2757,10 +2757,10 @@ private:
 
 		// query the size of the BLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
 		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
@@ -2770,7 +2770,7 @@ private:
 		VkBuffer compBlasBuffer;
 		VkDeviceMemory compBlasMem;
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted BLAS
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
@@ -2788,9 +2788,9 @@ private:
 		copyInfo.dst = BLAS[index];
 
 		// copy the original BLAS to the compacted one
-		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
 	void createMeshInstances() {
@@ -2827,10 +2827,10 @@ private:
 		VkBuffer tlasInstanceBuffer;
 		VkDeviceMemory tlasInstanceBufferMem;
 
-		vkhelper::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
+		vkh::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
 		VkAccelerationStructureKHR tlas;
-		VkDeviceAddress instanceAddress = vkhelper::bufferDeviceAddress(tlasInstanceBuffer);
+		VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlasInstanceBuffer);
 		uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
 
 		// acceleration structure geometry
@@ -2864,7 +2864,7 @@ private:
 		VkBuffer tlasBuffer;
 		VkDeviceMemory tlasMem;
 		VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(tlasBuffer, tlasMem, sizeInfo.accelerationStructureSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(tlasBuffer, tlasMem, sizeInfo.accelerationStructureSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the TLAS
 		VkAccelerationStructureCreateInfoKHR createInfo = {};
@@ -2878,7 +2878,7 @@ private:
 		VkBuffer scratchBuffer;
 		VkDeviceMemory scratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// build range info - specifies the primitive count and offsets for the tlas
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
@@ -2890,12 +2890,12 @@ private:
 
 		// set the dst of the build info to be the tlas and add the scratch buffer address
 		buildInfo.dstAccelerationStructure = tlas;
-		buildInfo.scratchData.deviceAddress = vkhelper::bufferDeviceAddress(scratchBuffer);
+		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(scratchBuffer);
 
 		// build and populate the TLAS
-		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
 		VkQueryPool queryPool;
@@ -2907,10 +2907,10 @@ private:
 
 		// query the size of the TLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
 		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
@@ -2920,7 +2920,7 @@ private:
 		VkBuffer compTlasBuffer;
 		VkDeviceMemory compTlasMem;
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkhelper::createBuffer(compTlasBuffer, compTlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(compTlasBuffer, compTlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted TLAS
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
@@ -2938,9 +2938,9 @@ private:
 		copyInfo.dst = TLAS;
 
 		// copy the original TLAS to the compacted one
-		commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
 	void updateTLAS(size_t* objectsIndices, size_t objCount) {
@@ -3002,13 +3002,13 @@ private:
 		const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 		// create and map the vertex buffer
-		vkhelper::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+		vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* vertexData;
 		vkMapMemory(device, stagingVertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
-		vkhelper::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+		vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* indexData;
 		vkMapMemory(device, stagingIndexBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
@@ -3041,10 +3041,10 @@ private:
 		VkMemoryAllocateFlags vertM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 		VkMemoryAllocateFlags indexM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 
-		vkhelper::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
-		vkhelper::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
+		vkh::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
+		vkh::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
-		VkCommandBuffer commandBuffer = vkhelper::beginSingleTimeCommands(commandPool);
+		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		VkBufferCopy copyRegion{};
 
 		// copy the vert staging buffer into the dst vert buffer
@@ -3055,7 +3055,7 @@ private:
 		copyRegion.size = totalIndexBufferSize;
 		vkCmdCopyBuffer(commandBuffer, stagingIndexBuffer, indBuffer, 1, &copyRegion);
 
-		vkhelper::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// free the staging buffers
 		vkDestroyBuffer(device, stagingVertBuffer, nullptr);
@@ -3147,8 +3147,8 @@ private:
 		lightBufferInfo.range = lightData.memSize;
 
 		std::array<VkWriteDescriptorSet, 2> dw{};
-		dw[0] = vkhelper::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		dw[1] = vkhelper::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
+		dw[0] = vkh::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		dw[1] = vkh::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
 	}
@@ -3161,20 +3161,20 @@ private:
 		dml::vec3 target = pos + dml::quatToDir(cam.quat);
 		Light l = createLight(pos, target);
 
-		vkhelper::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+		vkh::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
 			l.shadowMapData.sampleCount);
-		vkhelper::createImageView(l.shadowMapData, vkhelper::DEPTH);
-		vkhelper::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkhelper::DEPTH);
+		vkh::createImageView(l.shadowMapData, vkh::DEPTH);
+		vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
 
-		vkhelper::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 
-		VkCommandPool p = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c = vkhelper::allocateCommandBuffers(p);
+		VkCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkCommandBuffer c = vkh::allocateCommandBuffers(p);
 		shadowMapCommandBuffers.primary.buffers.push_back(c);
 		shadowMapCommandBuffers.primary.pools.push_back(p);
 
-		VkCommandPool p2 = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c2 = vkhelper::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+		VkCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
 		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 		shadowMapCommandBuffers.secondary.pools.push_back(p2);
@@ -3514,7 +3514,7 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkhelper::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+				vkh::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
 				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 				vkCmdExecuteCommands(wboitCommandBuffer, static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
@@ -3643,33 +3643,33 @@ private:
 		if (initial) {
 			// create the shadowmap framebuffers
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkhelper::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
 			}
 		}
 
 		// create the opaque pass framebuffer
 		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView, opaquePassTextures.depth.imageView };
-		vkhelper::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
+		vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
 
 		// create the wboit framebuffer
 		std::vector<VkImageView> attachmentsW = { wboit.weightedColor.imageView };
-		vkhelper::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsW.data(), attachmentsW.size(), swap.extent.width, swap.extent.height);
+		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsW.data(), attachmentsW.size(), swap.extent.width, swap.extent.height);
 
 		// create the composition framebuffers
 		size_t swapSize = swap.imageViews.size();
 		if (initial) swap.framebuffers.resize(swapSize);
 		for (size_t i = 0; i < swapSize; i++) {
 			std::vector<VkImageView> attachments = { compTex.imageView, swap.imageViews[i] };
-			vkhelper::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
+			vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
 		}
 	}
 
 	void createSemaphores() {
-		vkhelper::createSemaphore(imageAvailableSemaphore);
-		vkhelper::createSemaphore(renderFinishedSemaphore);
-		vkhelper::createSemaphore(shadowSemaphore);
-		vkhelper::createSemaphore(wboitSemaphore);
-		vkhelper::createSemaphore(compSemaphore);
+		vkh::createSemaphore(imageAvailableSemaphore);
+		vkh::createSemaphore(renderFinishedSemaphore);
+		vkh::createSemaphore(shadowSemaphore);
+		vkh::createSemaphore(wboitSemaphore);
+		vkh::createSemaphore(compSemaphore);
 	}
 
 	void freeTexture(dvl::Texture& t) {
@@ -3743,13 +3743,13 @@ private:
 		std::vector<VkSubmitInfo> submitInfos;
 
 		for (VkCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
-			VkSubmitInfo sub = vkhelper::createSubmitInfo(&shadow, 1);
+			VkSubmitInfo sub = vkh::createSubmitInfo(&shadow, 1);
 			submitInfos.push_back(sub);
 		}
 
-		submitInfos.push_back(vkhelper::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
-		submitInfos.push_back(vkhelper::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
-		submitInfos.push_back(vkhelper::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
+		submitInfos.push_back(vkh::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
+		submitInfos.push_back(vkh::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
+		submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
 
 		// submit all command buffers in a single call
 		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame]) != VK_SUCCESS) {
@@ -4004,7 +4004,7 @@ private:
 		setupFences();
 		createSemaphores();
 
-		commandPool = vkhelper::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		commandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		initializeMouseInput(true);
 		loadUniqueObjects();
 
