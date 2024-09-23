@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <dml.hpp>
 #include <utils.hpp>
+#include <vkhelper.hpp>
 
 class dvl {
 public:
@@ -86,7 +87,7 @@ public:
 		VkImageView imageView;
 		std::string path;
 		uint32_t mipLevels;
-		VkBuffer stagingBuffer;
+		VkhBuffer stagingBuffer;
 		VkDeviceMemory stagingBufferMem;
 		tinygltf::Image gltfImage;
 		bool found;
@@ -101,7 +102,7 @@ public:
 			imageView(VK_NULL_HANDLE),
 			path(""),
 			mipLevels(1),
-			stagingBuffer(VK_NULL_HANDLE),
+			stagingBuffer(),
 			stagingBufferMem(VK_NULL_HANDLE),
 			gltfImage(),
 			found(false),
@@ -134,7 +135,7 @@ public:
 			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);

@@ -6,10 +6,91 @@
 #include <stdexcept>
 #include <string>
 #include <optional>
+#include <memory>
+
 
 extern VkDevice device;
 extern VkQueue graphicsQueue;
 extern VkPhysicalDevice physicalDevice;
+
+// ------------------ RAII WRAPPERS ------------------ //
+template<typename T>
+struct VkhObject;
+
+template<typename Object>
+struct VkhObj {
+	struct ObjWrapper {
+		Object object;
+
+		ObjWrapper(Object obj) : object(obj) {}
+
+		// custom destructor
+		~ObjWrapper() {
+			if (object != VK_NULL_HANDLE) {
+				VkhObject<Object>::destroy(object);
+			}
+		}
+	};
+
+	std::shared_ptr<ObjWrapper> objectP;
+
+	// constructor
+	VkhObj() : objectP(std::make_shared<ObjWrapper>(VK_NULL_HANDLE)) {}
+
+	// copy constructor and assignment
+	VkhObj(const VkhObj& other) : objectP(other.objectP) {}
+	VkhObj& operator=(const VkhObj& other) {
+		if (this != &other) {
+			objectP = other.objectP;
+		}
+		return *this;
+	}
+
+	// move constructor and assignment
+	VkhObj(VkhObj&& other) noexcept = default;
+	VkhObj& operator=(VkhObj&& other) noexcept = default;
+
+	// destructor
+	~VkhObj() = default;
+
+	// equality operators
+	bool operator==(const VkhObj& other) const noexcept {
+		return objectP->object == other.objectP->object;
+	}
+	bool operator!=(const VkhObj& other) const noexcept { return !(*this == other); }
+
+	bool valid() const noexcept { return objectP->object != VK_NULL_HANDLE; }
+
+	explicit operator Object() const noexcept { return objectP->object; }
+
+	// const
+	const Object& get() const noexcept { return objectP->object; }
+	const Object* getP() const noexcept { return &objectP->object; }
+
+	// not const
+	Object& get() noexcept { return objectP->object; }
+	Object* getP() noexcept { return &objectP->object; }
+
+	// get the current use count of the obj
+	size_t use_count() const noexcept { return objectP.use_count(); }
+};
+
+template<typename T>
+struct std::hash<VkhObj<T>> {
+	size_t operator()(const VkhObj<T>& obj) const noexcept {
+		return (obj.valid()) ? (std::hash<T>()(obj.get())) : 0;
+	}
+};
+
+template<>
+struct VkhObject<VkBuffer> {
+	static void destroy(VkBuffer buffer) {
+		std::cout << "buffer was destroyed: " << buffer << std::endl;
+		vkDestroyBuffer(device, buffer, nullptr);
+	}
+};
+
+using VkhBuffer = VkhObj<VkBuffer>;
 
 class vkh {
 public:
@@ -178,15 +259,15 @@ public:
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	static VkDeviceAddress bufferDeviceAddress(const VkBuffer& buffer) {
+	static VkDeviceAddress bufferDeviceAddress(const VkhBuffer& buffer) {
 		VkBufferDeviceAddressInfo bufferDeviceAddressInfo{};
 		bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		bufferDeviceAddressInfo.buffer = buffer;
+		bufferDeviceAddressInfo.buffer = buffer.get();
 
 		return vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
 	}
 
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createBuffer(VkhBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = size;
@@ -194,13 +275,13 @@ public:
 		bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
 		// create the buffer
-		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, &buffer) != VK_SUCCESS) {
+		if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create buffer!");
 		}
 
 		// get the memory requirements for the buffer
 		VkMemoryRequirements memoryRequirements;
-		vkGetBufferMemoryRequirements(device, buffer, &memoryRequirements);
+		vkGetBufferMemoryRequirements(device, buffer.get(), &memoryRequirements);
 
 		// mem allocation flags
 		VkMemoryAllocateFlagsInfo allocFlagsInfo{};
@@ -224,18 +305,18 @@ public:
 		}
 
 		// bind the memory to the buffer
-		if (vkBindBufferMemory(device, buffer, bufferMem, 0) != VK_SUCCESS) {
+		if (vkBindBufferMemory(device, buffer.get(), bufferMem, 0) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to bind memory to buffer!");
 		}
 	}
 
-	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 	}
 
 	template<typename ObjType>
-	static void createStagingBuffer(VkBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 
@@ -258,12 +339,12 @@ public:
 	}
 
 	template<typename ObjType>
-	static void createBuffer(VkBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
+	static void createBuffer(VkhBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
 		const VkCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
 		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
 		if (staging) {
-			VkBuffer stagingBuffer;
+			VkhBuffer stagingBuffer;
 			VkDeviceMemory stagingBufferMem;
 			createStagingBuffer(stagingBuffer, stagingBufferMem, object, size, memAllocFlags);
 
@@ -271,11 +352,8 @@ public:
 			VkCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 			VkBufferCopy copyRegion{};
 			copyRegion.size = size;
-			vkCmdCopyBuffer(commandBuffer, stagingBuffer, buffer, 1, &copyRegion);
+			vkCmdCopyBuffer(commandBuffer, stagingBuffer.get(), buffer.get(), 1, &copyRegion);
 			endSingleTimeCommands(commandBuffer, commandPool, queue);
-
-			// free the staging buffer
-			vkDestroyBuffer(device, stagingBuffer, nullptr);
 			vkFreeMemory(device, stagingBufferMem, nullptr);
 		}
 		else {
