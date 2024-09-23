@@ -82,9 +82,9 @@ public:
 
 	struct Texture {
 		VkSampler sampler;
-		VkImage image;
+		VkhImage image;
 		VkhDeviceMemory memory;
-		VkImageView imageView;
+		VkhImageView imageView;
 		std::string path;
 		uint32_t mipLevels;
 		VkhBuffer stagingBuffer;
@@ -97,9 +97,9 @@ public:
 
 		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
 			: sampler(VK_NULL_HANDLE),
-			image(VK_NULL_HANDLE),
+			image(),
 			memory(),
-			imageView(VK_NULL_HANDLE),
+			imageView(),
 			path(""),
 			mipLevels(1),
 			stagingBuffer(),
@@ -129,10 +129,10 @@ public:
 	struct TexHash {
 		size_t operator()(const Texture& tex) const {
 			size_t seed = 0;
-			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);

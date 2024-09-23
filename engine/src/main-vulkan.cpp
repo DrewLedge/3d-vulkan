@@ -287,10 +287,10 @@ private:
 
 	struct SCData {
 		VkSwapchainKHR swapChain;
-		std::vector<VkImage> images;
+		std::vector<VkhImage> images;
 		VkFormat imageFormat;
 		VkExtent2D extent;
-		std::vector<VkImageView> imageViews;
+		std::vector<VkhImageView> imageViews;
 		uint32_t imageCount;
 		std::vector<VkFramebuffer> framebuffers;
 
@@ -953,8 +953,16 @@ private:
 
 		// get the swap chain images
 		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
+
 		swap.images.resize(swap.imageCount);
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); // get the images in the swap chain
+		std::vector<VkImage> images(swap.imageCount);
+
+		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, images.data());
+		for (uint32_t i = 0; i < swap.imageCount; i++) {
+			swap.images[i] = VkhImage(images[i]);
+			swap.images[i].setDestroy(false); // obj wont be automatically freed when out of scope
+		}
+
 		swap.imageFormat = surfaceFormat.format;
 		swap.extent = extent;
 
@@ -1114,10 +1122,11 @@ private:
 
 	void createSCImageViews() { //create the image views for the swap chain images
 		swap.imageViews.resize(swap.images.size());
+
 		for (size_t i = 0; i < swap.images.size(); i++) {
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			newinfo.image = swap.images[i]; // assign the current swap chain image
+			newinfo.image = swap.images[i].get(); // assign the current swap chain image
 			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			newinfo.format = swap.imageFormat;
 
@@ -1132,7 +1141,7 @@ private:
 			newinfo.subresourceRange.levelCount = 1;
 			newinfo.subresourceRange.baseArrayLayer = 0;
 			newinfo.subresourceRange.layerCount = 1;
-			VkResult result = vkCreateImageView(device, &newinfo, nullptr, &swap.imageViews[i]);
+			VkResult result = vkCreateImageView(device, &newinfo, nullptr, swap.imageViews[i].getP());
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to create image views for the swapchain!!");
 			}
@@ -1290,7 +1299,7 @@ private:
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = allTextures[i].imageView;
+			imageInfos[i].imageView = allTextures[i].imageView.get();
 			imageInfos[i].sampler = allTextures[i].sampler;
 		}
 
@@ -1305,13 +1314,13 @@ private:
 		shadowInfos.resize(lightSize);
 		for (size_t i = 0; i < lightSize; i++) {
 			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView;
+			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.get();
 			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler;
 		}
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		skyboxInfo.imageView = skybox.cubemap.imageView;
+		skyboxInfo.imageView = skybox.cubemap.imageView.get();
 		skyboxInfo.sampler = skybox.cubemap.sampler;
 
 		VkDescriptorBufferInfo camMatBufferInfo{};
@@ -1323,13 +1332,13 @@ private:
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
 		for (size_t i = 0; i < texCompSize; i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView : wboit.weightedColor.imageView;
+			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.get() : wboit.weightedColor.imageView.get();
 			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler : wboit.weightedColor.sampler;
 		}
 
 		VkDescriptorImageInfo opaquePassDepthInfo{};
 		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView;
+		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.get();
 		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler;
 
 		const uint8_t size = 7;
@@ -1498,7 +1507,7 @@ private:
 			VkCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
-			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer.get(), tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
@@ -1527,7 +1536,7 @@ private:
 						blit.dstSubresource.mipLevel = j + 1;
 						blit.dstSubresource.baseArrayLayer = 0;
 						blit.dstSubresource.layerCount = 1;
-						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+						vkCmdBlitImage(tempBuffer, tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
 					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
@@ -1601,7 +1610,7 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { faceWidth, faceHeight, 1 };
 
-			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer.get(), tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
 		vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
@@ -3152,7 +3161,7 @@ private:
 		vkh::createImageView(l.shadowMapData, vkh::DEPTH);
 		vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
 
-		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.getP(), 1, shadowProps.width, shadowProps.height);
 
 		VkCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkCommandBuffer c = vkh::allocateCommandBuffers(p);
@@ -3169,7 +3178,7 @@ private:
 
 		VkDescriptorImageInfo shadowInfo{};
 		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-		shadowInfo.imageView = lights.back()->shadowMapData.imageView;
+		shadowInfo.imageView = lights.back()->shadowMapData.imageView.get();
 		shadowInfo.sampler = lights.back()->shadowMapData.sampler;
 		shadowInfos.push_back(shadowInfo);
 
@@ -3627,23 +3636,22 @@ private:
 		if (initial) {
 			// create the shadowmap framebuffers
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.getP(), 1, shadowProps.width, shadowProps.height);
 			}
 		}
 
 		// create the opaque pass framebuffer
-		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView, opaquePassTextures.depth.imageView };
+		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView.get(), opaquePassTextures.depth.imageView.get() };
 		vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
 
 		// create the wboit framebuffer
-		std::vector<VkImageView> attachmentsW = { wboit.weightedColor.imageView };
-		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsW.data(), attachmentsW.size(), swap.extent.width, swap.extent.height);
+		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.getP(), 1, swap.extent.width, swap.extent.height);
 
 		// create the composition framebuffers
 		size_t swapSize = swap.imageViews.size();
 		if (initial) swap.framebuffers.resize(swapSize);
 		for (size_t i = 0; i < swapSize; i++) {
-			std::vector<VkImageView> attachments = { compTex.imageView, swap.imageViews[i] };
+			std::vector<VkImageView> attachments = { compTex.imageView.get(), swap.imageViews[i].get() };
 			vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
 		}
 	}
@@ -3657,9 +3665,7 @@ private:
 	}
 
 	void freeTexture(dvl::Texture& t) {
-		vkDestroyImageView(device, t.imageView, nullptr);
 		vkDestroySampler(device, t.sampler, nullptr);
-		vkDestroyImage(device, t.image, nullptr);
 	}
 
 	void recreateSwap() {
@@ -3677,9 +3683,6 @@ private:
 		freeTexture(opaquePassTextures.depth);
 		freeTexture(wboit.weightedColor);
 
-		for (auto imageView : swap.imageViews) {
-			vkDestroyImageView(device, imageView, nullptr);
-		}
 		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
 
 		createSC();

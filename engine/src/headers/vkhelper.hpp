@@ -21,12 +21,13 @@ template<typename Object>
 struct VkhObj {
 	struct ObjWrapper {
 		Object object;
+		bool autoDestroy;
 
-		ObjWrapper(Object obj) : object(obj) {}
+		ObjWrapper(Object obj, bool destroy = true) : object(obj), autoDestroy(destroy) {}
 
 		// custom destructor
 		~ObjWrapper() {
-			if (object != VK_NULL_HANDLE) {
+			if (autoDestroy && object != VK_NULL_HANDLE) {
 				VkhObject<Object>::destroy(object);
 			}
 		}
@@ -36,6 +37,7 @@ struct VkhObj {
 
 	// constructor
 	VkhObj() : objectP(std::make_shared<ObjWrapper>(VK_NULL_HANDLE)) {}
+	explicit VkhObj(Object obj, bool autoDestroy = true) : objectP(std::make_shared<ObjWrapper>(obj, autoDestroy)) {}
 
 	// copy constructor and assignment
 	VkhObj(const VkhObj& other) : objectP(other.objectP) {}
@@ -73,6 +75,7 @@ struct VkhObj {
 
 	// get the current use count of the obj
 	size_t use_count() const noexcept { return objectP.use_count(); }
+	void setDestroy(bool destruction) { objectP->autoDestroy = destruction; }
 };
 
 template<typename T>
@@ -98,8 +101,26 @@ struct VkhObject<VkDeviceMemory> {
 	}
 };
 
+template<>
+struct VkhObject<VkImage> {
+	static void destroy(VkImage image) {
+		std::cout << "image was freed: " << image << std::endl;
+		vkDestroyImage(device, image, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkImageView> {
+	static void destroy(VkImageView imageView) {
+		std::cout << "image view was freed: " << imageView << std::endl;
+		vkDestroyImageView(device, imageView, nullptr);
+	}
+};
+
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
+using VkhImage = VkhObj<VkImage>;
+using VkhImageView = VkhObj<VkImageView>;
 
 class vkh {
 public:
@@ -402,7 +423,7 @@ public:
 		throw std::runtime_error("failed to find suitable depth format!");
 	}
 
-	static void transitionImageLayout(const VkCommandBuffer& commandBuffer, const VkImage& image, const VkFormat format, const VkImageLayout oldLayout,
+	static void transitionImageLayout(const VkCommandBuffer& commandBuffer, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout,
 		const VkImageLayout newLayout, const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 
 		VkImageMemoryBarrier barrier{};
@@ -411,7 +432,7 @@ public:
 		barrier.newLayout = newLayout;
 		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
 		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-		barrier.image = image;
+		barrier.image = image.get();
 		if (format == VK_FORMAT_D32_SFLOAT) { // if the format is a depth format
 			barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
 		}
@@ -482,14 +503,14 @@ public:
 		vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
 	}
 
-	static void transitionImageLayout(const VkCommandPool& cPool, const VkImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
+	static void transitionImageLayout(const VkCommandPool& cPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
 		const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 		VkCommandBuffer tempCommandBuffer = beginSingleTimeCommands(cPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
 		endSingleTimeCommands(tempCommandBuffer, cPool, graphicsQueue);
 	}
 
-	static void createImage(VkImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkSampleCountFlagBits& sample) {
 
 		VkImageCreateInfo imageInfo{};
@@ -512,12 +533,12 @@ public:
 		imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		if (cubeMap) imageInfo.flags = VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
 
-		if (vkCreateImage(device, &imageInfo, nullptr, &image) != VK_SUCCESS) {
+		if (vkCreateImage(device, &imageInfo, nullptr, image.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create color image!");
 		}
 
 		VkMemoryRequirements memRequirements;
-		vkGetImageMemoryRequirements(device, image, &memRequirements);
+		vkGetImageMemoryRequirements(device, image.get(), &memRequirements);
 		VkMemoryAllocateInfo allocInfo{};
 		allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
 		allocInfo.allocationSize = memRequirements.size;
@@ -529,10 +550,10 @@ public:
 			throw std::runtime_error("failed to allocate color image memory!");
 		}
 
-		vkBindImageMemory(device, image, imageMemory.get(), 0);
+		vkBindImageMemory(device, image.get(), imageMemory.get(), 0);
 	}
 
-	static void createImage(VkImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool, const VkSampleCountFlagBits& sample) {
 
 		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
@@ -580,7 +601,7 @@ public:
 	static void createImageView(Texture& tex, const TextureType type = BASE) {
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInf.image = tex.image;
+		viewInf.image = tex.image.get();
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -627,7 +648,7 @@ public:
 		viewInf.subresourceRange.baseMipLevel = 0;
 		uint32_t level = (tex.mipLevels <= 0) ? 1 : tex.mipLevels;
 		viewInf.subresourceRange.levelCount = level - viewInf.subresourceRange.baseMipLevel;
-		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
+		if (vkCreateImageView(device, &viewInf, nullptr, tex.imageView.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture image view!");
 		}
 	}
@@ -636,7 +657,7 @@ public:
 	static void createImageView(Texture& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-		viewInf.image = tex.image;
+		viewInf.image = tex.image.get();
 		viewInf.subresourceRange.baseArrayLayer = 0;
 		viewInf.subresourceRange.layerCount = 1;
 		viewInf.viewType = VK_IMAGE_VIEW_TYPE_2D;
@@ -646,13 +667,13 @@ public:
 
 		uint32_t level = (tex.mipLevels <= 0) ? 1 : tex.mipLevels;
 		viewInf.subresourceRange.levelCount = level - viewInf.subresourceRange.baseMipLevel;
-		if (vkCreateImageView(device, &viewInf, nullptr, &tex.imageView) != VK_SUCCESS) {
+		if (vkCreateImageView(device, &viewInf, nullptr, tex.imageView.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create texture image view! (swap)");
 		}
 	}
 
 	// copy an image from one image to another
-	static void copyImage(VkImage& srcImage, VkImage& dstImage, const VkImageLayout& srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkCommandBuffer& commandBuffer, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+	static void copyImage(VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout& srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkCommandBuffer& commandBuffer, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
 		transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
 		transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
 
@@ -668,12 +689,12 @@ public:
 		copy.dstSubresource.layerCount = 1;
 		copy.extent = { width, height, 1 };
 
-		vkCmdCopyImage(commandBuffer, srcImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+		vkCmdCopyImage(commandBuffer, srcImage.get(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dstImage.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
 		transitionImageLayout(commandBuffer, dstImage, format, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, dstAfter, 1, 1, 0);
 		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 	}
 
-	static void copyImage(const VkCommandPool& cPool, VkImage& srcImage, VkImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+	static void copyImage(const VkCommandPool& cPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
 		VkCommandBuffer commandBuffer = beginSingleTimeCommands(cPool);
 		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
 		endSingleTimeCommands(commandBuffer, cPool, graphicsQueue);
