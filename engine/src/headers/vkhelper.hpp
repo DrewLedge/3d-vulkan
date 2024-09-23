@@ -90,7 +90,16 @@ struct VkhObject<VkBuffer> {
 	}
 };
 
+template<>
+struct VkhObject<VkDeviceMemory> {
+	static void destroy(VkDeviceMemory mem) {
+		std::cout << "memory was freed: " << mem << std::endl;
+		vkFreeMemory(device, mem, nullptr);
+	}
+};
+
 using VkhBuffer = VkhObj<VkBuffer>;
+using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
 
 class vkh {
 public:
@@ -267,7 +276,7 @@ public:
 		return vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
 	}
 
-	static void createBuffer(VkhBuffer& buffer, VkDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = size;
@@ -300,29 +309,29 @@ public:
 			allocateInfo.pNext = &allocFlagsInfo;
 		}
 
-		if (vkAllocateMemory(device, &allocateInfo, nullptr, &bufferMem) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocateInfo, nullptr, bufferMem.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to allocate memory for the buffer!");
 		}
 
 		// bind the memory to the buffer
-		if (vkBindBufferMemory(device, buffer.get(), bufferMem, 0) != VK_SUCCESS) {
+		if (vkBindBufferMemory(device, buffer.get(), bufferMem.get(), 0) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to bind memory to buffer!");
 		}
 	}
 
-	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 	}
 
 	template<typename ObjType>
-	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 
 		// once memory is bound, map and fill it
 		void* data;
-		if (vkMapMemory(device, stagingBufferMem, 0, size, 0, &data) != VK_SUCCESS) {
+		if (vkMapMemory(device, stagingBufferMem.get(), 0, size, 0, &data) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to map memory for buffer!");
 		}
 
@@ -335,17 +344,17 @@ public:
 		else {
 			memcpy(data, &object, size);
 		}
-		vkUnmapMemory(device, stagingBufferMem);
+		vkUnmapMemory(device, stagingBufferMem.get());
 	}
 
 	template<typename ObjType>
-	static void createBuffer(VkhBuffer& buffer, VkDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
+	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
 		const VkCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
 		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
 		if (staging) {
 			VkhBuffer stagingBuffer;
-			VkDeviceMemory stagingBufferMem;
+			VkhDeviceMemory stagingBufferMem;
 			createStagingBuffer(stagingBuffer, stagingBufferMem, object, size, memAllocFlags);
 
 			// copy the data from the staging buffer to the dst buffer
@@ -354,11 +363,10 @@ public:
 			copyRegion.size = size;
 			vkCmdCopyBuffer(commandBuffer, stagingBuffer.get(), buffer.get(), 1, &copyRegion);
 			endSingleTimeCommands(commandBuffer, commandPool, queue);
-			vkFreeMemory(device, stagingBufferMem, nullptr);
 		}
 		else {
 			void* data;
-			if (vkMapMemory(device, bufferMem, 0, size, 0, &data) != VK_SUCCESS) {
+			if (vkMapMemory(device, bufferMem.get(), 0, size, 0, &data) != VK_SUCCESS) {
 				throw std::runtime_error("Failed to map memory for buffer!");
 			}
 
@@ -371,7 +379,7 @@ public:
 			else {
 				memcpy(data, &object, size);
 			}
-			vkUnmapMemory(device, bufferMem);
+			vkUnmapMemory(device, bufferMem.get());
 		}
 	}
 
@@ -481,7 +489,7 @@ public:
 		endSingleTimeCommands(tempCommandBuffer, cPool, graphicsQueue);
 	}
 
-	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+	static void createImage(VkImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkSampleCountFlagBits& sample) {
 
 		VkImageCreateInfo imageInfo{};
@@ -517,14 +525,14 @@ public:
 		// memory is allocated on the gpu
 		allocInfo.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
-		if (vkAllocateMemory(device, &allocInfo, nullptr, &imageMemory) != VK_SUCCESS) {
+		if (vkAllocateMemory(device, &allocInfo, nullptr, imageMemory.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to allocate color image memory!");
 		}
 
-		vkBindImageMemory(device, image, imageMemory, 0);
+		vkBindImageMemory(device, image, imageMemory.get(), 0);
 	}
 
-	static void createImage(VkImage& image, VkDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+	static void createImage(VkImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool, const VkSampleCountFlagBits& sample) {
 
 		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);

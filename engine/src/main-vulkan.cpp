@@ -71,7 +71,7 @@ struct CamData {
 
 	// buffers for the camera matrix ubo
 	VkhBuffer buffer;
-	VkDeviceMemory bufferMem;
+	VkhDeviceMemory bufferMem;
 
 	float lastX;
 	float lastY;
@@ -89,7 +89,7 @@ struct CamData {
 		projectionMatrix(),
 		viewMatrix(),
 		buffer(),
-		bufferMem(VK_NULL_HANDLE),
+		bufferMem(),
 		lastX(0.0f),
 		lastY(0.0f),
 		locked(true),
@@ -235,9 +235,9 @@ private:
 		VkPipeline pipeline;
 		vkh::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
 		VkhBuffer vertBuffer;
-		VkDeviceMemory vertBufferMem;
+		VkhDeviceMemory vertBufferMem;
 		VkhBuffer indBuffer;
-		VkDeviceMemory indBufferMem;
+		VkhDeviceMemory indBufferMem;
 
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
@@ -248,9 +248,9 @@ private:
 			pipeline(VK_NULL_HANDLE),
 			bufferData(),
 			vertBuffer(),
-			vertBufferMem(VK_NULL_HANDLE),
+			vertBufferMem(),
 			indBuffer(),
-			indBufferMem(VK_NULL_HANDLE),
+			indBufferMem(),
 
 			indices{
 				0, 1, 2, 2, 3, 0,
@@ -405,11 +405,11 @@ private:
 	VkhBuffer sceneIndexBuffer;
 
 	// buffer memory
-	VkDeviceMemory vertBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory indBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory instanceBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory lightBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory sceneIndexBufferMem = VK_NULL_HANDLE;
+	VkhDeviceMemory vertBufferMem;
+	VkhDeviceMemory indBufferMem;
+	VkhDeviceMemory instanceBufferMem;
+	VkhDeviceMemory lightBufferMem;
+	VkhDeviceMemory sceneIndexBufferMem;
 
 	// synchronization primitives
 	std::vector<VkFence> inFlightFences;
@@ -451,21 +451,21 @@ private:
 	// path tracing
 	std::vector<VkAccelerationStructureKHR> BLAS;
 	VkhBuffer blasBuffer;
-	VkDeviceMemory blasMem;
+	VkhDeviceMemory blasMem;
 	VkhBuffer blasScratchBuffer;
-	VkDeviceMemory blasScratchMem;
+	VkhDeviceMemory blasScratchMem;
 	VkhBuffer compBlasBuffer;
-	VkDeviceMemory compBlasMem;
+	VkhDeviceMemory compBlasMem;
 
 	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
 	VkhBuffer tlasBuffer;
-	VkDeviceMemory tlasMem;
+	VkhDeviceMemory tlasMem;
 	VkhBuffer tlasInstanceBuffer;
-	VkDeviceMemory tlasInstanceBufferMem;
+	VkhDeviceMemory tlasInstanceBufferMem;
 	VkhBuffer tlasScratchBuffer;
-	VkDeviceMemory tlasScratchMem;
+	VkhDeviceMemory tlasScratchMem;
 	VkhBuffer compTlasBuffer;
-	VkDeviceMemory compTlasMem;
+	VkhDeviceMemory compTlasMem;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1190,9 +1190,9 @@ private:
 		}
 
 		void* lData;
-		vkMapMemory(device, lightBufferMem, 0, lightData.memSize, 0, &lData);
+		vkMapMemory(device, lightBufferMem.get(), 0, lightData.memSize, 0, &lData);
 		memcpy(lData, lightData.lightCords.data(), lightData.memSize);
-		vkUnmapMemory(device, lightBufferMem);
+		vkUnmapMemory(device, lightBufferMem.get());
 
 		// calc matricies for camera
 		calcCameraMats();
@@ -1200,9 +1200,9 @@ private:
 		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
 
 		void* cData;
-		vkMapMemory(device, cam.bufferMem, 0, sizeof(camMatData), 0, &cData);
+		vkMapMemory(device, cam.bufferMem.get(), 0, sizeof(camMatData), 0, &cData);
 		memcpy(cData, &camMatData, sizeof(camMatData));
-		vkUnmapMemory(device, cam.bufferMem);
+		vkUnmapMemory(device, cam.bufferMem.get());
 
 		// calc matricies for objects
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -1222,9 +1222,9 @@ private:
 			}
 		}
 		void* matrixData;
-		vkMapMemory(device, instanceBufferMem, 0, sizeof(objInstanceData), 0, &matrixData);
+		vkMapMemory(device, instanceBufferMem.get(), 0, sizeof(objInstanceData), 0, &matrixData);
 		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
-		vkUnmapMemory(device, instanceBufferMem);
+		vkUnmapMemory(device, instanceBufferMem.get());
 	}
 
 	void copyLightToLightCords(const Light& src, LightDataObject& dest) {
@@ -2991,23 +2991,23 @@ private:
 		}
 
 		VkhBuffer stagingVertBuffer;
-		VkDeviceMemory stagingVertBufferMem;
+		VkhDeviceMemory stagingVertBufferMem;
 
 		VkhBuffer stagingIndexBuffer;
-		VkDeviceMemory stagingIndexBufferMem;
+		VkhDeviceMemory stagingIndexBufferMem;
 
 		const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 		// create and map the vertex buffer
 		vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* vertexData;
-		vkMapMemory(device, stagingVertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
+		vkMapMemory(device, stagingVertBufferMem.get(), 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
 		vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* indexData;
-		vkMapMemory(device, stagingIndexBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+		vkMapMemory(device, stagingIndexBufferMem.get(), 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
 
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -3029,8 +3029,8 @@ private:
 			indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
 			currentIndexOffset += bufferData[bufferInd].indexCount;
 		}
-		vkUnmapMemory(device, stagingVertBufferMem);
-		vkUnmapMemory(device, stagingIndexBufferMem);
+		vkUnmapMemory(device, stagingVertBufferMem.get());
+		vkUnmapMemory(device, stagingIndexBufferMem.get());
 
 		VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 		VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -3053,9 +3053,6 @@ private:
 		vkCmdCopyBuffer(commandBuffer, stagingIndexBuffer.get(), indBuffer.get(), 1, &copyRegion);
 
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
-
-		vkFreeMemory(device, stagingVertBufferMem, nullptr);
-		vkFreeMemory(device, stagingIndexBufferMem, nullptr);
 	}
 
 
@@ -3107,8 +3104,6 @@ private:
 	}
 
 	void recreateModelBuffers() {
-		vkFreeMemory(device, vertBufferMem, nullptr);
-		vkFreeMemory(device, indBufferMem, nullptr);
 		createModelBuffers();
 	}
 
@@ -3183,7 +3178,6 @@ private:
 	}
 
 	void recreateLightBuffer() {
-		vkFreeMemory(device, lightBufferMem, nullptr);
 		createLightBuffer();
 	}
 
@@ -3666,7 +3660,6 @@ private:
 		vkDestroyImageView(device, t.imageView, nullptr);
 		vkDestroySampler(device, t.sampler, nullptr);
 		vkDestroyImage(device, t.image, nullptr);
-		vkFreeMemory(device, t.memory, nullptr);
 	}
 
 	void recreateSwap() {

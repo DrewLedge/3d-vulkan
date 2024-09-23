@@ -83,12 +83,12 @@ public:
 	struct Texture {
 		VkSampler sampler;
 		VkImage image;
-		VkDeviceMemory memory;
+		VkhDeviceMemory memory;
 		VkImageView imageView;
 		std::string path;
 		uint32_t mipLevels;
 		VkhBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMem;
+		VkhDeviceMemory stagingBufferMem;
 		tinygltf::Image gltfImage;
 		bool found;
 		uint16_t width;
@@ -98,12 +98,12 @@ public:
 		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
 			: sampler(VK_NULL_HANDLE),
 			image(VK_NULL_HANDLE),
-			memory(VK_NULL_HANDLE),
+			memory(),
 			imageView(VK_NULL_HANDLE),
 			path(""),
 			mipLevels(1),
 			stagingBuffer(),
-			stagingBufferMem(VK_NULL_HANDLE),
+			stagingBufferMem(),
 			gltfImage(),
 			found(false),
 			width(1024),
@@ -131,12 +131,12 @@ public:
 			size_t seed = 0;
 			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
