@@ -275,7 +275,7 @@ private:
 
 	struct DSObject {
 		std::vector<VkhDescriptorPool> pools;
-		std::vector<VkDescriptorSetLayout> layouts;
+		std::vector<VkhDescriptorSetLayout> layouts;
 		std::vector<VkhDescriptorSet> sets;
 	};
 
@@ -441,7 +441,7 @@ private:
 	// descriptor sets and pools
 	DSObject descs = {};
 	VkhDescriptorPool imguiDescriptorPool;
-	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
+	VkhDescriptorSetLayout imguiDescriptorSetLayout;
 
 	// vulkan function pointers
 	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
@@ -1385,7 +1385,7 @@ private:
 			allocInfo.pNext = &varCountInfo;
 
 			allocInfo.descriptorPool = descs.pools[i].get();
-			allocInfo.pSetLayouts = &descs.layouts[i];
+			allocInfo.pSetLayouts = descs.layouts[i].getP();
 			VkhDescriptorSet set(descs.pools[i].getP());
 			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.getP());
 			if (result != VK_SUCCESS) {
@@ -1813,7 +1813,7 @@ private:
 
 		// pipeline layout setup: defines the connection between shader stages and resources
 		// this data includes: descriptorsets and push constants
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].get(), descs.layouts[1].get(), descs.layouts[2].get(), descs.layouts[4].get() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2052,11 +2052,10 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int); // 1 int for the light index
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[1] }; // the light data ssbo
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.pSetLayouts = descs.layouts[1].getP();
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipeline.layout);
@@ -2180,7 +2179,7 @@ private:
 		colorBS.attachmentCount = 1;
 		colorBS.pAttachments = &colorBA;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3].get(), descs.layouts[4].get() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2395,7 +2394,7 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 2;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4], descs.layouts[6] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].get(), descs.layouts[1].get(), descs.layouts[2].get(), descs.layouts[4].get(), descs.layouts[6].get() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
@@ -2560,11 +2559,10 @@ private:
 			throw std::runtime_error("failed to create render pass!");
 		}
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[5] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.setLayoutCount = 1;
+		pipelineLayoutInf.pSetLayouts = descs.layouts[5].getP();
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &compPipelineData.layout);
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for composition!!");
@@ -2617,7 +2615,7 @@ private:
 		imguiLayoutInfo.bindingCount = 1;
 		imguiLayoutInfo.pBindings = &imguiBinding;
 
-		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, &imguiDescriptorSetLayout) != VK_SUCCESS) {
+		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, imguiDescriptorSetLayout.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
 		}
 	}
@@ -3695,10 +3693,6 @@ private:
 		createSC();
 		createSCImageViews();
 		setupTextures();
-
-		for (VkDescriptorSetLayout& layout : descs.layouts) {
-			vkDestroyDescriptorSetLayout(device, layout, nullptr);
-		}
 
 		// create the descriptorsets
 		setupDescriptorSets(false);

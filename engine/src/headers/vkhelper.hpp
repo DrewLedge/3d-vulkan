@@ -159,12 +159,21 @@ struct VkhObject<VkDescriptorPool> {
 };
 
 template<>
+struct VkhObject<VkDescriptorSetLayout> {
+	static void destroy(VkDescriptorSetLayout descriptorSetLayout) {
+		std::cout << "descriptor set layout was destroyed: " << descriptorSetLayout << std::endl;
+		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
+	}
+};
+
+template<>
 struct VkhObject<VkDescriptorSet, VkDescriptorPool*> {
 	static void destroy(VkDescriptorSet descriptorSet, VkDescriptorPool* descriptorPool) {
 		std::cout << "descriptor set was freed: " << descriptorSet << std::endl;
 		vkFreeDescriptorSets(device, *descriptorPool, 1, &descriptorSet);
 	}
 };
+
 
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
@@ -176,9 +185,8 @@ using VkhCommandPool = VkhObj<VkCommandPool>;
 using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool*>;
 
 using VkhDescriptorPool = VkhObj<VkDescriptorPool>;
+using VkhDescriptorSetLayout = VkhObj<VkDescriptorSetLayout>;
 using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool*>;
-
-
 
 class vkh {
 public:
@@ -876,7 +884,7 @@ public:
 	}
 
 	// ------------------ DESCRIPTOR SETS ------------------ //
-	static VkDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
+	static VkhDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
 		VkDescriptorSetLayoutBinding binding{};
 		binding.binding = bindingIndex;
 		binding.descriptorType = type;
@@ -902,8 +910,8 @@ public:
 		layoutInfo.pBindings = &binding;
 		if (pushDescriptors) layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 
-		VkDescriptorSetLayout descriptorSetLayout;
-		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &descriptorSetLayout) != VK_SUCCESS) {
+		VkhDescriptorSetLayout descriptorSetLayout;
+		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
 
