@@ -143,10 +143,26 @@ struct VkhObject<VkCommandPool> {
 };
 
 template<>
-struct VkhObject<VkCommandBuffer, VkCommandPool> {
-	static void destroy(VkCommandBuffer commandBuffer, VkCommandPool commandPool) {
+struct VkhObject<VkCommandBuffer, VkCommandPool*> {
+	static void destroy(VkCommandBuffer commandBuffer, VkCommandPool* commandPool) {
 		std::cout << "command buffer was freed: " << commandBuffer << std::endl;
-		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
+		vkFreeCommandBuffers(device, *commandPool, 1, &commandBuffer);
+	}
+};
+
+template<>
+struct VkhObject<VkDescriptorPool> {
+	static void destroy(VkDescriptorPool descriptorPool) {
+		std::cout << "descriptor pool was destroyed: " << descriptorPool << std::endl;
+		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkDescriptorSet, VkDescriptorPool*> {
+	static void destroy(VkDescriptorSet descriptorSet, VkDescriptorPool* descriptorPool) {
+		std::cout << "descriptor set was freed: " << descriptorSet << std::endl;
+		vkFreeDescriptorSets(device, *descriptorPool, 1, &descriptorSet);
 	}
 };
 
@@ -155,8 +171,14 @@ using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
 using VkhImage = VkhObj<VkImage>;
 using VkhImageView = VkhObj<VkImageView>;
 using VkhSampler = VkhObj<VkSampler>;
+
 using VkhCommandPool = VkhObj<VkCommandPool>;
-using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool>;
+using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool*>;
+
+using VkhDescriptorPool = VkhObj<VkDescriptorPool>;
+using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool*>;
+
+
 
 class vkh {
 public:
@@ -406,7 +428,7 @@ public:
 
 	template<typename ObjType>
 	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
-		const VkhCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
+		VkhCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
 		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
 		if (staging) {
@@ -539,7 +561,7 @@ public:
 		vkCmdPipelineBarrier(commandBuffer.get(), sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
 	}
 
-	static void transitionImageLayout(const VkhCommandPool& commandPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
+	static void transitionImageLayout(VkhCommandPool& commandPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
 		const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 		VkhCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
@@ -590,7 +612,7 @@ public:
 	}
 
 	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
-		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkhCommandPool& commandPool, const VkSampleCountFlagBits& sample) {
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, VkhCommandPool& commandPool, const VkSampleCountFlagBits& sample) {
 
 		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
 		transitionImageLayout(commandPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
@@ -730,7 +752,7 @@ public:
 		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 	}
 
-	static void copyImage(const VkhCommandPool& commandPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+	static void copyImage(VkhCommandPool& commandPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
 		VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
 		endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
@@ -751,7 +773,7 @@ public:
 		return commandPool;
 	}
 
-	static VkhCommandBuffer beginSingleTimeCommands(const VkhCommandPool& commandPool) {
+	static VkhCommandBuffer beginSingleTimeCommands(VkhCommandPool& commandPool) {
 		VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -787,8 +809,8 @@ public:
 		}
 	}
 
-	static VkhCommandBuffer allocateCommandBuffers(const VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
-		VkhCommandBuffer commandBuffer(commandPool.get());
+	static VkhCommandBuffer allocateCommandBuffers(VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+		VkhCommandBuffer commandBuffer(commandPool.getP());
 		VkCommandBufferAllocateInfo allocInfo = {};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.commandPool = commandPool.get();
@@ -888,7 +910,7 @@ public:
 		return descriptorSetLayout;
 	}
 
-	static VkDescriptorPool createDSPool(const VkDescriptorType& type, const uint32_t descriptorCount) {
+	static VkhDescriptorPool createDSPool(const VkDescriptorType& type, const uint32_t descriptorCount) {
 		VkDescriptorPoolSize poolSize{};
 		poolSize.type = type;
 		poolSize.descriptorCount = descriptorCount;
@@ -900,8 +922,8 @@ public:
 		poolInfo.pPoolSizes = &poolSize;
 		poolInfo.maxSets = 1;
 
-		VkDescriptorPool descriptorPool;
-		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS) {
+		VkhDescriptorPool descriptorPool;
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, descriptorPool.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
 
@@ -909,12 +931,12 @@ public:
 	}
 
 	template<typename InfoType>
-	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
+	static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
 		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
 
 		VkWriteDescriptorSet d{};
 		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		d.dstSet = set;
+		d.dstSet = set.get();
 		d.dstBinding = binding;
 		d.dstArrayElement = arrayElem;
 		d.descriptorType = type;
@@ -931,12 +953,12 @@ public:
 	}
 
 	template<typename InfoType>
-	static VkWriteDescriptorSet createDSWrite(const VkDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
+	static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
 		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
 
 		VkWriteDescriptorSet d{};
 		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-		d.dstSet = set;
+		d.dstSet = set.get();
 		d.dstBinding = binding;
 		d.dstArrayElement = arrayElem;
 		d.descriptorType = type;

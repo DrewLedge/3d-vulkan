@@ -274,9 +274,9 @@ private:
 	};
 
 	struct DSObject {
+		std::vector<VkhDescriptorPool> pools;
 		std::vector<VkDescriptorSetLayout> layouts;
-		std::vector<VkDescriptorSet> sets;
-		std::vector<VkDescriptorPool> pools;
+		std::vector<VkhDescriptorSet> sets;
 	};
 
 	struct PipelineData {
@@ -440,8 +440,8 @@ private:
 
 	// descriptor sets and pools
 	DSObject descs = {};
+	VkhDescriptorPool imguiDescriptorPool;
 	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
-	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
 
 	// vulkan function pointers
 	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
@@ -1306,8 +1306,8 @@ private:
 
 	template<typename Stage>
 	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
-		descs.layouts[index] = vkh::createDSLayout(index, type, size, shaderStage);
-		descs.pools[index] = vkh::createDSPool(type, size);
+		descs.layouts.emplace_back(vkh::createDSLayout(index, type, size, shaderStage));
+		descs.pools.emplace_back(vkh::createDSPool(type, size));
 	}
 
 	void createDS() {
@@ -1357,9 +1357,9 @@ private:
 		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.get();
 
 		const uint8_t size = 7;
-		descs.sets.resize(size);
-		descs.layouts.resize(size);
-		descs.pools.resize(size);
+		descs.sets.clear(); descs.sets.reserve(size);
+		descs.pools.clear(); descs.pools.reserve(size);
+		descs.layouts.clear(); descs.layouts.reserve(size);
 
 		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
 
@@ -1377,20 +1377,21 @@ private:
 		allocInfo.descriptorSetCount = 1;
 
 		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, MAX_LIGHTS, 1, 1, texCompSize, 1 };
-		for (uint32_t i = 0; i < descs.sets.size(); i++) {
+		for (uint32_t i = 0; i < size; i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
 			varCountInfo.descriptorSetCount = 1;
 			varCountInfo.pDescriptorCounts = &descCountArr[i];
 			allocInfo.pNext = &varCountInfo;
 
-			allocInfo.descriptorPool = descs.pools[i];
+			allocInfo.descriptorPool = descs.pools[i].get();
 			allocInfo.pSetLayouts = &descs.layouts[i];
-
-			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &descs.sets[i]);
+			VkhDescriptorSet set(descs.pools[i].getP());
+			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.getP());
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to allocate descriptor sets!");
 			}
+			descs.sets.emplace_back(set);
 		}
 
 		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
@@ -2633,7 +2634,7 @@ private:
 		poolInfo.poolSizeCount = 1;
 		poolInfo.pPoolSizes = &poolSize;
 
-		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, imguiDescriptorPool.getP()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
@@ -2652,7 +2653,7 @@ private:
 		initInfo.QueueFamily = graphicsQueueFamily;
 		initInfo.Queue = graphicsQueue;
 		initInfo.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
-		initInfo.DescriptorPool = imguiDescriptorPool;
+		initInfo.DescriptorPool = imguiDescriptorPool.get();
 		initInfo.Allocator = VK_NULL_HANDLE;
 		initInfo.MinImageCount = swap.imageCount;
 		initInfo.ImageCount = swap.imageCount;
@@ -3350,9 +3351,9 @@ private:
 	}
 
 	void recordSecondaryCommandBuffers() {
-		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
-		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
-		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
+		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0].get(), descs.sets[1].get(), descs.sets[2].get(), descs.sets[4].get() };
+		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0].get(), descs.sets[1].get(), descs.sets[2].get(), descs.sets[4].get(), descs.sets[6].get() };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3].get(), descs.sets[4].get() };
 
 		// FOR THE SHADOW PASS
 		VkCommandBufferInheritanceInfo shadowInheritInfo{};
@@ -3366,7 +3367,7 @@ private:
 		shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, &descs.sets[1], 1, true, true);
+		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, descs.sets[1].getP(), 1, true, true);
 
 		// FOR THE OPAQUE & SKYBOX PASS
 		VkCommandBufferInheritanceInfo opaqueInheritInfo{};
@@ -3540,7 +3541,7 @@ private:
 
 	void recordCompCommandBuffers() {
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet compDS = descs.sets[5];
+		VkhDescriptorSet compDS = descs.sets[5];
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3558,7 +3559,7 @@ private:
 		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 		beginInfoS.pInheritanceInfo = &inheritInfo;
 
-		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, &compDS, 1, true, true);
+		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, compDS.getP(), 1, true, true);
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3695,9 +3696,6 @@ private:
 		createSCImageViews();
 		setupTextures();
 
-		for (VkDescriptorPool& pool : descs.pools) {
-			vkDestroyDescriptorPool(device, pool, nullptr);
-		}
 		for (VkDescriptorSetLayout& layout : descs.layouts) {
 			vkDestroyDescriptorSetLayout(device, layout, nullptr);
 		}

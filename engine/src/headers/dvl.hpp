@@ -520,7 +520,7 @@ public:
 				else {
 					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 				}
-				//vertex.col.w = 0.6f;
+				vertex.col.w = 0.6f;
 
 				// get handedness of the tangent
 				dml::vec3 t = tangents[index].xyz();
