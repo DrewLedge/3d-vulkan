@@ -406,7 +406,7 @@ public:
 
 	template<typename ObjType>
 	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
-		const VkCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
+		const VkhCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
 		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
 		if (staging) {
@@ -539,11 +539,11 @@ public:
 		vkCmdPipelineBarrier(commandBuffer.get(), sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
 	}
 
-	static void transitionImageLayout(const VkCommandPool& cPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
+	static void transitionImageLayout(const VkhCommandPool& commandPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
 		const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
-		VkhCommandBuffer tempCommandBuffer = beginSingleTimeCommands(cPool);
+		VkhCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
 		transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
-		endSingleTimeCommands(tempCommandBuffer, cPool, graphicsQueue);
+		endSingleTimeCommands(tempCommandBuffer, commandPool, graphicsQueue);
 	}
 
 	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
@@ -590,10 +590,10 @@ public:
 	}
 
 	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
-		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkCommandPool& cPool, const VkSampleCountFlagBits& sample) {
+		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, const VkhCommandPool& commandPool, const VkSampleCountFlagBits& sample) {
 
 		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
-		transitionImageLayout(cPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
+		transitionImageLayout(commandPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
 	}
 
 	static void createSampler(VkhSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
@@ -730,29 +730,29 @@ public:
 		transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 	}
 
-	static void copyImage(const VkCommandPool& cPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
-		VkhCommandBuffer commandBuffer = beginSingleTimeCommands(cPool);
+	static void copyImage(const VkhCommandPool& commandPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+		VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
 		copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
-		endSingleTimeCommands(commandBuffer, cPool, graphicsQueue);
+		endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
 
 	// ------------------ COMMAND BUFFERS ------------------ //
-	static VkCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlags& createFlags) {
-		VkCommandPool cPool;
+	static VkhCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlags& createFlags) {
+		VkhCommandPool commandPool;
 		VkCommandPoolCreateInfo poolInf{};
 		poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
 		poolInf.queueFamilyIndex = queueFamilyIndex; // the queue family that will be using this command pool
 		poolInf.flags = createFlags;
-		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, &cPool);
+		VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, commandPool.getP());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create command pool!");
 		}
-		return cPool;
+		return commandPool;
 	}
 
-	static VkhCommandBuffer beginSingleTimeCommands(const VkCommandPool& cPool) {
-		VkhCommandBuffer commandBuffer = allocateCommandBuffers(cPool);
+	static VkhCommandBuffer beginSingleTimeCommands(const VkhCommandPool& commandPool) {
+		VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
@@ -760,7 +760,7 @@ public:
 		return commandBuffer;
 	}
 
-	static void endSingleTimeCommands(const VkhCommandBuffer& cBuffer, const VkCommandPool& cPool, const VkQueue& queue) {
+	static void endSingleTimeCommands(const VkhCommandBuffer& cBuffer, const VkhCommandPool& commandPool, const VkQueue& queue) {
 		vkEndCommandBuffer(cBuffer.get());
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
@@ -787,11 +787,11 @@ public:
 		}
 	}
 
-	static VkhCommandBuffer allocateCommandBuffers(const VkCommandPool& cPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
-		VkhCommandBuffer commandBuffer(cPool);
+	static VkhCommandBuffer allocateCommandBuffers(const VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+		VkhCommandBuffer commandBuffer(commandPool.get());
 		VkCommandBufferAllocateInfo allocInfo = {};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-		allocInfo.commandPool = cPool;
+		allocInfo.commandPool = commandPool.get();
 		allocInfo.level = level;
 		allocInfo.commandBufferCount = 1;
 

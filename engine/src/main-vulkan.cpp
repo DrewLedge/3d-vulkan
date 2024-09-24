@@ -335,10 +335,10 @@ private:
 	};
 
 	struct CommandBufferCollection {
+		std::vector<VkhCommandPool> pools;
+
 		std::vector<VkhCommandBuffer> buffers;
 		std::vector<VkCommandBuffer> rawBuffers;
-
-		std::vector<VkCommandPool> pools;
 
 		void reserveClear(size_t size) {
 			buffers.clear();
@@ -406,7 +406,7 @@ private:
 	OpaquePassTex opaquePassTextures = {};
 
 	// command buffers and command pool
-	VkCommandPool commandPool = VK_NULL_HANDLE;
+	VkhCommandPool commandPool;
 	CommandBufferSet opaquePassCommandBuffers;
 	CommandBufferSet shadowMapCommandBuffers;
 	CommandBufferSet wboitCommandBuffers;
@@ -2661,7 +2661,7 @@ private:
 		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
 
 		// upload fonts, etc:
-		VkCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkhCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkhCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer.get());
 		vkh::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
@@ -3177,16 +3177,17 @@ private:
 
 		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.getP(), 1, shadowProps.width, shadowProps.height);
 
-		VkCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
-		shadowMapCommandBuffers.primary.buffers.push_back(c);
-		shadowMapCommandBuffers.primary.pools.push_back(p);
 
-		VkCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		shadowMapCommandBuffers.primary.pools.push_back(p);
+		shadowMapCommandBuffers.primary.buffers.push_back(c);
+
+		VkhCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		VkhCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
-		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 		shadowMapCommandBuffers.secondary.pools.push_back(p2);
+		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 
 		lights.push_back(std::make_unique<Light>(l));
 
