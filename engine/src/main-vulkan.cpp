@@ -335,12 +335,17 @@ private:
 	};
 
 	struct CommandBufferCollection {
-		std::vector<VkCommandBuffer> buffers;
+		std::vector<VkhCommandBuffer> buffers;
+		std::vector<VkCommandBuffer> rawBuffers;
+
 		std::vector<VkCommandPool> pools;
 
-		void resize(size_t size) {
-			buffers.resize(size);
-			pools.resize(size);
+		void reserveClear(size_t size) {
+			buffers.clear();
+			pools.clear();
+
+			buffers.reserve(size);
+			pools.reserve(size);
 		}
 
 		size_t size() const {
@@ -348,10 +353,20 @@ private:
 		}
 
 		VkCommandBuffer* data() {
-			return buffers.data();
+			if (buffers.size() == 1) {
+				return buffers[0].getP();
+			}
+			else {
+				rawBuffers.clear();
+				rawBuffers.reserve(buffers.size());
+				for (const auto& b : buffers) {
+					rawBuffers.push_back(b.get());
+				}
+				return rawBuffers.data();
+			}
 		}
 
-		VkCommandBuffer& operator[](size_t index) {
+		VkhCommandBuffer& operator[](size_t index) {
 			return buffers[index];
 		}
 	};
@@ -1300,7 +1315,7 @@ private:
 		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			imageInfos[i].imageView = allTextures[i].imageView.get();
-			imageInfos[i].sampler = allTextures[i].sampler;
+			imageInfos[i].sampler = allTextures[i].sampler.get();
 		}
 
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
@@ -1315,13 +1330,13 @@ private:
 		for (size_t i = 0; i < lightSize; i++) {
 			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.get();
-			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler;
+			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler.get();
 		}
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		skyboxInfo.imageView = skybox.cubemap.imageView.get();
-		skyboxInfo.sampler = skybox.cubemap.sampler;
+		skyboxInfo.sampler = skybox.cubemap.sampler.get();
 
 		VkDescriptorBufferInfo camMatBufferInfo{};
 		camMatBufferInfo.buffer = cam.buffer.get();
@@ -1333,13 +1348,13 @@ private:
 		for (size_t i = 0; i < texCompSize; i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.get() : wboit.weightedColor.imageView.get();
-			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler : wboit.weightedColor.sampler;
+			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler.get() : wboit.weightedColor.sampler.get();
 		}
 
 		VkDescriptorImageInfo opaquePassDepthInfo{};
 		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.get();
-		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler;
+		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.get();
 
 		const uint8_t size = 7;
 		descs.sets.resize(size);
@@ -1504,10 +1519,10 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
 
-			VkCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
+			VkhCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
-			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer.get(), tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
@@ -1536,7 +1551,7 @@ private:
 						blit.dstSubresource.mipLevel = j + 1;
 						blit.dstSubresource.baseArrayLayer = 0;
 						blit.dstSubresource.layerCount = 1;
-						vkCmdBlitImage(tempBuffer, tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+						vkCmdBlitImage(tempBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
 					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
@@ -1588,7 +1603,7 @@ private:
 		vkh::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
 
 		vkh::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
-		VkCommandBuffer copyCmdBuffer = vkh::beginSingleTimeCommands(commandPool);
+		VkhCommandBuffer copyCmdBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = { {{2, 1}, {0, 1}, {1, 0}, {1, 2}, {1, 1}, {3, 1}} };
@@ -1610,7 +1625,7 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { faceWidth, faceHeight, 1 };
 
-			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+			vkCmdCopyBufferToImage(copyCmdBuffer.get(), tex.stagingBuffer.get(), tex.image.get(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
 		vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
@@ -2647,8 +2662,8 @@ private:
 
 		// upload fonts, etc:
 		VkCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
-		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
+		VkhCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
+		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer.get());
 		vkh::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
 	}
@@ -2666,20 +2681,19 @@ private:
 	}
 
 	void allocateCommandBuffers(CommandBufferSet& cmdBuffers, size_t primaryCount, size_t secondaryCount = 0) {
-		cmdBuffers.primary.resize(primaryCount);
+		cmdBuffers.primary.reserveClear(primaryCount);
 
 		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-			cmdBuffers.primary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
+			cmdBuffers.primary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+			cmdBuffers.primary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
 		}
 
 		if (secondaryCount) {
-			cmdBuffers.secondary.resize(secondaryCount);
-			cmdBuffers.secondary.resize(secondaryCount);
+			cmdBuffers.secondary.reserveClear(secondaryCount);
 
 			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-				cmdBuffers.secondary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+				cmdBuffers.secondary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+				cmdBuffers.secondary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
 			}
 		}
 	}
@@ -2761,8 +2775,8 @@ private:
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer);
 
 		// build and populate the BLAS with the geometry data
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
+		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdBuildAccelerationStructuresKHR(commandBuffer.get(), 1, &buildInfo, &pBuildRangeInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
@@ -2776,8 +2790,8 @@ private:
 		// query the size of the BLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
+		vkCmdResetQueryPool(commandBuffer.get(), queryPool, 0, 1);
+		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.get(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2805,7 +2819,7 @@ private:
 
 		// copy the original BLAS to the compacted one
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
+		vkCmdCopyAccelerationStructureKHR(commandBuffer.get(), &copyInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
@@ -2901,8 +2915,8 @@ private:
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlasScratchBuffer);
 
 		// build and populate the TLAS
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
+		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdBuildAccelerationStructuresKHR(commandBuffer.get(), 1, &buildInfo, &pBuildRangeInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
@@ -2916,8 +2930,8 @@ private:
 		// query the size of the TLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
+		vkCmdResetQueryPool(commandBuffer.get(), queryPool, 0, 1);
+		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.get(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2945,7 +2959,7 @@ private:
 
 		// copy the original TLAS to the compacted one
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
+		vkCmdCopyAccelerationStructureKHR(commandBuffer.get(), &copyInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
@@ -3050,16 +3064,16 @@ private:
 		vkh::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
 		vkh::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
+		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		VkBufferCopy copyRegion{};
 
 		// copy the vert staging buffer into the dst vert buffer
 		copyRegion.size = totalVertexBufferSize;
-		vkCmdCopyBuffer(commandBuffer, stagingVertBuffer.get(), vertBuffer.get(), 1, &copyRegion);
+		vkCmdCopyBuffer(commandBuffer.get(), stagingVertBuffer.get(), vertBuffer.get(), 1, &copyRegion);
 
 		// copy the index staging buffer into the dst index buffer
 		copyRegion.size = totalIndexBufferSize;
-		vkCmdCopyBuffer(commandBuffer, stagingIndexBuffer.get(), indBuffer.get(), 1, &copyRegion);
+		vkCmdCopyBuffer(commandBuffer.get(), stagingIndexBuffer.get(), indBuffer.get(), 1, &copyRegion);
 
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
@@ -3164,12 +3178,12 @@ private:
 		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.getP(), 1, shadowProps.width, shadowProps.height);
 
 		VkCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c = vkh::allocateCommandBuffers(p);
+		VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
 		shadowMapCommandBuffers.primary.buffers.push_back(c);
 		shadowMapCommandBuffers.primary.pools.push_back(p);
 
 		VkCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+		VkhCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
 		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 		shadowMapCommandBuffers.secondary.pools.push_back(p2);
@@ -3179,7 +3193,7 @@ private:
 		VkDescriptorImageInfo shadowInfo{};
 		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 		shadowInfo.imageView = lights.back()->shadowMapData.imageView.get();
-		shadowInfo.sampler = lights.back()->shadowMapData.sampler;
+		shadowInfo.sampler = lights.back()->shadowMapData.sampler.get();
 		shadowInfos.push_back(shadowInfo);
 
 		updateLightDS();
@@ -3190,22 +3204,22 @@ private:
 		createLightBuffer();
 	}
 
-	void recordOpaqueSecondaryCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.get(), instanceBuffer.get() };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		if (startCommand) {
-			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+			if (vkBeginCommandBuffer(secondary.get(), &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording opaque secondary command buffer!");
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
+		vkCmdBindDescriptorSets(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		// bind the vertex and instance buffers
-		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), offsets.data());
-		vkCmdBindIndexBuffer(secondary, indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindVertexBuffers(secondary.get(), 0, 2, vertexBuffersArray.data(), offsets.data());
+		vkCmdBindIndexBuffer(secondary.get(), indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
 
 		uint32_t p = 0;
 		for (size_t j = 0; j < objects.size(); j++) {
@@ -3227,23 +3241,23 @@ private:
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[p];
 
-				vkCmdPushConstants(secondary, pipe.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdPushConstants(secondary.get(), pipe.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-				vkCmdDrawIndexed(secondary, bufferData[bufferInd].indexCount, instanceCount,
+				vkCmdDrawIndexed(secondary.get(), bufferData[bufferInd].indexCount, instanceCount,
 					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				p++;
 			}
 		}
 
 		if (endCommand) {
-			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+			if (vkEndCommandBuffer(secondary.get()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record opaque secondary command buffer!");
 			}
 		}
 	}
 
-	void recordShadowSecondaryCommandBuffers(std::vector<VkCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		size_t size = secondaries.size();
 
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.get(), instanceBuffer.get() };
@@ -3251,19 +3265,19 @@ private:
 
 		for (size_t i = 0; i < size; i++) {
 			if (startCommand) {
-				if (vkBeginCommandBuffer(secondaries[i], &beginInfo) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(secondaries[i].get(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording shadow secondary command buffer!");
 				}
 			}
 
-			vkCmdBindPipeline(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-			vkCmdBindDescriptorSets(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+			vkCmdBindPipeline(secondaries[i].get(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
+			vkCmdBindDescriptorSets(secondaries[i].get(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 			int lightIndex = static_cast<int>(i);
-			vkCmdPushConstants(secondaries[i], shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
+			vkCmdPushConstants(secondaries[i].get(), shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
 
-			vkCmdBindVertexBuffers(secondaries[i], 0, 2, vertexBuffersArray.data(), offsets.data());
-			vkCmdBindIndexBuffer(secondaries[i], indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindVertexBuffers(secondaries[i].get(), 0, 2, vertexBuffersArray.data(), offsets.data());
+			vkCmdBindIndexBuffer(secondaries[i].get(), indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
 		}
 
 		// iterate through all objects that cast shadows
@@ -3274,7 +3288,7 @@ private:
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 				for (size_t i = 0; i < size; i++) {
-					vkCmdDrawIndexed(secondaries[i], bufferData[bufferInd].indexCount, instanceCount,
+					vkCmdDrawIndexed(secondaries[i].get(), bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				}
 				p++;
@@ -3283,24 +3297,24 @@ private:
 
 		if (endCommand) {
 			for (size_t i = 0; i < size; i++) {
-				if (vkEndCommandBuffer(secondaries[i]) != VK_SUCCESS) {
+				if (vkEndCommandBuffer(secondaries[i].get()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record shadow secondary command buffer!");
 				}
 			}
 		}
 	}
 
-	void recordCompSecondaryCommandBuffers(VkCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		if (startCommand) {
-			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+			if (vkBeginCommandBuffer(secondary.get(), &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording composition secondary command buffer!");
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline);
+		vkCmdBindDescriptorSets(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
-		vkCmdDraw(secondary, 6, 1, 0, 0);
+		vkCmdDraw(secondary.get(), 6, 1, 0, 0);
 
 		// prepare for next frame in ImGui
 		ImGui_ImplVulkan_NewFrame();
@@ -3325,10 +3339,10 @@ private:
 
 		// render the imgui frame and draw imgui's commands into the command buffer
 		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), secondary);
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), secondary.get());
 
 		if (endCommand) {
-			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+			if (vkEndCommandBuffer(secondary.get()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record composition secondary command buffer!");
 			}
 		}
@@ -3365,17 +3379,17 @@ private:
 		opaqueBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		opaqueBeginInfo.pInheritanceInfo = &opaqueInheritInfo;
 
-		VkCommandBuffer& secondary = opaquePassCommandBuffers.secondary[0];
-		if (vkBeginCommandBuffer(secondary, &opaqueBeginInfo) != VK_SUCCESS) {
+		VkhCommandBuffer& secondary = opaquePassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary.get(), &opaqueBeginInfo) != VK_SUCCESS) {
 			throw std::runtime_error("failed to begin recording secondary command buffer!");
 		}
 
 		const VkDeviceSize skyboxOffset = 0;
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-		vkCmdBindVertexBuffers(secondary, 0, 1, skybox.vertBuffer.getP(), &skyboxOffset);
-		vkCmdBindIndexBuffer(secondary, skybox.indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
+		vkCmdBindPipeline(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
+		vkCmdBindDescriptorSets(secondary.get(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+		vkCmdBindVertexBuffers(secondary.get(), 0, 1, skybox.vertBuffer.getP(), &skyboxOffset);
+		vkCmdBindIndexBuffer(secondary.get(), skybox.indBuffer.get(), 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(secondary.get(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
 		recordOpaqueSecondaryCommandBuffers(secondary, opaquePassPipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
 
@@ -3408,10 +3422,10 @@ private:
 #else
 			tfCmd.emplace([&, i, beginInfoP, clearValue]() {
 #endif
-				VkCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
-				VkCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
+				VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
+				VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
-				if (vkBeginCommandBuffer(shadowCommandBuffer, &beginInfoP) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(shadowCommandBuffer.get(), &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3424,13 +3438,13 @@ private:
 				renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
 				renderPassInfo.clearValueCount = 1;
 				renderPassInfo.pClearValues = &clearValue;
-				vkCmdBeginRenderPass(shadowCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdBeginRenderPass(shadowCommandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-				vkCmdExecuteCommands(shadowCommandBuffer, 1, &secondary);
+				vkCmdExecuteCommands(shadowCommandBuffer.get(), 1, secondary.getP());
 
 				// end the render pass and command buffer
-				vkCmdEndRenderPass(shadowCommandBuffer);
-				if (vkEndCommandBuffer(shadowCommandBuffer) != VK_SUCCESS) {
+				vkCmdEndRenderPass(shadowCommandBuffer.get());
+				if (vkEndCommandBuffer(shadowCommandBuffer.get()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3452,8 +3466,8 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, beginInfoP]() {
 #endif
-				VkCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(opaqueCommandBuffer, &beginInfoP) != VK_SUCCESS) {
+				VkhCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
+				if (vkBeginCommandBuffer(opaqueCommandBuffer.get(), &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3466,10 +3480,10 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(opaqueCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(opaqueCommandBuffer, static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
-				vkCmdEndRenderPass(opaqueCommandBuffer);
-				if (vkEndCommandBuffer(opaqueCommandBuffer) != VK_SUCCESS) {
+				vkCmdBeginRenderPass(opaqueCommandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(opaqueCommandBuffer.get(), static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
+				vkCmdEndRenderPass(opaqueCommandBuffer.get());
+				if (vkEndCommandBuffer(opaqueCommandBuffer.get()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3493,8 +3507,8 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, offset, beginInfo]() {
 #endif
-				VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
+				VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
+				if (vkBeginCommandBuffer(wboitCommandBuffer.get(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3509,11 +3523,11 @@ private:
 
 				vkh::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
-				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(wboitCommandBuffer, static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
-				vkCmdEndRenderPass(wboitCommandBuffer);
+				vkCmdBeginRenderPass(wboitCommandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(wboitCommandBuffer.get(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
+				vkCmdEndRenderPass(wboitCommandBuffer.get());
 
-				if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
+				if (vkEndCommandBuffer(wboitCommandBuffer.get()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3550,8 +3564,8 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, beginInfo]() {
 #endif
-				VkCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
-				if (vkBeginCommandBuffer(compCommandBuffer, &beginInfo) != VK_SUCCESS) {
+				VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
+				if (vkBeginCommandBuffer(compCommandBuffer.get(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3564,10 +3578,10 @@ private:
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(compCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(compCommandBuffer, 1, &compCommandBuffers.secondary[0]);
-				vkCmdEndRenderPass(compCommandBuffer);
-				if (vkEndCommandBuffer(compCommandBuffer) != VK_SUCCESS) {
+				vkCmdBeginRenderPass(compCommandBuffer.get(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(compCommandBuffer.get(), 1, compCommandBuffers.secondary[0].getP());
+				vkCmdEndRenderPass(compCommandBuffer.get());
+				if (vkEndCommandBuffer(compCommandBuffer.get()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3664,10 +3678,6 @@ private:
 		vkh::createSemaphore(compSemaphore);
 	}
 
-	void freeTexture(dvl::Texture& t) {
-		vkDestroySampler(device, t.sampler, nullptr);
-	}
-
 	void recreateSwap() {
 		std::cout << "Recreating swap chain..." << std::endl;
 		int width = 0, height = 0;
@@ -3677,11 +3687,6 @@ private:
 		}
 		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
 		vkDeviceWaitIdle(device); // wait for thr device to be idle
-
-		// free the textures
-		freeTexture(opaquePassTextures.color);
-		freeTexture(opaquePassTextures.depth);
-		freeTexture(wboit.weightedColor);
 
 		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
 
@@ -3728,7 +3733,7 @@ private:
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		std::vector<VkSubmitInfo> submitInfos;
 
-		for (VkCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
+		for (VkhCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
 			VkSubmitInfo sub = vkh::createSubmitInfo(&shadow, 1);
 			submitInfos.push_back(sub);
 		}

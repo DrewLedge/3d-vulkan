@@ -81,7 +81,7 @@ public:
 	};
 
 	struct Texture {
-		VkSampler sampler;
+		VkhSampler sampler;
 		VkhImage image;
 		VkhDeviceMemory memory;
 		VkhImageView imageView;
@@ -96,7 +96,7 @@ public:
 		VkSampleCountFlagBits sampleCount;
 
 		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
-			: sampler(VK_NULL_HANDLE),
+			: sampler(),
 			image(),
 			memory(),
 			imageView(),
@@ -130,7 +130,7 @@ public:
 		size_t operator()(const Texture& tex) const {
 			size_t seed = 0;
 			seed ^= std::hash<VkhImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<VkhImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
