@@ -190,9 +190,33 @@ struct VkhObject<VkPipelineLayout> {
 	}
 };
 
+template<>
+struct VkhObject<VkShaderModule> {
+	static void destroy(VkShaderModule shaderModule) {
+		std::cout << "shader module was destroyed: " << shaderModule << std::endl;
+		vkDestroyShaderModule(device, shaderModule, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkRenderPass> {
+	static void destroy(VkRenderPass renderpass) {
+		std::cout << "renderpass was destroyed: " << renderpass << std::endl;
+		vkDestroyRenderPass(device, renderpass, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkFramebuffer> {
+	static void destroy(VkFramebuffer framebuffer) {
+		std::cout << "framebuffer was destroyed: " << framebuffer << std::endl;
+		vkDestroyFramebuffer(device, framebuffer, nullptr);
+	}
+};
 
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
+
 using VkhImage = VkhObj<VkImage>;
 using VkhImageView = VkhObj<VkImageView>;
 using VkhSampler = VkhObj<VkSampler>;
@@ -206,6 +230,10 @@ using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool*>;
 
 using VkhPipeline = VkhObj<VkPipeline>;
 using VkhPipelineLayout = VkhObj<VkPipelineLayout>;
+using VkhShaderModule = VkhObj<VkShaderModule>;
+
+using VkhRenderPass = VkhObj<VkRenderPass>;
+using VkhFramebuffer = VkhObj<VkFramebuffer>;
 
 class vkh {
 public:
@@ -819,19 +847,17 @@ public:
 		vkQueueWaitIdle(queue); //wait for the queue to be idle
 	}
 
-	static void createFB(const VkRenderPass& renderPass, VkFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
-		if (frameBuf != VK_NULL_HANDLE) vkDestroyFramebuffer(device, frameBuf, nullptr);
-
+	static void createFB(const VkhRenderPass& renderPass, VkhFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-		frameBufferInfo.renderPass = renderPass;
+		frameBufferInfo.renderPass = renderPass.v();
 		frameBufferInfo.attachmentCount = static_cast<uint32_t>(attatchmentCount);
 		frameBufferInfo.pAttachments = attachments;
 		frameBufferInfo.width = width;
 		frameBufferInfo.height = height;
 		frameBufferInfo.layers = 1;
 
-		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, &frameBuf) != VK_SUCCESS) {
+		if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, frameBuf.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create framebuffer!");
 		}
 	}
@@ -1002,14 +1028,14 @@ public:
 	}
 
 	// ------------------ PIPELINES ------------------ //
-	static VkShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
+	static VkhShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
 		VkShaderModuleCreateInfo createInfo{};
 		createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
 		createInfo.codeSize = code.size();
 		createInfo.pCode = reinterpret_cast<const uint32_t*>(code.data()); //convert the char array to uint32_t array
 
-		VkShaderModule shaderModule;
-		if (vkCreateShaderModule(device, &createInfo, nullptr, &shaderModule) != VK_SUCCESS) {
+		VkhShaderModule shaderModule;
+		if (vkCreateShaderModule(device, &createInfo, nullptr, shaderModule.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shader module!");
 		}
 

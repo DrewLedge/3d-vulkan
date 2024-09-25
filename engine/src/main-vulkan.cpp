@@ -137,7 +137,7 @@ private:
 		float linearAttenuation;
 		float quadraticAttenuation;
 		dvl::Texture shadowMapData;
-		VkFramebuffer frameBuffer;
+		VkhFramebuffer frameBuffer;
 		bool followPlayer;
 
 
@@ -280,7 +280,7 @@ private:
 	};
 
 	struct PipelineData {
-		VkRenderPass renderPass;
+		VkhRenderPass renderPass;
 		VkhPipelineLayout layout;
 		VkhPipeline pipeline;
 	};
@@ -292,7 +292,7 @@ private:
 		VkExtent2D extent;
 		std::vector<VkhImageView> imageViews;
 		uint32_t imageCount;
-		std::vector<VkFramebuffer> framebuffers;
+		std::vector<VkhFramebuffer> framebuffers;
 
 		SCData()
 			: swapChain(VK_NULL_HANDLE),
@@ -321,7 +321,7 @@ private:
 
 	struct WBOITData { // weighted blended order independent transparency
 		dvl::Texture weightedColor;
-		VkFramebuffer frameBuffer;
+		VkhFramebuffer frameBuffer;
 
 		WBOITData()
 			: weightedColor(),
@@ -402,7 +402,7 @@ private:
 	PipelineData compPipelineData;
 	PipelineData wboitPipeline;
 
-	VkFramebuffer opaquePassFB = VK_NULL_HANDLE;
+	VkhFramebuffer opaquePassFB;
 	OpaquePassTex opaquePassTextures = {};
 
 	// command buffers and command pool
@@ -435,8 +435,8 @@ private:
 	VkSemaphore compSemaphore = VK_NULL_HANDLE;
 
 	// shader modules
-	VkShaderModule fragShaderModule = VK_NULL_HANDLE;
-	VkShaderModule vertShaderModule = VK_NULL_HANDLE;
+	VkhShaderModule fragShaderModule;
+	VkhShaderModule vertShaderModule;
 
 	// descriptor sets and pools
 	DSObject descs = {};
@@ -1645,13 +1645,13 @@ private:
 		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 
 		VkPipelineShaderStageCreateInfo fragShader{}; //fragment shader stage info
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
@@ -1870,7 +1870,7 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &opaquePassPipeline.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, opaquePassPipeline.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -1888,7 +1888,7 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.layout = opaquePassPipeline.layout.v();
-		pipelineInf.renderPass = opaquePassPipeline.renderPass;
+		pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
@@ -1902,18 +1902,18 @@ private:
 		// get shader data
 		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
 		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
-		VkShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
-		VkShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
+		VkhShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
+		VkhShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
 
 		VkPipelineShaderStageCreateInfo vertStage{};
 		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertStage.module = shadowVertShaderModule;
+		vertStage.module = shadowVertShaderModule.v();
 		vertStage.pName = "main";
 		VkPipelineShaderStageCreateInfo fragStage{};
 		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragStage.module = shadowFragShaderModule;
+		fragStage.module = shadowFragShaderModule.v();
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
@@ -2039,7 +2039,7 @@ private:
 		renderPassInfo.pAttachments = &depthAttachment;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
-		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapPipeline.renderPass) != VK_SUCCESS) {
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, shadowMapPipeline.renderPass.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map render pass!");
 		}
 
@@ -2076,7 +2076,7 @@ private:
 		pipelineInfo.pDepthStencilState = &dStencil;
 		pipelineInfo.pColorBlendState = &colorBS;
 		pipelineInfo.layout = shadowMapPipeline.layout.v();
-		pipelineInfo.renderPass = shadowMapPipeline.renderPass;
+		pipelineInfo.renderPass = shadowMapPipeline.renderPass.v();
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
@@ -2094,12 +2094,12 @@ private:
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2201,7 +2201,7 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.layout = skybox.pipelineLayout.v();
-		pipelineInf.renderPass = opaquePassPipeline.renderPass;
+		pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, skybox.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
@@ -2218,12 +2218,12 @@ private:
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2384,7 +2384,7 @@ private:
 		renderPassInf.pAttachments = &colorAttachment;
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &wboitPipeline.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, wboitPipeline.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -2418,7 +2418,7 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.layout = wboitPipeline.layout.v();
-		pipelineInf.renderPass = wboitPipeline.renderPass;
+		pipelineInf.renderPass = wboitPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, wboitPipeline.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
@@ -2435,12 +2435,12 @@ private:
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2554,7 +2554,7 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &compPipelineData.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, compPipelineData.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -2580,7 +2580,7 @@ private:
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
 		pipelineInf.layout = compPipelineData.layout.v();
-		pipelineInf.renderPass = compPipelineData.renderPass;
+		pipelineInf.renderPass = compPipelineData.renderPass.v();
 		pipelineInf.subpass = 0;
 		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, compPipelineData.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
@@ -2657,7 +2657,7 @@ private:
 		initInfo.ImageCount = swap.imageCount;
 		initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
 		initInfo.MSAASamples = compTex.sampleCount;
-		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
+		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass.v());
 
 		// upload fonts, etc:
 		VkhCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -3356,7 +3356,7 @@ private:
 		// FOR THE SHADOW PASS
 		VkCommandBufferInheritanceInfo shadowInheritInfo{};
 		shadowInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		shadowInheritInfo.renderPass = shadowMapPipeline.renderPass;
+		shadowInheritInfo.renderPass = shadowMapPipeline.renderPass.v();
 		shadowInheritInfo.framebuffer = VK_NULL_HANDLE;
 		shadowInheritInfo.subpass = 0;
 
@@ -3370,7 +3370,7 @@ private:
 		// FOR THE OPAQUE & SKYBOX PASS
 		VkCommandBufferInheritanceInfo opaqueInheritInfo{};
 		opaqueInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass;
+		opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass.v();
 		opaqueInheritInfo.framebuffer = VK_NULL_HANDLE;
 		opaqueInheritInfo.subpass = 0;
 
@@ -3396,7 +3396,7 @@ private:
 		// FOR THE WBOIT PASS
 		VkCommandBufferInheritanceInfo wboitInheritInfo{};
 		wboitInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		wboitInheritInfo.renderPass = wboitPipeline.renderPass;
+		wboitInheritInfo.renderPass = wboitPipeline.renderPass.v();
 		wboitInheritInfo.framebuffer = VK_NULL_HANDLE;
 		wboitInheritInfo.subpass = 0;
 
@@ -3432,8 +3432,8 @@ private:
 				// render pass
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = shadowMapPipeline.renderPass;
-				renderPassInfo.framebuffer = lights[i]->frameBuffer;
+				renderPassInfo.renderPass = shadowMapPipeline.renderPass.v();
+				renderPassInfo.framebuffer = lights[i]->frameBuffer.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
 				renderPassInfo.clearValueCount = 1;
@@ -3473,8 +3473,8 @@ private:
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = opaquePassPipeline.renderPass;
-				renderPassInfo.framebuffer = opaquePassFB;
+				renderPassInfo.renderPass = opaquePassPipeline.renderPass.v();
+				renderPassInfo.framebuffer = opaquePassFB.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3514,8 +3514,8 @@ private:
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = wboitPipeline.renderPass;
-				renderPassInfo.framebuffer = wboit.frameBuffer;
+				renderPassInfo.renderPass = wboitPipeline.renderPass.v();
+				renderPassInfo.framebuffer = wboit.frameBuffer.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3548,7 +3548,7 @@ private:
 
 		VkCommandBufferInheritanceInfo inheritInfo{};
 		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = compPipelineData.renderPass;
+		inheritInfo.renderPass = compPipelineData.renderPass.v();
 		inheritInfo.framebuffer = VK_NULL_HANDLE;
 		inheritInfo.subpass = 0;
 
@@ -3571,8 +3571,8 @@ private:
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = compPipelineData.renderPass;
-				renderPassInfo.framebuffer = swap.framebuffers[i];
+				renderPassInfo.renderPass = compPipelineData.renderPass.v();
+				renderPassInfo.framebuffer = swap.framebuffers[i].v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
