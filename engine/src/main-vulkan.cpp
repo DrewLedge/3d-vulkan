@@ -427,12 +427,12 @@ private:
 	VkhDeviceMemory sceneIndexBufferMem;
 
 	// synchronization primitives
-	std::vector<VkFence> inFlightFences;
-	VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
-	VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
-	VkSemaphore shadowSemaphore = VK_NULL_HANDLE;
-	VkSemaphore wboitSemaphore = VK_NULL_HANDLE;
-	VkSemaphore compSemaphore = VK_NULL_HANDLE;
+	std::vector<VkhFence> inFlightFences;
+	VkhSemaphore imageAvailableSemaphore;
+	VkhSemaphore renderFinishedSemaphore;
+	VkhSemaphore shadowSemaphore;
+	VkhSemaphore wboitSemaphore;
+	VkhSemaphore compSemaphore;
 
 	// shader modules
 	VkhShaderModule fragShaderModule;
@@ -2673,7 +2673,7 @@ private:
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
 		for (size_t i = 0; i < inFlightFences.size(); i++) {
-			if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+			if (vkCreateFence(device, &fenceInfo, nullptr, inFlightFences[i].p()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create synchronization objects for a frame!");
 			}
 		}
@@ -2779,23 +2779,23 @@ private:
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
-		VkQueryPool queryPool;
+		VkhQueryPool queryPool;
 		VkQueryPoolCreateInfo queryPoolInfo = {};
 		queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
 		queryPoolInfo.queryCount = 1;
-		vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool);
+		vkCreateQueryPool(device, &queryPoolInfo, nullptr, queryPool.p());
 
 		// query the size of the BLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer.v(), queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
+		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
+		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
-		vkGetQueryPoolResults(device, queryPool, 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
+		vkGetQueryPoolResults(device, queryPool.v(), 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
 
 		// create a buffer for the compacted BLAS
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2919,23 +2919,23 @@ private:
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
-		VkQueryPool queryPool;
+		VkhQueryPool queryPool;
 		VkQueryPoolCreateInfo queryPoolInfo = {};
 		queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
 		queryPoolInfo.queryCount = 1;
-		vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool);
+		vkCreateQueryPool(device, &queryPoolInfo, nullptr, queryPool.p());
 
 		// query the size of the TLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer.v(), queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
+		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
+		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
-		vkGetQueryPoolResults(device, queryPool, 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
+		vkGetQueryPoolResults(device, queryPool.v(), 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
 
 		// create a buffer for the compacted TLAS
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -3130,7 +3130,7 @@ private:
 	}
 
 	void summonModel() {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
@@ -3163,7 +3163,7 @@ private:
 
 	void summonLight() {
 		if (lights.size() + 1 > MAX_LIGHTS) return;
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 		dml::vec3 target = pos + dml::quatToDir(cam.quat);
@@ -3685,7 +3685,7 @@ private:
 			glfwGetFramebufferSize(window, &width, &height);
 			glfwWaitEvents();
 		}
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		vkDeviceWaitIdle(device); // wait for thr device to be idle
 
 		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
@@ -3710,10 +3710,10 @@ private:
 
 	void drawFrame() {
 		uint32_t imageIndex;
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+		vkResetFences(device, 1, inFlightFences[currentFrame].p());
 
 		// acquire the next image from the swapchain
-		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
@@ -3736,7 +3736,7 @@ private:
 		submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
 
 		// submit all command buffers in a single call
-		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame]) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame].v()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit command buffers!");
 		}
 
@@ -3744,7 +3744,7 @@ private:
 		VkPresentInfoKHR presentInfo{};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
+		presentInfo.pWaitSemaphores = renderFinishedSemaphore.p();
 		VkSwapchainKHR swapChains[] = { swap.swapChain };
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapChains;
@@ -3762,7 +3762,7 @@ private:
 	}
 
 	void recordAllCommandBuffers() { // record every command buffer
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
 #ifdef PROFILE_COMMAND_BUFFERS
 		utils::sep();

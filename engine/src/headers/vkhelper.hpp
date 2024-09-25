@@ -214,6 +214,30 @@ struct VkhObject<VkFramebuffer> {
 	}
 };
 
+template<>
+struct VkhObject<VkSemaphore> {
+	static void destroy(VkSemaphore semaphore) {
+		std::cout << "semaphore was destroyed: " << semaphore << std::endl;
+		vkDestroySemaphore(device, semaphore, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkFence> {
+	static void destroy(VkFence fence) {
+		std::cout << "fence was destroyed: " << fence << std::endl;
+		vkDestroyFence(device, fence, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkQueryPool> {
+	static void destroy(VkQueryPool queryPool) {
+		std::cout << "query pool was destroyed: " << queryPool << std::endl;
+		vkDestroyQueryPool(device, queryPool, nullptr);
+	}
+};
+
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
 
@@ -234,6 +258,10 @@ using VkhShaderModule = VkhObj<VkShaderModule>;
 
 using VkhRenderPass = VkhObj<VkRenderPass>;
 using VkhFramebuffer = VkhObj<VkFramebuffer>;
+
+using VkhSemaphore = VkhObj<VkSemaphore>;
+using VkhFence = VkhObj<VkFence>;
+using VkhQueryPool = VkhObj<VkQueryPool>;
 
 class vkh {
 public:
@@ -877,11 +905,11 @@ public:
 		return commandBuffer;
 	}
 
-	static void createSemaphore(VkSemaphore& semaphore) {
+	static void createSemaphore(VkhSemaphore& semaphore) {
 		VkSemaphoreCreateInfo semaphoreInfo{};
 		semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-		VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, &semaphore);
+		VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, semaphore.p());
 		if (resultRenderFinished != VK_SUCCESS) {
 			throw std::runtime_error("failed to create semaphore!");
 		}
@@ -900,31 +928,31 @@ public:
 		return submitInfo;
 	}
 
-	static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkSemaphore& wait, const VkSemaphore& signal) {
+	static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkhSemaphore& wait, const VkhSemaphore& signal) {
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount = 1;
-		submitInfo.pWaitSemaphores = &wait;
+		submitInfo.pWaitSemaphores = wait.p();
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
 		submitInfo.pCommandBuffers = commandBuffers->p();
 		submitInfo.signalSemaphoreCount = 1;
-		submitInfo.pSignalSemaphores = &signal;
+		submitInfo.pSignalSemaphores = signal.p();
 		return submitInfo;
 	}
 
-	static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkSemaphore* wait, const VkSemaphore* signal,
+	static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkhSemaphore* wait, const VkhSemaphore* signal,
 		const size_t commandBufferCount, const size_t waitSemaphoreCount, const size_t signalSemaphoreCount) {
 
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphoreCount);
-		submitInfo.pWaitSemaphores = wait;
+		submitInfo.pWaitSemaphores = wait->p();
 		submitInfo.pWaitDstStageMask = waitStages;
 		submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
 		submitInfo.pCommandBuffers = commandBuffers->p();
 		submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
-		submitInfo.pSignalSemaphores = signal;
+		submitInfo.pSignalSemaphores = signal->p();
 		return submitInfo;
 	}
 
