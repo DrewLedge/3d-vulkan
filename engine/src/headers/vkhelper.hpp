@@ -174,6 +174,22 @@ struct VkhObject<VkDescriptorSet, VkDescriptorPool*> {
 	}
 };
 
+template<>
+struct VkhObject<VkPipeline> {
+	static void destroy(VkPipeline pipeline) {
+		std::cout << "pipeline was destroyed: " << pipeline << std::endl;
+		vkDestroyPipeline(device, pipeline, nullptr);
+	}
+};
+
+template<>
+struct VkhObject<VkPipelineLayout> {
+	static void destroy(VkPipelineLayout pipelineLayout) {
+		std::cout << "pipeline layout was destroyed: " << pipelineLayout << std::endl;
+		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
+	}
+};
+
 
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
@@ -187,6 +203,9 @@ using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool*>;
 using VkhDescriptorPool = VkhObj<VkDescriptorPool>;
 using VkhDescriptorSetLayout = VkhObj<VkDescriptorSetLayout>;
 using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool*>;
+
+using VkhPipeline = VkhObj<VkPipeline>;
+using VkhPipelineLayout = VkhObj<VkPipelineLayout>;
 
 class vkh {
 public:

@@ -231,8 +231,8 @@ private:
 
 	struct SkyboxObject { // skybox struct
 		dvl::Texture cubemap;
-		VkPipelineLayout pipelineLayout;
-		VkPipeline pipeline;
+		VkhPipelineLayout pipelineLayout;
+		VkhPipeline pipeline;
 		vkh::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
 		VkhBuffer vertBuffer;
 		VkhDeviceMemory vertBufferMem;
@@ -281,8 +281,8 @@ private:
 
 	struct PipelineData {
 		VkRenderPass renderPass;
-		VkPipelineLayout layout;
-		VkPipeline pipeline;
+		VkhPipelineLayout layout;
+		VkhPipeline pipeline;
 	};
 
 	struct SCData {
@@ -1820,7 +1820,7 @@ private:
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &opaquePassPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, opaquePassPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
@@ -1887,12 +1887,12 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = opaquePassPipeline.layout;
+		pipelineInf.layout = opaquePassPipeline.layout.v();
 		pipelineInf.renderPass = opaquePassPipeline.renderPass;
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &opaquePassPipeline.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, opaquePassPipeline.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -2058,7 +2058,7 @@ private:
 		pipelineLayoutInf.pSetLayouts = descs.layouts[1].p();
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowMapPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
@@ -2075,12 +2075,12 @@ private:
 		pipelineInfo.pMultisampleState = &multiSamp;
 		pipelineInfo.pDepthStencilState = &dStencil;
 		pipelineInfo.pColorBlendState = &colorBS;
-		pipelineInfo.layout = shadowMapPipeline.layout;
+		pipelineInfo.layout = shadowMapPipeline.layout.v();
 		pipelineInfo.renderPass = shadowMapPipeline.renderPass;
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline.pipeline) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, shadowMapPipeline.pipeline.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map pipeline!");
 		}
 	}
@@ -2184,7 +2184,7 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &skybox.pipelineLayout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, skybox.pipelineLayout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for skybox!");
 		}
@@ -2200,10 +2200,10 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = skybox.pipelineLayout;
+		pipelineInf.layout = skybox.pipelineLayout.v();
 		pipelineInf.renderPass = opaquePassPipeline.renderPass;
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, skybox.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for skybox!");
 		}
@@ -2401,7 +2401,7 @@ private:
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &wboitPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, wboitPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for WBOIT!!");
 		}
@@ -2417,10 +2417,10 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = wboitPipeline.layout;
+		pipelineInf.layout = wboitPipeline.layout.v();
 		pipelineInf.renderPass = wboitPipeline.renderPass;
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &wboitPipeline.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, wboitPipeline.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for WBOIT!");
 		}
@@ -2563,7 +2563,7 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
 		pipelineLayoutInf.pSetLayouts = descs.layouts[5].p();
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &compPipelineData.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipelineData.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for composition!!");
 		}
@@ -2579,10 +2579,10 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = compPipelineData.layout;
+		pipelineInf.layout = compPipelineData.layout.v();
 		pipelineInf.renderPass = compPipelineData.renderPass;
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &compPipelineData.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, compPipelineData.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for the composition pass!");
 		}
@@ -3214,8 +3214,8 @@ private:
 			}
 		}
 
-		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		// bind the vertex and instance buffers
 		vkCmdBindVertexBuffers(secondary.v(), 0, 2, vertexBuffersArray.data(), offsets.data());
@@ -3241,7 +3241,7 @@ private:
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[p];
 
-				vkCmdPushConstants(secondary.v(), pipe.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 				vkCmdDrawIndexed(secondary.v(), bufferData[bufferInd].indexCount, instanceCount,
@@ -3270,11 +3270,11 @@ private:
 				}
 			}
 
-			vkCmdBindPipeline(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-			vkCmdBindDescriptorSets(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+			vkCmdBindPipeline(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
+			vkCmdBindDescriptorSets(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 			int lightIndex = static_cast<int>(i);
-			vkCmdPushConstants(secondaries[i].v(), shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
+			vkCmdPushConstants(secondaries[i].v(), shadowMapPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
 
 			vkCmdBindVertexBuffers(secondaries[i].v(), 0, 2, vertexBuffersArray.data(), offsets.data());
 			vkCmdBindIndexBuffer(secondaries[i].v(), indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
@@ -3311,8 +3311,8 @@ private:
 			}
 		}
 
-		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline);
-		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		vkCmdDraw(secondary.v(), 6, 1, 0, 0);
 
@@ -3385,8 +3385,8 @@ private:
 		}
 
 		const VkDeviceSize skyboxOffset = 0;
-		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout.v(), 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
 		vkCmdBindVertexBuffers(secondary.v(), 0, 1, skybox.vertBuffer.p(), &skyboxOffset);
 		vkCmdBindIndexBuffer(secondary.v(), skybox.indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
 		vkCmdDrawIndexed(secondary.v(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
