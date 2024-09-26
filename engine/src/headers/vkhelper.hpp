@@ -8,13 +8,42 @@
 #include <optional>
 #include <memory>
 
-
+// ------------------ GLOBALS ------------------ //
 extern VkDevice device;
 extern VkQueue graphicsQueue;
 extern VkPhysicalDevice physicalDevice;
 
-// ------------------ RAII WRAPPERS ------------------ //
+// ------------------ FUNCTION POINTERS ------------------ //
+namespace vkhfp {
+#define FUNCTIONS \
+    F(vkCreateAccelerationStructureKHR) \
+    F(vkDestroyAccelerationStructureKHR) \
+    F(vkGetAccelerationStructureBuildSizesKHR) \
+    F(vkCmdBuildAccelerationStructuresKHR) \
+    F(vkCmdWriteAccelerationStructuresPropertiesKHR) \
+    F(vkCmdCopyAccelerationStructureKHR) \
+    F(vkGetAccelerationStructureDeviceAddressKHR) \
+    F(vkCmdPushDescriptorSetKHR)
 
+#define F(name) inline PFN_##name name = nullptr;
+	FUNCTIONS
+#undef F
+
+		template<typename T>
+	void loadFunc(VkInstance instance, T& ptr, const char* name) {
+		ptr = reinterpret_cast<T>(vkGetInstanceProcAddr(instance, name));
+		if (!ptr) std::cerr << name << " isnt supported!" << std::endl;
+	}
+
+	inline void loadFuncPointers(VkInstance instance) {
+#define F(name) loadFunc(instance, name, #name);
+		FUNCTIONS
+#undef F
+	}
+}
+
+#define VKHFP_IMPLEMENTATION
+// ------------------ RAII WRAPPERS ------------------ //
 template<typename T, typename... Destroy>
 struct VkhObject;
 

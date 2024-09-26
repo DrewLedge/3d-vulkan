@@ -444,14 +444,6 @@ private:
 	VkhDescriptorSetLayout imguiDescriptorSetLayout;
 
 	// vulkan function pointers
-	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
-	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
-	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
-	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
-	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
-	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
-	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
-	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
 
 	// scene data and objects
 	std::vector<vkh::BufData> bufferData;
@@ -852,23 +844,7 @@ private:
 			deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
 
-			// functions pointers
-			vkCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCreateAccelerationStructureKHR");
-			vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkDestroyAccelerationStructureKHR");
-			vkGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureBuildSizesKHR");
-			vkCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(instance, "vkCmdBuildAccelerationStructuresKHR");
-			vkCmdWriteAccelerationStructuresPropertiesKHR = (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)vkGetInstanceProcAddr(instance, "vkCmdWriteAccelerationStructuresPropertiesKHR");
-			vkCmdCopyAccelerationStructureKHR = (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCmdCopyAccelerationStructureKHR");
-			vkGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureDeviceAddressKHR");
-
-			if (!vkCreateAccelerationStructureKHR) throw std::runtime_error("failed to load vkCreateAccelerationStructureKHR()!");
-			if (!vkDestroyAccelerationStructureKHR) throw std::runtime_error("failed to load vkDestroyAccelerationStructureKHR()!");
-			if (!vkGetAccelerationStructureBuildSizesKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureBuildSizesKHR()!");
-			if (!vkCmdBuildAccelerationStructuresKHR) throw std::runtime_error("failed to load vkCmdBuildAccelerationStructuresKHR()!");
-			if (!vkCmdWriteAccelerationStructuresPropertiesKHR) throw std::runtime_error("failed to load vkCmdWriteAccelerationStructuresPropertiesKHR()!");
-			if (!vkCmdCopyAccelerationStructureKHR) throw std::runtime_error("failed to load vkCmdCopyAccelerationStructureKHR()!");
-			if (!vkGetAccelerationStructureDeviceAddressKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureDeviceAddressKHR()!");
-
+			vkhfp::loadFuncPointers(instance);
 		}
 
 		for (auto& e : deviceExtensions) {
@@ -890,10 +866,6 @@ private:
 			throw std::runtime_error("Failed to create logical device!");
 		}
 
-		vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR");
-		if (vkCmdPushDescriptorSetKHR == nullptr) {
-			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!");
-		}
 		utils::sep();
 	}
 
@@ -2743,7 +2715,7 @@ private:
 		// size requirements for the BLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
+		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the BLAS - the buffer used in the creation of the blas
 		VkBufferUsageFlags blasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2755,7 +2727,7 @@ private:
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		createInfo.buffer = blasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &blas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &blas);
 
 		// scratch buffer - used to create space for intermediate data thats used when building the BLAS
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2775,7 +2747,7 @@ private:
 
 		// build and populate the BLAS with the geometry data
 		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
@@ -2790,7 +2762,7 @@ private:
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2807,7 +2779,7 @@ private:
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		compactedCreateInfo.buffer = compBlasBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &BLAS[index]);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &BLAS[index]);
 
 		// the info for the copying of the original blas to the compacted blas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
@@ -2818,7 +2790,7 @@ private:
 
 		// copy the original BLAS to the compacted one
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
@@ -2834,7 +2806,7 @@ private:
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 			addrInfo.accelerationStructure = BLAS[bufferInd];
-			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
@@ -2883,7 +2855,7 @@ private:
 		// size requirements for the TLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
+		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the TLAS - the buffer used in the creation of the tlas
 		VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2895,7 +2867,7 @@ private:
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		createInfo.buffer = tlasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &tlas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &tlas);
 
 		// scratch buffer - used to create space for intermediate data thats used when building the TLAS
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2915,7 +2887,7 @@ private:
 
 		// build and populate the TLAS
 		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
@@ -2930,7 +2902,7 @@ private:
 		// the data becomes avaible after submitting the command buffer
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2947,7 +2919,7 @@ private:
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		compactedCreateInfo.buffer = compTlasBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &TLAS);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &TLAS);
 
 		// the info for the copying of the original tlas to the compacted tlas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
@@ -2958,7 +2930,7 @@ private:
 
 		// copy the original TLAS to the compacted one
 		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
@@ -2976,7 +2948,7 @@ private:
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
 			addrInfo.accelerationStructure = BLAS[bufferInd];
-			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
