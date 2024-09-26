@@ -887,6 +887,7 @@ public:
 
 	static VkhCommandBuffer beginSingleTimeCommands(VkhCommandPool& commandPool) {
 		VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
+		commandBuffer.setDestroy(false); // command buffer wont be autodestroyed
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
@@ -894,14 +895,15 @@ public:
 		return commandBuffer;
 	}
 
-	static void endSingleTimeCommands(const VkhCommandBuffer& cBuffer, const VkhCommandPool& commandPool, const VkQueue& queue) {
-		vkEndCommandBuffer(cBuffer.v());
+	static void endSingleTimeCommands(VkhCommandBuffer& commandBuffer, const VkhCommandPool& commandPool, const VkQueue& queue) {
+		vkEndCommandBuffer(commandBuffer.v());
 		VkSubmitInfo submitInfo{};
 		submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submitInfo.commandBufferCount = 1;
-		submitInfo.pCommandBuffers = cBuffer.p();
+		submitInfo.pCommandBuffers = commandBuffer.p();
 		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
 		vkQueueWaitIdle(queue); //wait for the queue to be idle
+		vkFreeCommandBuffers(device, commandPool.v(), 1, commandBuffer.p());
 	}
 
 	static void createFB(const VkhRenderPass& renderPass, VkhFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {

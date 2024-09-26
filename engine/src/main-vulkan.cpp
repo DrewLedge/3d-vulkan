@@ -2746,9 +2746,9 @@ private:
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer);
 
 		// build and populate the BLAS with the geometry data
-		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
 		VkhQueryPool queryPool;
@@ -2760,10 +2760,10 @@ private:
 
 		// query the size of the BLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
-		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
@@ -2789,9 +2789,9 @@ private:
 		copyInfo.dst = BLAS[index];
 
 		// copy the original BLAS to the compacted one
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBufferC.v(), &copyInfo);
+		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
 	void createMeshInstances() {
@@ -2886,9 +2886,9 @@ private:
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlasScratchBuffer);
 
 		// build and populate the TLAS
-		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBuffer.v(), 1, &buildInfo, &pBuildRangeInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
 		VkhQueryPool queryPool;
@@ -2900,10 +2900,10 @@ private:
 
 		// query the size of the TLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer.v(), queryPool.v(), 0, 1);
-		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
@@ -2929,9 +2929,9 @@ private:
 		copyInfo.dst = TLAS;
 
 		// copy the original TLAS to the compacted one
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBuffer.v(), &copyInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBufferC.v(), &copyInfo);
+		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
 	void updateTLAS(size_t* objectsIndices, size_t objCount) {
@@ -3782,6 +3782,12 @@ private:
 		}
 	}
 
+
+	void cleanup() {
+		std::cout << "cleaning non RAII data" << std::endl;
+		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
+	}
+
 	void mainLoop() {
 		uint8_t frameCount = 0;
 		uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
@@ -3837,6 +3843,7 @@ private:
 		}
 
 		vkDeviceWaitIdle(device);
+		cleanup();
 	}
 
 	void initializeMouseInput(bool initial) {
