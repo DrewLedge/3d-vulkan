@@ -456,7 +456,7 @@ private:
 	std::vector<std::unique_ptr<Light>> lights;
 
 	// path tracing
-	std::vector<VkAccelerationStructureKHR> BLAS;
+	std::vector<VkhAccelerationStructure> BLAS;
 	VkhBuffer blasBuffer;
 	VkhDeviceMemory blasMem;
 	VkhBuffer blasScratchBuffer;
@@ -464,7 +464,7 @@ private:
 	VkhBuffer compBlasBuffer;
 	VkhDeviceMemory compBlasMem;
 
-	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
+	VkhAccelerationStructure TLAS;
 	VkhBuffer tlasBuffer;
 	VkhDeviceMemory tlasMem;
 	VkhBuffer tlasInstanceBuffer;
@@ -2677,7 +2677,7 @@ private:
 	}
 
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {
-		VkAccelerationStructureKHR blas{};
+		VkhAccelerationStructure blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
 
 		// get the device addresses (location of the data on the device) of the vertex and index buffers
@@ -2727,7 +2727,7 @@ private:
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		createInfo.buffer = blasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &blas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, blas.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the BLAS
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2742,7 +2742,7 @@ private:
 		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
 		// set the dst of the build info to be the blas and add the scratch buffer address
-		buildInfo.dstAccelerationStructure = blas;
+		buildInfo.dstAccelerationStructure = blas.v();
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer);
 
 		// build and populate the BLAS with the geometry data
@@ -2762,7 +2762,7 @@ private:
 		// the data becomes avaible after submitting the command buffer
 		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
-		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, blas.p(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2779,14 +2779,14 @@ private:
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
 		compactedCreateInfo.buffer = compBlasBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &BLAS[index]);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].p());
 
 		// the info for the copying of the original blas to the compacted blas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
-		copyInfo.src = blas;
-		copyInfo.dst = BLAS[index];
+		copyInfo.src = blas.v();
+		copyInfo.dst = BLAS[index].v();
 
 		// copy the original BLAS to the compacted one
 		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
@@ -2802,11 +2802,7 @@ private:
 			// copy the models model matrix into the instance data
 			memcpy(&meshInstance.transform, &objects[i]->modelMatrix, sizeof(VkTransformMatrixKHR));
 
-			// device address of the BLAS
-			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
-			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd];
-			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd]);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
@@ -2826,7 +2822,7 @@ private:
 		VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
-		VkAccelerationStructureKHR tlas;
+		VkhAccelerationStructure tlas;
 		VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlasInstanceBuffer);
 		uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
 
@@ -2867,7 +2863,7 @@ private:
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		createInfo.buffer = tlasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &tlas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, tlas.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the TLAS
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2882,7 +2878,7 @@ private:
 		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
 		// set the dst of the build info to be the tlas and add the scratch buffer address
-		buildInfo.dstAccelerationStructure = tlas;
+		buildInfo.dstAccelerationStructure = tlas.v();
 		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlasScratchBuffer);
 
 		// build and populate the TLAS
@@ -2902,7 +2898,7 @@ private:
 		// the data becomes avaible after submitting the command buffer
 		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
 		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
-		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, tlas.p(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
 		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
@@ -2919,14 +2915,14 @@ private:
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
 		compactedCreateInfo.buffer = compTlasBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &TLAS);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, TLAS.p());
 
 		// the info for the copying of the original tlas to the compacted tlas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
-		copyInfo.src = tlas;
-		copyInfo.dst = TLAS;
+		copyInfo.src = tlas.v();
+		copyInfo.dst = TLAS.v();
 
 		// copy the original TLAS to the compacted one
 		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
@@ -2947,7 +2943,7 @@ private:
 			// device address of the BLAS
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd];
+			addrInfo.accelerationStructure = BLAS[bufferInd].v();
 			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data

@@ -267,6 +267,14 @@ struct VkhObject<VkQueryPool> {
 	}
 };
 
+template<>
+struct VkhObject<VkAccelerationStructureKHR> {
+	static void destroy(VkAccelerationStructureKHR accelerationStructure) {
+		std::cout << "acceleration structure was destroyed: " << accelerationStructure << std::endl;
+		vkhfp::vkDestroyAccelerationStructureKHR(device, accelerationStructure, nullptr);
+	}
+};
+
 using VkhBuffer = VkhObj<VkBuffer>;
 using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
 
@@ -291,6 +299,8 @@ using VkhFramebuffer = VkhObj<VkFramebuffer>;
 using VkhSemaphore = VkhObj<VkSemaphore>;
 using VkhFence = VkhObj<VkFence>;
 using VkhQueryPool = VkhObj<VkQueryPool>;
+
+using VkhAccelerationStructure = VkhObj<VkAccelerationStructureKHR>;
 
 class vkh {
 public:
@@ -460,11 +470,20 @@ public:
 	}
 
 	static VkDeviceAddress bufferDeviceAddress(const VkhBuffer& buffer) {
-		VkBufferDeviceAddressInfo bufferDeviceAddressInfo{};
-		bufferDeviceAddressInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
-		bufferDeviceAddressInfo.buffer = buffer.v();
+		VkBufferDeviceAddressInfo addrInfo{};
+		addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+		addrInfo.buffer = buffer.v();
 
-		return vkGetBufferDeviceAddress(device, &bufferDeviceAddressInfo);
+		return vkGetBufferDeviceAddress(device, &addrInfo);
+	}
+
+	static VkDeviceAddress asDeviceAddress(const VkhAccelerationStructure& accelerationStructure) {
+		VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
+		addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+		addrInfo.accelerationStructure = accelerationStructure.v();
+
+		return vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+
 	}
 
 	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
