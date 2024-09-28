@@ -1358,7 +1358,7 @@ private:
 
 			allocInfo.descriptorPool = descs.pools[i].v();
 			allocInfo.pSetLayouts = descs.layouts[i].p();
-			VkhDescriptorSet set(descs.pools[i].p());
+			VkhDescriptorSet set(descs.pools[i].v());
 			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to allocate descriptor sets!");

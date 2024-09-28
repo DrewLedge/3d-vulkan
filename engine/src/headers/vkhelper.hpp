@@ -42,8 +42,7 @@ namespace vkhfp {
 	}
 }
 
-#define VKHFP_IMPLEMENTATION
-// ------------------ RAII WRAPPERS ------------------ //
+// ------------------ RAII WRAPPER ------------------ //
 template<typename T, typename... Destroy>
 struct VkhObject;
 
@@ -115,7 +114,6 @@ struct VkhObj {
 	void setDestroy(bool destruction) { objectP->autoDestroy = destruction; }
 };
 
-
 template<typename T>
 struct std::hash<VkhObj<T>> {
 	size_t operator()(const VkhObj<T>& obj) const noexcept {
@@ -124,183 +122,59 @@ struct std::hash<VkhObj<T>> {
 };
 
 template<>
-struct VkhObject<VkBuffer> {
-	static void destroy(VkBuffer buffer) {
-		std::cout << "buffer was destroyed: " << buffer << std::endl;
-		vkDestroyBuffer(device, buffer, nullptr);
+struct VkhObject<VkCommandBuffer, VkCommandPool> {
+	static void destroy(VkCommandBuffer commandBuffer, VkCommandPool commandPool) {
+		std::cout << "VkCommandBuffer was destroyed: " << commandBuffer << std::endl;
+		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 	}
 };
 
 template<>
-struct VkhObject<VkDeviceMemory> {
-	static void destroy(VkDeviceMemory mem) {
-		std::cout << "memory was freed: " << mem << std::endl;
-		vkFreeMemory(device, mem, nullptr);
+struct VkhObject<VkDescriptorSet, VkDescriptorPool> {
+	static void destroy(VkDescriptorSet descriptorSet, VkDescriptorPool descriptorPool) {
+		std::cout << "VkDescriptorSet was destroyed: " << descriptorSet << std::endl;
+		vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
 	}
 };
 
-template<>
-struct VkhObject<VkImage> {
-	static void destroy(VkImage image) {
-		std::cout << "image was freed: " << image << std::endl;
-		vkDestroyImage(device, image, nullptr);
-	}
-};
+#define MAKE_RAII(name, type, destruction) \
+template<> \
+struct VkhObject<type> { \
+	static void destroy(type thing) { \
+		std::cout << #type << " was destroyed: " << thing << std::endl; \
+		destruction(device, thing, nullptr); \
+	} \
+}; \
+using name = VkhObj<type>;
 
-template<>
-struct VkhObject<VkImageView> {
-	static void destroy(VkImageView imageView) {
-		std::cout << "image view was freed: " << imageView << std::endl;
-		vkDestroyImageView(device, imageView, nullptr);
-	}
-};
+MAKE_RAII(VkhBuffer, VkBuffer, vkDestroyBuffer)
+MAKE_RAII(VkhDeviceMemory, VkDeviceMemory, vkFreeMemory)
 
-template<>
-struct VkhObject<VkSampler> {
-	static void destroy(VkSampler sampler) {
-		std::cout << "sampler view was freed: " << sampler << std::endl;
-		vkDestroySampler(device, sampler, nullptr);
-	}
-};
+MAKE_RAII(VkhImage, VkImage, vkDestroyImage)
+MAKE_RAII(VkhImageView, VkImageView, vkDestroyImageView)
+MAKE_RAII(VkhSampler, VkSampler, vkDestroySampler)
 
-template<>
-struct VkhObject<VkCommandPool> {
-	static void destroy(VkCommandPool commandPool) {
-		std::cout << "command pool was destroyed: " << commandPool << std::endl;
-		vkDestroyCommandPool(device, commandPool, nullptr);
-	}
-};
+MAKE_RAII(VkhCommandPool, VkCommandPool, vkDestroyCommandPool)
+using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool>;
 
-template<>
-struct VkhObject<VkCommandBuffer, VkCommandPool*> {
-	static void destroy(VkCommandBuffer commandBuffer, VkCommandPool* commandPool) {
-		std::cout << "command buffer was freed: " << commandBuffer << std::endl;
-		vkFreeCommandBuffers(device, *commandPool, 1, &commandBuffer);
-	}
-};
+MAKE_RAII(VkhDescriptorPool, VkDescriptorPool, vkDestroyDescriptorPool)
+MAKE_RAII(VkhDescriptorSetLayout, VkDescriptorSetLayout, vkDestroyDescriptorSetLayout)
+using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool>;
 
-template<>
-struct VkhObject<VkDescriptorPool> {
-	static void destroy(VkDescriptorPool descriptorPool) {
-		std::cout << "descriptor pool was destroyed: " << descriptorPool << std::endl;
-		vkDestroyDescriptorPool(device, descriptorPool, nullptr);
-	}
-};
+MAKE_RAII(VkhPipeline, VkPipeline, vkDestroyPipeline)
+MAKE_RAII(VkhPipelineLayout, VkPipelineLayout, vkDestroyPipelineLayout)
+MAKE_RAII(VkhShaderModule, VkShaderModule, vkDestroyShaderModule)
 
-template<>
-struct VkhObject<VkDescriptorSetLayout> {
-	static void destroy(VkDescriptorSetLayout descriptorSetLayout) {
-		std::cout << "descriptor set layout was destroyed: " << descriptorSetLayout << std::endl;
-		vkDestroyDescriptorSetLayout(device, descriptorSetLayout, nullptr);
-	}
-};
+MAKE_RAII(VkhRenderPass, VkRenderPass, vkDestroyRenderPass)
+MAKE_RAII(VkhFramebuffer, VkFramebuffer, vkDestroyFramebuffer)
 
-template<>
-struct VkhObject<VkDescriptorSet, VkDescriptorPool*> {
-	static void destroy(VkDescriptorSet descriptorSet, VkDescriptorPool* descriptorPool) {
-		std::cout << "descriptor set was freed: " << descriptorSet << std::endl;
-		vkFreeDescriptorSets(device, *descriptorPool, 1, &descriptorSet);
-	}
-};
+MAKE_RAII(VkhSemaphore, VkSemaphore, vkDestroySemaphore)
+MAKE_RAII(VkhFence, VkFence, vkDestroyFence)
+MAKE_RAII(VkhQueryPool, VkQueryPool, vkDestroyQueryPool)
 
-template<>
-struct VkhObject<VkPipeline> {
-	static void destroy(VkPipeline pipeline) {
-		std::cout << "pipeline was destroyed: " << pipeline << std::endl;
-		vkDestroyPipeline(device, pipeline, nullptr);
-	}
-};
+MAKE_RAII(VkhAccelerationStructure, VkAccelerationStructureKHR, vkhfp::vkDestroyAccelerationStructureKHR)
 
-template<>
-struct VkhObject<VkPipelineLayout> {
-	static void destroy(VkPipelineLayout pipelineLayout) {
-		std::cout << "pipeline layout was destroyed: " << pipelineLayout << std::endl;
-		vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkShaderModule> {
-	static void destroy(VkShaderModule shaderModule) {
-		std::cout << "shader module was destroyed: " << shaderModule << std::endl;
-		vkDestroyShaderModule(device, shaderModule, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkRenderPass> {
-	static void destroy(VkRenderPass renderpass) {
-		std::cout << "renderpass was destroyed: " << renderpass << std::endl;
-		vkDestroyRenderPass(device, renderpass, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkFramebuffer> {
-	static void destroy(VkFramebuffer framebuffer) {
-		std::cout << "framebuffer was destroyed: " << framebuffer << std::endl;
-		vkDestroyFramebuffer(device, framebuffer, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkSemaphore> {
-	static void destroy(VkSemaphore semaphore) {
-		std::cout << "semaphore was destroyed: " << semaphore << std::endl;
-		vkDestroySemaphore(device, semaphore, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkFence> {
-	static void destroy(VkFence fence) {
-		std::cout << "fence was destroyed: " << fence << std::endl;
-		vkDestroyFence(device, fence, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkQueryPool> {
-	static void destroy(VkQueryPool queryPool) {
-		std::cout << "query pool was destroyed: " << queryPool << std::endl;
-		vkDestroyQueryPool(device, queryPool, nullptr);
-	}
-};
-
-template<>
-struct VkhObject<VkAccelerationStructureKHR> {
-	static void destroy(VkAccelerationStructureKHR accelerationStructure) {
-		std::cout << "acceleration structure was destroyed: " << accelerationStructure << std::endl;
-		vkhfp::vkDestroyAccelerationStructureKHR(device, accelerationStructure, nullptr);
-	}
-};
-
-using VkhBuffer = VkhObj<VkBuffer>;
-using VkhDeviceMemory = VkhObj<VkDeviceMemory>;
-
-using VkhImage = VkhObj<VkImage>;
-using VkhImageView = VkhObj<VkImageView>;
-using VkhSampler = VkhObj<VkSampler>;
-
-using VkhCommandPool = VkhObj<VkCommandPool>;
-using VkhCommandBuffer = VkhObj<VkCommandBuffer, VkCommandPool*>;
-
-using VkhDescriptorPool = VkhObj<VkDescriptorPool>;
-using VkhDescriptorSetLayout = VkhObj<VkDescriptorSetLayout>;
-using VkhDescriptorSet = VkhObj<VkDescriptorSet, VkDescriptorPool*>;
-
-using VkhPipeline = VkhObj<VkPipeline>;
-using VkhPipelineLayout = VkhObj<VkPipelineLayout>;
-using VkhShaderModule = VkhObj<VkShaderModule>;
-
-using VkhRenderPass = VkhObj<VkRenderPass>;
-using VkhFramebuffer = VkhObj<VkFramebuffer>;
-
-using VkhSemaphore = VkhObj<VkSemaphore>;
-using VkhFence = VkhObj<VkFence>;
-using VkhQueryPool = VkhObj<VkQueryPool>;
-
-using VkhAccelerationStructure = VkhObj<VkAccelerationStructureKHR>;
+#undef MAKE_RAII
 
 class vkh {
 public:
@@ -941,7 +815,7 @@ public:
 	}
 
 	static VkhCommandBuffer allocateCommandBuffers(VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
-		VkhCommandBuffer commandBuffer(commandPool.p());
+		VkhCommandBuffer commandBuffer(commandPool.v());
 		VkCommandBufferAllocateInfo allocInfo = {};
 		allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 		allocInfo.commandPool = commandPool.v();
