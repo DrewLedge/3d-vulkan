@@ -134,7 +134,6 @@ struct std::hash<VkhObj<T>> {
 template<>
 struct VkhObject<VkCommandBuffer, VkCommandPool> {
 	static void destroy(VkCommandBuffer commandBuffer, VkCommandPool commandPool) {
-		std::cout << "VkCommandBuffer was destroyed: " << commandBuffer << std::endl;
 		vkFreeCommandBuffers(device, commandPool, 1, &commandBuffer);
 	}
 };
@@ -142,7 +141,6 @@ struct VkhObject<VkCommandBuffer, VkCommandPool> {
 template<>
 struct VkhObject<VkDescriptorSet, VkDescriptorPool> {
 	static void destroy(VkDescriptorSet descriptorSet, VkDescriptorPool descriptorPool) {
-		std::cout << "VkDescriptorSet was destroyed: " << descriptorSet << std::endl;
 		vkFreeDescriptorSets(device, descriptorPool, 1, &descriptorSet);
 	}
 };
@@ -151,7 +149,6 @@ struct VkhObject<VkDescriptorSet, VkDescriptorPool> {
 template<> \
 struct VkhObject<type> { \
 	static void destroy(type thing) { \
-		std::cout << #type << " was destroyed: " << thing << std::endl; \
 		destruction(device, thing, nullptr); \
 	} \
 }; \

@@ -89,7 +89,7 @@ public:
 		uint32_t mipLevels;
 		VkhBuffer stagingBuffer;
 		VkhDeviceMemory stagingBufferMem;
-		tinygltf::Image gltfImage;
+		std::shared_ptr<tinygltf::Image> gltfImage;
 		bool found;
 		uint16_t width;
 		uint16_t height;
@@ -520,7 +520,7 @@ public:
 				else {
 					vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
 				}
-				vertex.col.w = 0.6f;
+				//vertex.col.w = 0.6f;
 
 				// get handedness of the tangent
 				dml::vec3 t = tangents[index].xyz();
@@ -548,7 +548,7 @@ public:
 				if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.baseColor.gltfImage = model.images[tex.source];
+					texture.baseColor.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);
 					texture.baseColor.path = "gltf";
 					texture.baseColor.found = true;
 					newObject.textureCount++;
@@ -558,7 +558,7 @@ public:
 				if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.metallicRoughness.gltfImage = model.images[tex.source];
+					texture.metallicRoughness.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.metallicRoughness.path = "gltf";
 					texture.metallicRoughness.found = true;
 					newObject.textureCount++;
@@ -568,7 +568,7 @@ public:
 				if (material.normalTexture.index >= 0) {
 					tinygltf::NormalTextureInfo& texInfo = material.normalTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.normalMap.gltfImage = model.images[tex.source];
+					texture.normalMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.normalMap.path = "gltf";
 					texture.normalMap.found = true;
 					newObject.textureCount++;
@@ -578,7 +578,7 @@ public:
 				if (material.emissiveTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.emissiveTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.emissiveMap.gltfImage = model.images[tex.source];
+					texture.emissiveMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.emissiveMap.path = "gltf";
 					texture.emissiveMap.found = true;
 					newObject.textureCount++;
@@ -588,7 +588,7 @@ public:
 				if (material.occlusionTexture.index >= 0) {
 					tinygltf::OcclusionTextureInfo& texInfo = material.occlusionTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.occlusionMap.gltfImage = model.images[tex.source];
+					texture.occlusionMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.occlusionMap.path = "gltf";
 					texture.occlusionMap.found = true;
 					newObject.textureCount++;

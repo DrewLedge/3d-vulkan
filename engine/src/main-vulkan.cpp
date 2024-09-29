@@ -1411,10 +1411,10 @@ private:
 		createDS(); //create the descriptor set
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
-		int width = gltfImage.width;
-		int height = gltfImage.height;
-		int channels = gltfImage.component;
+	void getGLTFImageData(std::shared_ptr<tinygltf::Image>& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
+		int width = gltfImage->width;
+		int height = gltfImage->height;
+		int channels = gltfImage->component;
 
 		// delete previously allocated memory if any
 		if (imgData != nullptr) {
@@ -1428,7 +1428,7 @@ private:
 			for (int x = 0; x < width; x++) {
 				for (int c = 0; c < channels; c++) {
 					// copy the data from the original image into the new array
-					imgData[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
+					imgData[(y * width + x) * 4 + c] = gltfImage->image[(y * width + x) * channels + c];
 				}
 				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
 				if (channels < 4) {
@@ -1437,6 +1437,7 @@ private:
 			}
 		}
 		imgData = resizeImage(imgData, width, height, t.width, t.height, channels);
+		gltfImage.reset();
 	}
 
 	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
@@ -2994,10 +2995,10 @@ private:
 		createTLAS();
 	}
 
-	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
+	void createModelBuffers(bool recreate) {
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
-		bufferData.resize(getUniqueModels());
+		if (!recreate) bufferData.resize(getUniqueModels());
 		uniqueModelIndex.clear();
 		modelHashToBufferIndex.clear();
 
@@ -3009,12 +3010,16 @@ private:
 		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
 			if (uniqueModelIndex.find(obj->meshHash) == uniqueModelIndex.end()) {
-				totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
-				totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+				if (!recreate) {
+					totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
+					totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+				}
 				uniqueModelIndex[obj->meshHash] = i; //store the index of the object
 				modelHashToBufferIndex[obj->meshHash] = ind++;
 			}
 		}
+
+		if (recreate) return;
 
 		VkhBuffer stagingVertBuffer;
 		VkhDeviceMemory stagingVertBufferMem;
@@ -3097,17 +3102,20 @@ private:
 		createTLAS();
 	}
 
-	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<dvl::Mesh>(*originalObjects[object]);
+	void cloneObject(dml::vec3 pos, uint16_t index, dml::vec3 scale, dml::vec4 rotation) {
+		const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
+		dvl::Mesh m;
 
-		m->scale = scale;
-		m->position = pos;
-		m->startObj = false;
-		m->rotation = rotation;
+		m.scale = scale;
+		m.position = pos;
+		m.startObj = false;
+		m.rotation = rotation;
+		m.meshHash = other->meshHash;
+		m.material = other->material;
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQuat(rotation) * dml::scale(scale);
-		m->modelMatrix = newModel * m->modelMatrix;
-		objects.push_back(std::move(m));
+		m.modelMatrix = newModel * other->modelMatrix;
+		objects.push_back(std::make_unique<dvl::Mesh>(std::move(m)));
 	}
 
 	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
@@ -3130,12 +3138,13 @@ private:
 
 	void summonModel() {
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+		if (objects.size() + 2 >= MAX_MODELS) return;
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 10, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
-		createModelBuffers();
+		createModelBuffers(true);
 
 		if (rtEnabled) {
 			std::array<size_t, 2> indices = { objects.size() - 2, objects.size() - 1 };
@@ -3955,12 +3964,12 @@ private:
 		}
 
 		if (rKey.isPressed()) {
-			uint64_t vertCount = 0;
+			size_t vertCount = 0;
 			for (const auto& o : objects) {
 				vertCount += o->vertices.size();
 			}
 
-			double score = fps * (((vertCount) / 200000.0) + lights.size());
+			double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
 
 			utils::sep();
 			std::cout << "Vertex count: " << vertCount << std::endl;
@@ -3994,7 +4003,7 @@ private:
 		loadUniqueObjects();
 
 		// create buffers and textures
-		createModelBuffers();
+		createModelBuffers(false);
 		setupAccelerationStructures();
 		setupTextures();
 		loadSkybox("night-sky.hdr");
