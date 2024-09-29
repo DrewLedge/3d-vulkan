@@ -55,10 +55,15 @@ struct VkhObj {
 
 		ObjWrapper(Object obj, bool destroy, Destroy... args) : object(obj), autoDestroy(destroy), destroyArgs(args...) {}
 
+		void destroy() {
+			std::apply([this](auto&&... args) { VkhObject<Object, Destroy...>::destroy(object, args...); }, destroyArgs);
+			object = VK_NULL_HANDLE;
+		}
+
 		// custom destructor
 		~ObjWrapper() {
 			if (autoDestroy && object != VK_NULL_HANDLE) {
-				std::apply([this](auto&&... args) { VkhObject<Object, Destroy...>::destroy(object, args...); }, destroyArgs);
+				destroy();
 			}
 		}
 
@@ -112,6 +117,11 @@ struct VkhObj {
 	// get the current use count of the obj
 	size_t use_count() const noexcept { return objectP.use_count(); }
 	void setDestroy(bool destruction) { objectP->autoDestroy = destruction; }
+
+	void reset(Destroy... d) {
+		if (valid()) objectP->destroy();
+		objectP = std::make_shared<ObjWrapper>(VK_NULL_HANDLE, true, d...);
+	}
 };
 
 template<typename T>
@@ -171,6 +181,8 @@ MAKE_RAII(VkhFramebuffer, VkFramebuffer, vkDestroyFramebuffer)
 MAKE_RAII(VkhSemaphore, VkSemaphore, vkDestroySemaphore)
 MAKE_RAII(VkhFence, VkFence, vkDestroyFence)
 MAKE_RAII(VkhQueryPool, VkQueryPool, vkDestroyQueryPool)
+
+MAKE_RAII(VkhSwapchainKHR, VkSwapchainKHR, vkDestroySwapchainKHR)
 
 MAKE_RAII(VkhAccelerationStructure, VkAccelerationStructureKHR, vkhfp::vkDestroyAccelerationStructureKHR)
 
@@ -357,10 +369,12 @@ public:
 		addrInfo.accelerationStructure = accelerationStructure.v();
 
 		return vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
-
 	}
 
 	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
+		if (buffer.valid()) buffer.reset();
+		if (bufferMem.valid()) bufferMem.reset();
+
 		VkBufferCreateInfo bufferCreateInfo{};
 		bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
 		bufferCreateInfo.size = size;
@@ -576,6 +590,9 @@ public:
 	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkSampleCountFlagBits& sample) {
 
+		if (image.valid()) image.reset();
+		if (imageMemory.valid()) imageMemory.reset();
+
 		VkImageCreateInfo imageInfo{};
 		imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
 		imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -618,12 +635,12 @@ public:
 
 	static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
 		const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, VkhCommandPool& commandPool, const VkSampleCountFlagBits& sample) {
-
 		createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
 		transitionImageLayout(commandPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
 	}
 
 	static void createSampler(VkhSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
+		if (sampler.valid()) sampler.reset();
 		VkSamplerCreateInfo samplerInf{};
 		samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
 		samplerInf.magFilter = VK_FILTER_LINEAR; // magnification filter
@@ -662,6 +679,8 @@ public:
 
 	template<typename Texture>
 	static void createImageView(Texture& tex, const TextureType type = BASE) {
+		if (tex.imageView.valid()) tex.imageView.reset();
+
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image.v();
@@ -718,6 +737,8 @@ public:
 
 	template<typename Texture>
 	static void createImageView(Texture& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
+		if (tex.imageView.valid()) tex.imageView.reset();
+
 		VkImageViewCreateInfo viewInf{};
 		viewInf.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 		viewInf.image = tex.image.v();
@@ -800,6 +821,7 @@ public:
 	}
 
 	static void createFB(const VkhRenderPass& renderPass, VkhFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
+		if (frameBuf.valid()) frameBuf.reset();
 		VkFramebufferCreateInfo frameBufferInfo{};
 		frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		frameBufferInfo.renderPass = renderPass.v();

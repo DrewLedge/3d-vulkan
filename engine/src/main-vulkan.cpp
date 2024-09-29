@@ -60,61 +60,33 @@ const std::string FONT_DIR = "assets/fonts/";
 bool rtSupported = false; // a bool if raytracing is supported on the device
 bool rtEnabled = true; // a bool if raytracing has been enabled
 
-struct CamData {
-	dml::vec3 pos; //x, y, z
-	dml::vec4 quat;
-	float upAngle;
-	float rightAngle;
-
-	dml::mat4 projectionMatrix;
-	dml::mat4 viewMatrix;
-
-	// buffers for the camera matrix ubo
-	VkhBuffer buffer;
-	VkhDeviceMemory bufferMem;
+struct MouseData {
+	bool locked;
 
 	float lastX;
 	float lastY;
-	bool locked;
 
-	float fov;
-	float nearP;
-	float farP;
+	float upAngle;
+	float rightAngle;
 
-	CamData()
-		: pos(0.0f, 0.0f, 0.0f),
-		quat(0.0f, 0.0f, 0.0f, 1.0f),
-		upAngle(0.0f),
+	MouseData()
+		: upAngle(0.0f),
 		rightAngle(0.0f),
-		projectionMatrix(),
-		viewMatrix(),
-		buffer(),
-		bufferMem(),
 		lastX(0.0f),
 		lastY(0.0f),
-		locked(true),
-		fov(60.0f),
-		nearP(0.01f),
-		farP(100.0f)
+		locked(true)
 	{}
-
-	const dml::mat4 getViewMatrix() {
-		return dml::viewMatrix(pos, dml::radians(upAngle), dml::radians(rightAngle));
-	}
-
-	void updateQuaternion() {
-		dml::vec4 yRot = dml::angleAxis(dml::radians(upAngle), dml::vec3(1, 0, 0));
-		dml::vec4 xRot = dml::angleAxis(dml::radians(rightAngle), dml::vec3(0, 1, 0));
-		quat = yRot * xRot;
-	}
 };
 
 // globals
-CamData cam;
-VkDevice device;
-VkQueue graphicsQueue;
-VkPhysicalDevice physicalDevice;
+MouseData mouse;
+VkQueue graphicsQueue{};
+VkPhysicalDevice physicalDevice{};
 GLFWwindow* window = nullptr;
+
+VkSurfaceKHR surface{};
+VkInstance instance{};
+VkDevice device{};
 
 class Engine {
 public:
@@ -124,6 +96,44 @@ public:
 		mainLoop();
 	}
 private:
+	struct CamData {
+		dml::vec3 pos; //x, y, z
+		dml::vec4 quat;
+
+		dml::mat4 projectionMatrix;
+		dml::mat4 viewMatrix;
+
+		// buffers for the camera matrix ubo
+		VkhBuffer buffer;
+		VkhDeviceMemory bufferMem;
+
+		float fov;
+		float nearP;
+		float farP;
+
+		CamData()
+			: pos(0.0f, 0.0f, 0.0f),
+			quat(0.0f, 0.0f, 0.0f, 1.0f),
+			projectionMatrix(),
+			viewMatrix(),
+			buffer(),
+			bufferMem(),
+			fov(60.0f),
+			nearP(0.01f),
+			farP(100.0f)
+		{}
+
+		const dml::mat4 getViewMatrix(MouseData& m) {
+			return dml::viewMatrix(pos, dml::radians(m.upAngle), dml::radians(m.rightAngle));
+		}
+
+		void updateQuaternion(MouseData& m) {
+			dml::vec4 yRot = dml::angleAxis(dml::radians(m.upAngle), dml::vec3(1, 0, 0));
+			dml::vec4 xRot = dml::angleAxis(dml::radians(m.rightAngle), dml::vec3(0, 1, 0));
+			quat = yRot * xRot;
+		}
+	};
+
 	struct Light { // spotlight
 		dml::vec3 pos;
 		dml::vec3 col;
@@ -155,7 +165,7 @@ private:
 			linearAttenuation(0.1f),
 			quadraticAttenuation(0.032f),
 			shadowMapData(),
-			frameBuffer(VK_NULL_HANDLE),
+			frameBuffer(),
 			followPlayer(false) {
 		}
 
@@ -242,10 +252,15 @@ private:
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
+		void resetPipeline() {
+			if (pipelineLayout.valid()) pipelineLayout.reset();
+			if (pipeline.valid()) pipeline.reset();
+		}
+
 		SkyboxObject()
 			: cubemap(),
-			pipelineLayout(VK_NULL_HANDLE),
-			pipeline(VK_NULL_HANDLE),
+			pipelineLayout(),
+			pipeline(),
 			bufferData(),
 			vertBuffer(),
 			vertBufferMem(),
@@ -283,10 +298,16 @@ private:
 		VkhRenderPass renderPass;
 		VkhPipelineLayout layout;
 		VkhPipeline pipeline;
+
+		void reset() {
+			if (renderPass.valid()) renderPass.reset();
+			if (layout.valid()) layout.reset();
+			if (pipeline.valid()) pipeline.reset();
+		}
 	};
 
 	struct SCData {
-		VkSwapchainKHR swapChain;
+		VkhSwapchainKHR swapChain;
 		std::vector<VkhImage> images;
 		VkFormat imageFormat;
 		VkExtent2D extent;
@@ -295,7 +316,7 @@ private:
 		std::vector<VkhFramebuffer> framebuffers;
 
 		SCData()
-			: swapChain(VK_NULL_HANDLE),
+			: swapChain(),
 			images(),
 			imageFormat(VK_FORMAT_UNDEFINED),
 			extent(),
@@ -325,7 +346,7 @@ private:
 
 		WBOITData()
 			: weightedColor(),
-			frameBuffer(VK_NULL_HANDLE)
+			frameBuffer()
 		{}
 	};
 
@@ -376,9 +397,16 @@ private:
 		CommandBufferCollection secondary;
 	};
 
+	struct BlasData {
+		VkhAccelerationStructure blas;
+		VkhBuffer compBuffer;
+		VkhDeviceMemory compMem;
+	};
+
+
+	CamData cam;
+
 	// window and rendering context
-	VkSurfaceKHR surface = VK_NULL_HANDLE;
-	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue presentQueue = VK_NULL_HANDLE;
 	VkQueue computeQueue = VK_NULL_HANDLE;
 	VkQueue transferQueue = VK_NULL_HANDLE;
@@ -434,10 +462,6 @@ private:
 	VkhSemaphore wboitSemaphore;
 	VkhSemaphore compSemaphore;
 
-	// shader modules
-	VkhShaderModule fragShaderModule;
-	VkhShaderModule vertShaderModule;
-
 	// descriptor sets and pools
 	DSObject descs = {};
 	VkhDescriptorPool imguiDescriptorPool;
@@ -456,13 +480,7 @@ private:
 	std::vector<std::unique_ptr<Light>> lights;
 
 	// path tracing
-	std::vector<VkhAccelerationStructure> BLAS;
-	VkhBuffer blasBuffer;
-	VkhDeviceMemory blasMem;
-	VkhBuffer blasScratchBuffer;
-	VkhDeviceMemory blasScratchMem;
-	VkhBuffer compBlasBuffer;
-	VkhDeviceMemory compBlasMem;
+	std::vector<BlasData> BLAS;
 
 	VkhAccelerationStructure TLAS;
 	VkhBuffer tlasBuffer;
@@ -843,9 +861,9 @@ private:
 			deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
-
-			vkhfp::loadFuncPointers(instance);
 		}
+
+		vkhfp::loadFuncPointers(instance);
 
 		for (auto& e : deviceExtensions) {
 			if (checkExtensionSupport(e)) {
@@ -934,17 +952,17 @@ private:
 		newinfo.presentMode = present;
 		newinfo.clipped = VK_TRUE; // if the window is obscured, the pixels that are obscured will not be drawn to
 		newinfo.oldSwapchain = VK_NULL_HANDLE;
-		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain) != VK_SUCCESS) {
+		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, swap.swapChain.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
 		}
 
 		// get the swap chain images
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
+		vkGetSwapchainImagesKHR(device, swap.swapChain.v(), &swap.imageCount, nullptr);
 
 		swap.images.resize(swap.imageCount);
 		std::vector<VkImage> images(swap.imageCount);
 
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, images.data());
+		vkGetSwapchainImagesKHR(device, swap.swapChain.v(), &swap.imageCount, images.data());
 		for (uint32_t i = 0; i < swap.imageCount; i++) {
 			swap.images[i] = VkhImage(images[i]);
 			swap.images[i].setDestroy(false); // obj wont be automatically freed when out of scope
@@ -1111,6 +1129,7 @@ private:
 		swap.imageViews.resize(swap.images.size());
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
+			if (swap.imageViews[i].valid()) swap.imageViews[i].reset();
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
 			newinfo.image = swap.images[i].v(); // assign the current swap chain image
@@ -1154,7 +1173,7 @@ private:
 	}
 
 	void calcCameraMats() {
-		cam.viewMatrix = cam.getViewMatrix();
+		cam.viewMatrix = cam.getViewMatrix(mouse);
 		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
 	}
 
@@ -1379,7 +1398,6 @@ private:
 	}
 
 	void setupDescriptorSets(bool initial = true) {
-		descs.sets.clear();
 		totalTextureCount = 0;
 		for (uint32_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
@@ -1610,8 +1628,8 @@ private:
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
@@ -2060,8 +2078,8 @@ private:
 	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2184,8 +2202,8 @@ private:
 	void createWBOITPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "wboit_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "wboit_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2401,8 +2419,8 @@ private:
 	void createCompositionPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "composition_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "composition_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -2561,10 +2579,18 @@ private:
 	}
 
 	void setupPipelines(bool shadow) {
+		opaquePassPipeline.reset();
+		compPipelineData.reset();
+		skybox.resetPipeline();
+		wboitPipeline.reset();
+
 		createGraphicsPipeline();
 		createCompositionPipeline();
 		createSkyboxPipeline();
-		if (shadow) createShadowPipeline();
+		if (shadow) {
+			shadowMapPipeline.reset();
+			createShadowPipeline();
+		}
 		createWBOITPipeline();
 	}
 
@@ -2637,6 +2663,11 @@ private:
 		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer.v());
 		vkh::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
+	}
+
+	void imguiCleanup() {
+		ImGui_ImplVulkan_Shutdown();
+		ImGui::DestroyContext();
 	}
 
 	void setupFences() {
@@ -2718,6 +2749,8 @@ private:
 		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the BLAS - the buffer used in the creation of the blas
+		VkhBuffer blasBuffer;
+		VkhDeviceMemory blasMem;
 		VkBufferUsageFlags blasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
@@ -2730,6 +2763,8 @@ private:
 		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, blas.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the BLAS
+		VkhBuffer blasScratchBuffer;
+		VkhDeviceMemory blasScratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(blasScratchBuffer, blasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
@@ -2771,22 +2806,22 @@ private:
 
 		// create a buffer for the compacted BLAS
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(BLAS[index].compBuffer, BLAS[index].compMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted BLAS
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-		compactedCreateInfo.buffer = compBlasBuffer.v();
+		compactedCreateInfo.buffer = BLAS[index].compBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].p());
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].blas.p());
 
 		// the info for the copying of the original blas to the compacted blas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
 		copyInfo.src = blas.v();
-		copyInfo.dst = BLAS[index].v();
+		copyInfo.dst = BLAS[index].blas.v();
 
 		// copy the original BLAS to the compacted one
 		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
@@ -2802,7 +2837,7 @@ private:
 			// copy the models model matrix into the instance data
 			memcpy(&meshInstance.transform, &objects[i]->modelMatrix, sizeof(VkTransformMatrixKHR));
 
-			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd]);
+			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd].blas);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
@@ -2816,6 +2851,7 @@ private:
 
 
 	void createTLAS() {
+		if (TLAS.valid()) TLAS.reset();
 		// create a buffer to hold all of the instances
 		VkDeviceSize iSize = meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
 		VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
@@ -2943,7 +2979,7 @@ private:
 			// device address of the BLAS
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd].v();
+			addrInfo.accelerationStructure = BLAS[bufferInd].blas.v();
 			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data
@@ -3045,7 +3081,6 @@ private:
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
-
 	void setupAccelerationStructures() {
 		if (!rtEnabled) return;
 		BLAS.resize(getUniqueModels());
@@ -3093,10 +3128,6 @@ private:
 		return uniqueModels.size();
 	}
 
-	void recreateModelBuffers() {
-		createModelBuffers();
-	}
-
 	void summonModel() {
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
@@ -3104,7 +3135,7 @@ private:
 		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
-		recreateModelBuffers();
+		createModelBuffers();
 
 		if (rtEnabled) {
 			std::array<size_t, 2> indices = { objects.size() - 2, objects.size() - 1 };
@@ -3656,7 +3687,7 @@ private:
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		vkDeviceWaitIdle(device); // wait for thr device to be idle
 
-		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
+		swap.swapChain.reset(); // reset the SC
 
 		createSC();
 		createSCImageViews();
@@ -3681,7 +3712,7 @@ private:
 		vkResetFences(device, 1, inFlightFences[currentFrame].p());
 
 		// acquire the next image from the swapchain
-		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
+		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
@@ -3713,7 +3744,7 @@ private:
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
 		presentInfo.pWaitSemaphores = renderFinishedSemaphore.p();
-		VkSwapchainKHR swapChains[] = { swap.swapChain };
+		VkSwapchainKHR swapChains[] = { swap.swapChain.v() };
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapChains;
 		presentInfo.pImageIndices = &imageIndex;
@@ -3779,11 +3810,6 @@ private:
 	}
 
 
-	void cleanup() {
-		std::cout << "cleaning non RAII data" << std::endl;
-		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
-	}
-
 	void mainLoop() {
 		uint8_t frameCount = 0;
 		uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
@@ -3839,19 +3865,19 @@ private:
 		}
 
 		vkDeviceWaitIdle(device);
-		cleanup();
+		imguiCleanup();
 	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
 		if (initial) {
-			cam.lastX = static_cast<float>(swap.extent.width) / 2.0f;
-			cam.lastY = static_cast<float>(swap.extent.height) / 2.0f;
-			glfwSetCursorPos(window, cam.lastX, cam.lastY);
+			mouse.lastX = static_cast<float>(swap.extent.width) / 2.0f;
+			mouse.lastY = static_cast<float>(swap.extent.height) / 2.0f;
+			glfwSetCursorPos(window, mouse.lastX, mouse.lastY);
 		}
 
 		// only hide and capture cursor if cam.locked is true
-		if (cam.locked) {
+		if (mouse.locked) {
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 			// set the mouse callback
@@ -3867,18 +3893,18 @@ private:
 		float xp = static_cast<float>(xPos);
 		float yp = static_cast<float>(yPos);
 
-		if (cam.locked) {
-			float xoff = cam.lastX - xp;
-			float yoff = cam.lastY - yp;
-			cam.lastX = xp;
-			cam.lastY = yp;
+		if (mouse.locked) {
+			float xoff = mouse.lastX - xp;
+			float yoff = mouse.lastY - yp;
+			mouse.lastX = xp;
+			mouse.lastY = yp;
 
 			float sens = 0.1f;
 			xoff *= sens;
 			yoff *= sens;
 
-			cam.rightAngle -= xoff;
-			cam.upAngle -= yoff;
+			mouse.rightAngle -= xoff;
+			mouse.upAngle -= yoff;
 		}
 	}
 
@@ -3889,10 +3915,10 @@ private:
 
 		float cameraSpeed = 2.0f * deltaTime;
 
-		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
-		cam.rightAngle = fmod(cam.rightAngle + 360.0f, 360.0f);
+		mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
+		mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
 
-		cam.updateQuaternion();
+		cam.updateQuaternion(mouse);
 		dml::vec3 forward = dml::quatToDir(cam.quat);
 		dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
 
@@ -3945,8 +3971,8 @@ private:
 
 		// lock / unlock mouse
 		if (escapeKey.isPressed()) {
-			cam.locked = !cam.locked;
-			initializeMouseInput(cam.locked);
+			mouse.locked = !mouse.locked;
+			initializeMouseInput(mouse.locked);
 		}
 	}
 
@@ -3994,14 +4020,26 @@ private:
 };
 
 int main() {
-	Engine app;
-	try {
-		app.run();
+	{
+		Engine app;
+		try {
+			app.run();
+		}
+		catch (const std::exception& e) {
+			std::cerr << e.what() << std::endl;
+			return EXIT_FAILURE;
+		}
 	}
-	catch (const std::exception& e) {
-		std::cerr << e.what() << std::endl;
-		return EXIT_FAILURE;
-	}
+
+	vkDestroySurfaceKHR(instance, surface, nullptr);
+	vkDestroyDevice(device, nullptr);
+	vkDestroyInstance(instance, nullptr);
+
+	utils::sep();
+	utils::sep();
+	std::cout << "CLOSING ENGINE" << std::endl;
+	utils::sep();
+	utils::sep();
 
 	return EXIT_SUCCESS;
 }
