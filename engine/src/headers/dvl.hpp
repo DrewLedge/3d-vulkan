@@ -3,11 +3,14 @@
 
 #pragma once
 
+#include <tiny_gltf.h>
 #include <vulkan/vulkan.h>
-#include <unordered_set>
+
 #include <dml.hpp>
 #include <utils.hpp>
 #include <vkhelper.hpp>
+
+#include <unordered_set>
 
 class dvl {
 public:
