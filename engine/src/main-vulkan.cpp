@@ -4,7 +4,6 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 //#define PROFILE_MAIN_LOOP
-//#define PROFILE_COMMAND_BUFFERS
 //#define ENABLE_DEBUG
 
 #include <stb_image_resize.h>
@@ -18,12 +17,12 @@
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_vulkan.h>
-#include <taskflow.hpp>
 
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
 #include <vulkan/vulkan.h>
 
+#include <future>
 #include <optional>
 #include <vector>
 #include <string>
@@ -466,8 +465,6 @@ private:
 	VkhDescriptorPool imguiDescriptorPool;
 	VkhDescriptorSetLayout imguiDescriptorSetLayout;
 
-	// vulkan function pointers
-
 	// scene data and objects
 	std::vector<vkh::BufData> bufferData;
 	std::vector<std::unique_ptr<dvl::Mesh>> objects;
@@ -521,15 +518,15 @@ private:
 	uint32_t fps = 0;
 	double lastFrame = 0.0;
 
-	// mutexes and taskflow
+	// multithreading
 	std::mutex modelMtx;
 	std::mutex compositionMutex;
+	std::vector<std::future<void>> objTasks;
 
-	tf::Executor cmdExecutor;
-	tf::Taskflow tfCmd;
+	std::vector<std::future<void>> cmdTasks;
+	size_t cmdIteration = 0;
+	size_t prevCmdIteration = 0;
 
-	tf::Executor meshExecutor;
-	tf::Taskflow tfMesh;
 
 	void initWindow() {
 		glfwInit();
@@ -604,21 +601,23 @@ private:
 		objects.push_back(std::move(p));
 	}
 
-	void createObjTask(tf::Taskflow& tf, const std::string& model, const dml::vec3& scale, const dml::vec4& orientation, const dml::vec3& position) {
-		tf.emplace([=] { createObject(model, scale, orientation, position); });
+	void createObjTask(const std::string& model, const dml::vec3& scale, const dml::vec4& orientation, const dml::vec3& position) {
+		objTasks.emplace_back(std::async(std::launch::async, &Engine::createObject, this, model, scale, orientation, position));
 	}
 
 	void loadUniqueObjects() { // load all unqiue objects and all lights
-		tfMesh.clear();
+		objTasks.clear();
 
-		createObjTask(tfMesh, "sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObjTask(tfMesh, "knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObjTask(tfMesh, "sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
+		createObjTask("sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObjTask("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
 
-		meshExecutor.run(tfMesh).wait();
+		for (auto& t : objTasks) {
+			t.wait();
+		}
 
 		if (!objects.size()) {
 			throw std::runtime_error("Failed to load models!");
@@ -3416,23 +3415,28 @@ private:
 	}
 
 
+	void cmdTasksWait() {
+		for (size_t i = prevCmdIteration; i < cmdIteration; i++) {
+			cmdTasks[i].wait();
+		}
+	}
+
 	void recordShadowCommandBuffers() {
-		VkCommandBufferBeginInfo beginInfoP{};
-		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoP.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		beginInfoP.pInheritanceInfo = nullptr;
+		prevCmdIteration = cmdIteration;
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
 
 		VkClearValue clearValue = { 1.0f, 0 };
 
 		for (size_t i = 0; i < lights.size(); i++) {
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-			tfCmd.emplace([&, i, beginInfoP, clearValue]() {
-#endif
+			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
 				VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
 				VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
-				if (vkBeginCommandBuffer(shadowCommandBuffer.v(), &beginInfoP) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(shadowCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3454,27 +3458,25 @@ private:
 				if (vkEndCommandBuffer(shadowCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-				});
-#endif
+				}));
+			cmdIteration++;
 		}
+		cmdTasksWait();
 	}
 
 	void recordOpaqueCommandBuffers() {
+		prevCmdIteration = cmdIteration;
+
 		const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 
-		VkCommandBufferBeginInfo beginInfoP{};
-		beginInfoP.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-		beginInfoP.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-		beginInfoP.pInheritanceInfo = nullptr;
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = nullptr;
 		for (size_t i = 0; i < swap.images.size(); i++) {
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-			tfCmd.emplace([&, i, clearValues, beginInfoP]() {
-#endif
+			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
 				VkhCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(opaqueCommandBuffer.v(), &beginInfoP) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(opaqueCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
@@ -3493,27 +3495,23 @@ private:
 				if (vkEndCommandBuffer(opaqueCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-				});
-#endif
+				}));
+			cmdIteration++;
 		}
+		cmdTasksWait();
 	}
 
 	void recordWBOITCommandBuffers() {
-		std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
-		VkDeviceSize offset[] = { 0, 0 };
+		prevCmdIteration = cmdIteration;
 
+		std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		beginInfo.pInheritanceInfo = nullptr;
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-			tfCmd.emplace([&, i, clearValues, offset, beginInfo]() {
-#endif
+			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
 				VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
 				if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
@@ -3537,14 +3535,15 @@ private:
 				if (vkEndCommandBuffer(wboitCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-				});
-#endif
+				}));
+			cmdIteration++;
 		}
+		cmdTasksWait();
 	}
 
 	void recordCompCommandBuffers() {
+		prevCmdIteration = cmdIteration;
+
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 		VkhDescriptorSet compDS = descs.sets[5];
 
@@ -3567,10 +3566,7 @@ private:
 		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, compDS.p(), 1, true, true);
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-			tfCmd.emplace([&, i, clearValues, beginInfo]() {
-#endif
+			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
 				VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
 				if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
@@ -3591,11 +3587,10 @@ private:
 				if (vkEndCommandBuffer(compCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
-#ifdef PROFILE_COMMAND_BUFFERS
-#else
-				});
-#endif
+				}));
+			cmdIteration++;
 		}
+		cmdTasksWait();
 	}
 
 	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
@@ -3771,37 +3766,14 @@ private:
 	void recordAllCommandBuffers() { // record every command buffer
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
-#ifdef PROFILE_COMMAND_BUFFERS
-		utils::sep();
+		cmdTasks.clear();
+		cmdIteration = 0;
+		prevCmdIteration = 0;
 
-		auto now = utils::now();
-		recordShadowCommandBuffers();
-		auto duration = utils::duration<microseconds>(now);
-		std::cout << "recordShadowCommandBuffers: " << utils::durationString(duration) << std::endl;
-
-		now = utils::now();
-		recordOpaqueCommandBuffers();
-		duration = utils::duration<microseconds>(now);
-		std::cout << "recordCommandBuffers: " << utils::durationString(duration) << std::endl;
-
-		now = utils::now();
-		recordWBOITCommandBuffers();
-		duration = utils::duration<microseconds>(now);
-		std::cout << "recordWBOITCommandBuffers: " << utils::durationString(duration) << std::endl;
-
-		now = utils::now();
-		recordCompCommandBuffers();
-		duration = utils::duration<microseconds>(now);
-		std::cout << "recordCompCommandBuffers: " << utils::durationString(duration) << std::endl;
-#else
 		recordShadowCommandBuffers();
 		recordOpaqueCommandBuffers();
 		recordWBOITCommandBuffers();
 		recordCompCommandBuffers();
-
-		cmdExecutor.run(tfCmd).wait();
-		tfCmd.clear();
-#endif
 	}
 
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
