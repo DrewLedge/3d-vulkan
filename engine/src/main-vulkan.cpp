@@ -49,7 +49,7 @@ constexpr uint32_t MAX_LIGHTS = 300;
 constexpr uint32_t SCREEN_WIDTH = 3200;
 constexpr uint32_t SCREEN_HEIGHT = 1800;
 
-const std::string ENGINE_VER = "v1.0.0";
+const std::string ENGINE_VER = "v0.5.1";
 
 const std::string SHADER_DIR = "shaders/compiled/";
 const std::string MODEL_DIR = "assets/models/";
