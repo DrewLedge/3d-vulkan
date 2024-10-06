@@ -60,61 +60,33 @@ const std::string FONT_DIR = "assets/fonts/";
 bool rtSupported = false; // a bool if raytracing is supported on the device
 bool rtEnabled = true; // a bool if raytracing has been enabled
 
-struct CamData {
-	dml::vec3 pos; //x, y, z
-	dml::vec4 quat;
-	float upAngle;
-	float rightAngle;
-
-	dml::mat4 projectionMatrix;
-	dml::mat4 viewMatrix;
-
-	// buffers for the camera matrix ubo
-	VkBuffer buffer;
-	VkDeviceMemory bufferMem;
+struct MouseData {
+	bool locked;
 
 	float lastX;
 	float lastY;
-	bool locked;
 
-	float fov;
-	float nearP;
-	float farP;
+	float upAngle;
+	float rightAngle;
 
-	CamData()
-		: pos(0.0f, 0.0f, 0.0f),
-		quat(0.0f, 0.0f, 0.0f, 1.0f),
-		upAngle(0.0f),
+	MouseData()
+		: upAngle(0.0f),
 		rightAngle(0.0f),
-		projectionMatrix(),
-		viewMatrix(),
-		buffer(VK_NULL_HANDLE),
-		bufferMem(VK_NULL_HANDLE),
 		lastX(0.0f),
 		lastY(0.0f),
-		locked(true),
-		fov(60.0f),
-		nearP(0.01f),
-		farP(100.0f)
+		locked(true)
 	{}
-
-	const dml::mat4 getViewMatrix() {
-		return dml::viewMatrix(pos, dml::radians(upAngle), dml::radians(rightAngle));
-	}
-
-	void updateQuaternion() {
-		dml::vec4 yRot = dml::angleAxis(dml::radians(upAngle), dml::vec3(1, 0, 0));
-		dml::vec4 xRot = dml::angleAxis(dml::radians(rightAngle), dml::vec3(0, 1, 0));
-		quat = yRot * xRot;
-	}
 };
 
 // globals
-CamData cam;
-VkDevice device;
-VkQueue graphicsQueue;
-VkPhysicalDevice physicalDevice;
+MouseData mouse;
+VkQueue graphicsQueue{};
+VkPhysicalDevice physicalDevice{};
 GLFWwindow* window = nullptr;
+
+VkSurfaceKHR surface{};
+VkInstance instance{};
+VkDevice device{};
 
 class Engine {
 public:
@@ -124,6 +96,44 @@ public:
 		mainLoop();
 	}
 private:
+	struct CamData {
+		dml::vec3 pos; //x, y, z
+		dml::vec4 quat;
+
+		dml::mat4 projectionMatrix;
+		dml::mat4 viewMatrix;
+
+		// buffers for the camera matrix ubo
+		VkhBuffer buffer;
+		VkhDeviceMemory bufferMem;
+
+		float fov;
+		float nearP;
+		float farP;
+
+		CamData()
+			: pos(0.0f, 0.0f, 0.0f),
+			quat(0.0f, 0.0f, 0.0f, 1.0f),
+			projectionMatrix(),
+			viewMatrix(),
+			buffer(),
+			bufferMem(),
+			fov(60.0f),
+			nearP(0.01f),
+			farP(100.0f)
+		{}
+
+		const dml::mat4 getViewMatrix(MouseData& m) {
+			return dml::viewMatrix(pos, dml::radians(m.upAngle), dml::radians(m.rightAngle));
+		}
+
+		void updateQuaternion(MouseData& m) {
+			dml::vec4 yRot = dml::angleAxis(dml::radians(m.upAngle), dml::vec3(1, 0, 0));
+			dml::vec4 xRot = dml::angleAxis(dml::radians(m.rightAngle), dml::vec3(0, 1, 0));
+			quat = yRot * xRot;
+		}
+	};
+
 	struct Light { // spotlight
 		dml::vec3 pos;
 		dml::vec3 col;
@@ -137,7 +147,7 @@ private:
 		float linearAttenuation;
 		float quadraticAttenuation;
 		dvl::Texture shadowMapData;
-		VkFramebuffer frameBuffer;
+		VkhFramebuffer frameBuffer;
 		bool followPlayer;
 
 
@@ -155,7 +165,7 @@ private:
 			linearAttenuation(0.1f),
 			quadraticAttenuation(0.032f),
 			shadowMapData(),
-			frameBuffer(VK_NULL_HANDLE),
+			frameBuffer(),
 			followPlayer(false) {
 		}
 
@@ -231,26 +241,31 @@ private:
 
 	struct SkyboxObject { // skybox struct
 		dvl::Texture cubemap;
-		VkPipelineLayout pipelineLayout;
-		VkPipeline pipeline;
+		VkhPipelineLayout pipelineLayout;
+		VkhPipeline pipeline;
 		vkh::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
-		VkBuffer vertBuffer;
-		VkDeviceMemory vertBufferMem;
-		VkBuffer indBuffer;
-		VkDeviceMemory indBufferMem;
+		VkhBuffer vertBuffer;
+		VkhDeviceMemory vertBufferMem;
+		VkhBuffer indBuffer;
+		VkhDeviceMemory indBufferMem;
 
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
+		void resetPipeline() {
+			if (pipelineLayout.valid()) pipelineLayout.reset();
+			if (pipeline.valid()) pipeline.reset();
+		}
+
 		SkyboxObject()
 			: cubemap(),
-			pipelineLayout(VK_NULL_HANDLE),
-			pipeline(VK_NULL_HANDLE),
+			pipelineLayout(),
+			pipeline(),
 			bufferData(),
-			vertBuffer(VK_NULL_HANDLE),
-			vertBufferMem(VK_NULL_HANDLE),
-			indBuffer(VK_NULL_HANDLE),
-			indBufferMem(VK_NULL_HANDLE),
+			vertBuffer(),
+			vertBufferMem(),
+			indBuffer(),
+			indBufferMem(),
 
 			indices{
 				0, 1, 2, 2, 3, 0,
@@ -274,28 +289,34 @@ private:
 	};
 
 	struct DSObject {
-		std::vector<VkDescriptorSetLayout> layouts;
-		std::vector<VkDescriptorSet> sets;
-		std::vector<VkDescriptorPool> pools;
+		std::vector<VkhDescriptorPool> pools;
+		std::vector<VkhDescriptorSetLayout> layouts;
+		std::vector<VkhDescriptorSet> sets;
 	};
 
 	struct PipelineData {
-		VkRenderPass renderPass;
-		VkPipelineLayout layout;
-		VkPipeline pipeline;
+		VkhRenderPass renderPass;
+		VkhPipelineLayout layout;
+		VkhPipeline pipeline;
+
+		void reset() {
+			if (renderPass.valid()) renderPass.reset();
+			if (layout.valid()) layout.reset();
+			if (pipeline.valid()) pipeline.reset();
+		}
 	};
 
 	struct SCData {
-		VkSwapchainKHR swapChain;
-		std::vector<VkImage> images;
+		VkhSwapchainKHR swapChain;
+		std::vector<VkhImage> images;
 		VkFormat imageFormat;
 		VkExtent2D extent;
-		std::vector<VkImageView> imageViews;
+		std::vector<VkhImageView> imageViews;
 		uint32_t imageCount;
-		std::vector<VkFramebuffer> framebuffers;
+		std::vector<VkhFramebuffer> framebuffers;
 
 		SCData()
-			: swapChain(VK_NULL_HANDLE),
+			: swapChain(),
 			images(),
 			imageFormat(VK_FORMAT_UNDEFINED),
 			extent(),
@@ -321,11 +342,11 @@ private:
 
 	struct WBOITData { // weighted blended order independent transparency
 		dvl::Texture weightedColor;
-		VkFramebuffer frameBuffer;
+		VkhFramebuffer frameBuffer;
 
 		WBOITData()
 			: weightedColor(),
-			frameBuffer(VK_NULL_HANDLE)
+			frameBuffer()
 		{}
 	};
 
@@ -335,12 +356,17 @@ private:
 	};
 
 	struct CommandBufferCollection {
-		std::vector<VkCommandBuffer> buffers;
-		std::vector<VkCommandPool> pools;
+		std::vector<VkhCommandPool> pools;
 
-		void resize(size_t size) {
-			buffers.resize(size);
-			pools.resize(size);
+		std::vector<VkhCommandBuffer> buffers;
+		std::vector<VkCommandBuffer> rawBuffers;
+
+		void reserveClear(size_t size) {
+			buffers.clear();
+			pools.clear();
+
+			buffers.reserve(size);
+			pools.reserve(size);
 		}
 
 		size_t size() const {
@@ -348,10 +374,20 @@ private:
 		}
 
 		VkCommandBuffer* data() {
-			return buffers.data();
+			if (buffers.size() == 1) {
+				return buffers[0].p();
+			}
+			else {
+				rawBuffers.clear();
+				rawBuffers.reserve(buffers.size());
+				for (const auto& b : buffers) {
+					rawBuffers.push_back(b.v());
+				}
+				return rawBuffers.data();
+			}
 		}
 
-		VkCommandBuffer& operator[](size_t index) {
+		VkhCommandBuffer& operator[](size_t index) {
 			return buffers[index];
 		}
 	};
@@ -361,9 +397,16 @@ private:
 		CommandBufferCollection secondary;
 	};
 
+	struct BlasData {
+		VkhAccelerationStructure blas;
+		VkhBuffer compBuffer;
+		VkhDeviceMemory compMem;
+	};
+
+
+	CamData cam;
+
 	// window and rendering context
-	VkSurfaceKHR surface = VK_NULL_HANDLE;
-	VkInstance instance = VK_NULL_HANDLE;
 	VkQueue presentQueue = VK_NULL_HANDLE;
 	VkQueue computeQueue = VK_NULL_HANDLE;
 	VkQueue transferQueue = VK_NULL_HANDLE;
@@ -387,56 +430,44 @@ private:
 	PipelineData compPipelineData;
 	PipelineData wboitPipeline;
 
-	VkFramebuffer opaquePassFB = VK_NULL_HANDLE;
+	VkhFramebuffer opaquePassFB;
 	OpaquePassTex opaquePassTextures = {};
 
 	// command buffers and command pool
-	VkCommandPool commandPool = VK_NULL_HANDLE;
+	VkhCommandPool commandPool;
 	CommandBufferSet opaquePassCommandBuffers;
 	CommandBufferSet shadowMapCommandBuffers;
 	CommandBufferSet wboitCommandBuffers;
 	CommandBufferSet compCommandBuffers;
 
 	// buffers
-	VkBuffer vertBuffer = VK_NULL_HANDLE;
-	VkBuffer indBuffer = VK_NULL_HANDLE;
-	VkBuffer instanceBuffer = VK_NULL_HANDLE;
-	VkBuffer lightBuffer = VK_NULL_HANDLE;
-	VkBuffer sceneIndexBuffer = VK_NULL_HANDLE;
+	VkhBuffer vertBuffer;
+	VkhBuffer indBuffer;
+	VkhBuffer instanceBuffer;
+	VkhBuffer lightBuffer;
+	VkhBuffer sceneIndexBuffer;
 
 	// buffer memory
-	VkDeviceMemory vertBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory indBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory instanceBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory lightBufferMem = VK_NULL_HANDLE;
-	VkDeviceMemory sceneIndexBufferMem = VK_NULL_HANDLE;
+	VkhDeviceMemory vertBufferMem;
+	VkhDeviceMemory indBufferMem;
+	VkhDeviceMemory instanceBufferMem;
+	VkhDeviceMemory lightBufferMem;
+	VkhDeviceMemory sceneIndexBufferMem;
 
 	// synchronization primitives
-	std::vector<VkFence> inFlightFences;
-	VkSemaphore imageAvailableSemaphore = VK_NULL_HANDLE;
-	VkSemaphore renderFinishedSemaphore = VK_NULL_HANDLE;
-	VkSemaphore shadowSemaphore = VK_NULL_HANDLE;
-	VkSemaphore wboitSemaphore = VK_NULL_HANDLE;
-	VkSemaphore compSemaphore = VK_NULL_HANDLE;
-
-	// shader modules
-	VkShaderModule fragShaderModule = VK_NULL_HANDLE;
-	VkShaderModule vertShaderModule = VK_NULL_HANDLE;
+	std::vector<VkhFence> inFlightFences;
+	VkhSemaphore imageAvailableSemaphore;
+	VkhSemaphore renderFinishedSemaphore;
+	VkhSemaphore shadowSemaphore;
+	VkhSemaphore wboitSemaphore;
+	VkhSemaphore compSemaphore;
 
 	// descriptor sets and pools
 	DSObject descs = {};
-	VkDescriptorSetLayout imguiDescriptorSetLayout = VK_NULL_HANDLE;
-	VkDescriptorPool imguiDescriptorPool = VK_NULL_HANDLE;
+	VkhDescriptorPool imguiDescriptorPool;
+	VkhDescriptorSetLayout imguiDescriptorSetLayout;
 
 	// vulkan function pointers
-	PFN_vkCmdPushDescriptorSetKHR vkCmdPushDescriptorSetKHR = nullptr;
-	PFN_vkCreateAccelerationStructureKHR vkCreateAccelerationStructureKHR = nullptr;
-	PFN_vkDestroyAccelerationStructureKHR vkDestroyAccelerationStructureKHR = nullptr;
-	PFN_vkGetAccelerationStructureBuildSizesKHR vkGetAccelerationStructureBuildSizesKHR = nullptr;
-	PFN_vkCmdBuildAccelerationStructuresKHR vkCmdBuildAccelerationStructuresKHR = nullptr;
-	PFN_vkCmdWriteAccelerationStructuresPropertiesKHR vkCmdWriteAccelerationStructuresPropertiesKHR = nullptr;
-	PFN_vkCmdCopyAccelerationStructureKHR vkCmdCopyAccelerationStructureKHR = nullptr;
-	PFN_vkGetAccelerationStructureDeviceAddressKHR vkGetAccelerationStructureDeviceAddressKHR = nullptr;
 
 	// scene data and objects
 	std::vector<vkh::BufData> bufferData;
@@ -449,8 +480,18 @@ private:
 	std::vector<std::unique_ptr<Light>> lights;
 
 	// path tracing
-	std::vector<VkAccelerationStructureKHR> BLAS;
-	VkAccelerationStructureKHR TLAS = VK_NULL_HANDLE;
+	std::vector<BlasData> BLAS;
+
+	VkhAccelerationStructure TLAS;
+	VkhBuffer tlasBuffer;
+	VkhDeviceMemory tlasMem;
+	VkhBuffer tlasInstanceBuffer;
+	VkhDeviceMemory tlasInstanceBufferMem;
+	VkhBuffer tlasScratchBuffer;
+	VkhDeviceMemory tlasScratchMem;
+	VkhBuffer compTlasBuffer;
+	VkhDeviceMemory compTlasMem;
+
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
 	ShadowMapDim shadowProps = {};
@@ -591,7 +632,6 @@ private:
 		for (auto& obj : objects) {
 			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
 		}
-
 
 		// setPlayer(6);
 		// setPlayer(9);
@@ -821,25 +861,9 @@ private:
 			deviceExtensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
 			deviceExtensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
-
-			// functions pointers
-			vkCreateAccelerationStructureKHR = (PFN_vkCreateAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCreateAccelerationStructureKHR");
-			vkDestroyAccelerationStructureKHR = (PFN_vkDestroyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkDestroyAccelerationStructureKHR");
-			vkGetAccelerationStructureBuildSizesKHR = (PFN_vkGetAccelerationStructureBuildSizesKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureBuildSizesKHR");
-			vkCmdBuildAccelerationStructuresKHR = (PFN_vkCmdBuildAccelerationStructuresKHR)vkGetInstanceProcAddr(instance, "vkCmdBuildAccelerationStructuresKHR");
-			vkCmdWriteAccelerationStructuresPropertiesKHR = (PFN_vkCmdWriteAccelerationStructuresPropertiesKHR)vkGetInstanceProcAddr(instance, "vkCmdWriteAccelerationStructuresPropertiesKHR");
-			vkCmdCopyAccelerationStructureKHR = (PFN_vkCmdCopyAccelerationStructureKHR)vkGetInstanceProcAddr(instance, "vkCmdCopyAccelerationStructureKHR");
-			vkGetAccelerationStructureDeviceAddressKHR = (PFN_vkGetAccelerationStructureDeviceAddressKHR)vkGetInstanceProcAddr(instance, "vkGetAccelerationStructureDeviceAddressKHR");
-
-			if (!vkCreateAccelerationStructureKHR) throw std::runtime_error("failed to load vkCreateAccelerationStructureKHR()!");
-			if (!vkDestroyAccelerationStructureKHR) throw std::runtime_error("failed to load vkDestroyAccelerationStructureKHR()!");
-			if (!vkGetAccelerationStructureBuildSizesKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureBuildSizesKHR()!");
-			if (!vkCmdBuildAccelerationStructuresKHR) throw std::runtime_error("failed to load vkCmdBuildAccelerationStructuresKHR()!");
-			if (!vkCmdWriteAccelerationStructuresPropertiesKHR) throw std::runtime_error("failed to load vkCmdWriteAccelerationStructuresPropertiesKHR()!");
-			if (!vkCmdCopyAccelerationStructureKHR) throw std::runtime_error("failed to load vkCmdCopyAccelerationStructureKHR()!");
-			if (!vkGetAccelerationStructureDeviceAddressKHR) throw std::runtime_error("failed to load vkGetAccelerationStructureDeviceAddressKHR()!");
-
 		}
+
+		vkhfp::loadFuncPointers(instance);
 
 		for (auto& e : deviceExtensions) {
 			if (checkExtensionSupport(e)) {
@@ -860,10 +884,6 @@ private:
 			throw std::runtime_error("Failed to create logical device!");
 		}
 
-		vkCmdPushDescriptorSetKHR = (PFN_vkCmdPushDescriptorSetKHR)vkGetInstanceProcAddr(instance, "vkCmdPushDescriptorSetKHR");
-		if (vkCmdPushDescriptorSetKHR == nullptr) {
-			throw std::runtime_error("Failed to get vkCmdPushDescriptorSetKHR function!");
-		}
 		utils::sep();
 	}
 
@@ -932,14 +952,22 @@ private:
 		newinfo.presentMode = present;
 		newinfo.clipped = VK_TRUE; // if the window is obscured, the pixels that are obscured will not be drawn to
 		newinfo.oldSwapchain = VK_NULL_HANDLE;
-		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, &swap.swapChain) != VK_SUCCESS) {
+		if (vkCreateSwapchainKHR(device, &newinfo, nullptr, swap.swapChain.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create swap chain!");
 		}
 
 		// get the swap chain images
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, nullptr);
+		vkGetSwapchainImagesKHR(device, swap.swapChain.v(), &swap.imageCount, nullptr);
+
 		swap.images.resize(swap.imageCount);
-		vkGetSwapchainImagesKHR(device, swap.swapChain, &swap.imageCount, swap.images.data()); // get the images in the swap chain
+		std::vector<VkImage> images(swap.imageCount);
+
+		vkGetSwapchainImagesKHR(device, swap.swapChain.v(), &swap.imageCount, images.data());
+		for (uint32_t i = 0; i < swap.imageCount; i++) {
+			swap.images[i] = VkhImage(images[i]);
+			swap.images[i].setDestroy(false); // obj wont be automatically freed when out of scope
+		}
+
 		swap.imageFormat = surfaceFormat.format;
 		swap.extent = extent;
 
@@ -1099,10 +1127,12 @@ private:
 
 	void createSCImageViews() { //create the image views for the swap chain images
 		swap.imageViews.resize(swap.images.size());
+
 		for (size_t i = 0; i < swap.images.size(); i++) {
+			if (swap.imageViews[i].valid()) swap.imageViews[i].reset();
 			VkImageViewCreateInfo newinfo{};
 			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			newinfo.image = swap.images[i]; // assign the current swap chain image
+			newinfo.image = swap.images[i].v(); // assign the current swap chain image
 			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
 			newinfo.format = swap.imageFormat;
 
@@ -1117,7 +1147,7 @@ private:
 			newinfo.subresourceRange.levelCount = 1;
 			newinfo.subresourceRange.baseArrayLayer = 0;
 			newinfo.subresourceRange.layerCount = 1;
-			VkResult result = vkCreateImageView(device, &newinfo, nullptr, &swap.imageViews[i]);
+			VkResult result = vkCreateImageView(device, &newinfo, nullptr, swap.imageViews[i].p());
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to create image views for the swapchain!!");
 			}
@@ -1143,7 +1173,7 @@ private:
 	}
 
 	void calcCameraMats() {
-		cam.viewMatrix = cam.getViewMatrix();
+		cam.viewMatrix = cam.getViewMatrix(mouse);
 		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
 	}
 
@@ -1175,9 +1205,9 @@ private:
 		}
 
 		void* lData;
-		vkMapMemory(device, lightBufferMem, 0, lightData.memSize, 0, &lData);
+		vkMapMemory(device, lightBufferMem.v(), 0, lightData.memSize, 0, &lData);
 		memcpy(lData, lightData.lightCords.data(), lightData.memSize);
-		vkUnmapMemory(device, lightBufferMem);
+		vkUnmapMemory(device, lightBufferMem.v());
 
 		// calc matricies for camera
 		calcCameraMats();
@@ -1185,9 +1215,9 @@ private:
 		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
 
 		void* cData;
-		vkMapMemory(device, cam.bufferMem, 0, sizeof(camMatData), 0, &cData);
+		vkMapMemory(device, cam.bufferMem.v(), 0, sizeof(camMatData), 0, &cData);
 		memcpy(cData, &camMatData, sizeof(camMatData));
-		vkUnmapMemory(device, cam.bufferMem);
+		vkUnmapMemory(device, cam.bufferMem.v());
 
 		// calc matricies for objects
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -1207,9 +1237,9 @@ private:
 			}
 		}
 		void* matrixData;
-		vkMapMemory(device, instanceBufferMem, 0, sizeof(objInstanceData), 0, &matrixData);
+		vkMapMemory(device, instanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
 		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
-		vkUnmapMemory(device, instanceBufferMem);
+		vkUnmapMemory(device, instanceBufferMem.v());
 	}
 
 	void copyLightToLightCords(const Light& src, LightDataObject& dest) {
@@ -1227,7 +1257,7 @@ private:
 		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
-	std::vector<dvl::Texture> getAllTextures() {
+	void getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -1263,66 +1293,64 @@ private:
 			}
 		}
 		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
-		return allTextures;
 	}
 
 	template<typename Stage>
 	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
-		descs.layouts[index] = vkh::createDSLayout(index, type, size, shaderStage);
-		descs.pools[index] = vkh::createDSPool(type, size);
+		descs.layouts.emplace_back(vkh::createDSLayout(index, type, size, shaderStage));
+		descs.pools.emplace_back(vkh::createDSPool(type, size));
 	}
 
 	void createDS() {
 		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
 		for (size_t i = 0; i < totalTextureCount; i++) {
 			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = allTextures[i].imageView;
-			imageInfos[i].sampler = allTextures[i].sampler;
+			imageInfos[i].imageView = allTextures[i].imageView.v();
+			imageInfos[i].sampler = allTextures[i].sampler.v();
 		}
 
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 		//uint32_t lightSize = MAX_LIGHTS;
 
 		VkDescriptorBufferInfo lightBufferInfo{};
-		lightBufferInfo.buffer = lightBuffer;
+		lightBufferInfo.buffer = lightBuffer.v();
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = lightData.memSize;
 
 		shadowInfos.resize(lightSize);
 		for (size_t i = 0; i < lightSize; i++) {
 			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView;
-			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler;
+			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.v();
+			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler.v();
 		}
 
 		VkDescriptorImageInfo skyboxInfo{};
 		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		skyboxInfo.imageView = skybox.cubemap.imageView;
-		skyboxInfo.sampler = skybox.cubemap.sampler;
+		skyboxInfo.imageView = skybox.cubemap.imageView.v();
+		skyboxInfo.sampler = skybox.cubemap.sampler.v();
 
 		VkDescriptorBufferInfo camMatBufferInfo{};
-		camMatBufferInfo.buffer = cam.buffer;
+		camMatBufferInfo.buffer = cam.buffer.v();
 		camMatBufferInfo.offset = 0;
 		camMatBufferInfo.range = sizeof(CamUBO);
 
 		const uint32_t texCompSize = 2;
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
-		std::array<dvl::Texture, texCompSize> compositionTextures = { opaquePassTextures.color, wboit.weightedColor };
-		for (size_t i = 0; i < compositionPassImageInfo.size(); i++) {
+		for (size_t i = 0; i < texCompSize; i++) {
 			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			compositionPassImageInfo[i].imageView = compositionTextures[i].imageView;
-			compositionPassImageInfo[i].sampler = compositionTextures[i].sampler;
+			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.v() : wboit.weightedColor.imageView.v();
+			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler.v() : wboit.weightedColor.sampler.v();
 		}
 
 		VkDescriptorImageInfo opaquePassDepthInfo{};
 		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView;
-		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler;
+		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
+		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
 
 		const uint8_t size = 7;
-		descs.sets.resize(size);
-		descs.layouts.resize(size);
-		descs.pools.resize(size);
+		descs.sets.clear(); descs.sets.reserve(size);
+		descs.pools.clear(); descs.pools.reserve(size);
+		descs.layouts.clear(); descs.layouts.reserve(size);
 
 		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
 
@@ -1340,20 +1368,21 @@ private:
 		allocInfo.descriptorSetCount = 1;
 
 		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, MAX_LIGHTS, 1, 1, texCompSize, 1 };
-		for (uint32_t i = 0; i < descs.sets.size(); i++) {
+		for (uint32_t i = 0; i < size; i++) {
 			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
 			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
 			varCountInfo.descriptorSetCount = 1;
 			varCountInfo.pDescriptorCounts = &descCountArr[i];
 			allocInfo.pNext = &varCountInfo;
 
-			allocInfo.descriptorPool = descs.pools[i];
-			allocInfo.pSetLayouts = &descs.layouts[i];
-
-			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, &descs.sets[i]);
+			allocInfo.descriptorPool = descs.pools[i].v();
+			allocInfo.pSetLayouts = descs.layouts[i].p();
+			VkhDescriptorSet set(descs.pools[i].v());
+			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
 			if (result != VK_SUCCESS) {
 				throw std::runtime_error("Failed to allocate descriptor sets!");
 			}
+			descs.sets.emplace_back(set);
 		}
 
 		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
@@ -1369,7 +1398,6 @@ private:
 	}
 
 	void setupDescriptorSets(bool initial = true) {
-		descs.sets.clear();
 		totalTextureCount = 0;
 		for (uint32_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
@@ -1383,10 +1411,10 @@ private:
 		createDS(); //create the descriptor set
 	}
 
-	void getGLTFImageData(const tinygltf::Image& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
-		int width = gltfImage.width;
-		int height = gltfImage.height;
-		int channels = gltfImage.component;
+	void getGLTFImageData(std::shared_ptr<tinygltf::Image>& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
+		int width = gltfImage->width;
+		int height = gltfImage->height;
+		int channels = gltfImage->component;
 
 		// delete previously allocated memory if any
 		if (imgData != nullptr) {
@@ -1400,7 +1428,7 @@ private:
 			for (int x = 0; x < width; x++) {
 				for (int c = 0; c < channels; c++) {
 					// copy the data from the original image into the new array
-					imgData[(y * width + x) * 4 + c] = gltfImage.image[(y * width + x) * channels + c];
+					imgData[(y * width + x) * 4 + c] = gltfImage->image[(y * width + x) * channels + c];
 				}
 				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
 				if (channels < 4) {
@@ -1409,6 +1437,7 @@ private:
 			}
 		}
 		imgData = resizeImage(imgData, width, height, t.width, t.height, channels);
+		gltfImage.reset();
 	}
 
 	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
@@ -1446,7 +1475,7 @@ private:
 	}
 
 	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkh::TextureType type = vkh::BASE) {
-		if (tex.stagingBuffer == VK_NULL_HANDLE) {
+		if (!tex.stagingBuffer.valid()) {
 			if (tex.path != "gltf") { // standard image
 				getImageData(tex.path, imageData);
 			}
@@ -1482,10 +1511,10 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
 
-			VkCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
+			VkhCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
-			vkCmdCopyBufferToImage(tempBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+			vkCmdCopyBufferToImage(tempBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
 			int mipWidth = tex.width;
 			int mipHeight = tex.height;
@@ -1514,7 +1543,7 @@ private:
 						blit.dstSubresource.mipLevel = j + 1;
 						blit.dstSubresource.baseArrayLayer = 0;
 						blit.dstSubresource.layerCount = 1;
-						vkCmdBlitImage(tempBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+						vkCmdBlitImage(tempBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
 					}
 
 					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
@@ -1566,7 +1595,7 @@ private:
 		vkh::createImage(tex.image, tex.memory, faceWidth, faceHeight, VK_FORMAT_R32G32B32A32_SFLOAT, 1, 6, true, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, tex.sampleCount);
 
 		vkh::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 6, 1, 0);
-		VkCommandBuffer copyCmdBuffer = vkh::beginSingleTimeCommands(commandPool);
+		VkhCommandBuffer copyCmdBuffer = vkh::beginSingleTimeCommands(commandPool);
 
 		std::array<VkBufferImageCopy, 6> regions;
 		std::array<std::pair<uint32_t, uint32_t>, 6> faceOffsets = { {{2, 1}, {0, 1}, {1, 0}, {1, 2}, {1, 1}, {3, 1}} };
@@ -1588,7 +1617,7 @@ private:
 			region.imageOffset = { 0, 0, 0 };
 			region.imageExtent = { faceWidth, faceHeight, 1 };
 
-			vkCmdCopyBufferToImage(copyCmdBuffer, tex.stagingBuffer, tex.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+			vkCmdCopyBufferToImage(copyCmdBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 		}
 		vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
@@ -1600,20 +1629,20 @@ private:
 	void createGraphicsPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		// shader stage setup 
 		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 
 		VkPipelineShaderStageCreateInfo fragShader{}; //fragment shader stage info
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
 
@@ -1775,14 +1804,14 @@ private:
 
 		// pipeline layout setup: defines the connection between shader stages and resources
 		// this data includes: descriptorsets and push constants
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[2].v(), descs.layouts[4].v() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &opaquePassPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, opaquePassPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
@@ -1832,7 +1861,7 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &opaquePassPipeline.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, opaquePassPipeline.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -1849,12 +1878,12 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = opaquePassPipeline.layout;
-		pipelineInf.renderPass = opaquePassPipeline.renderPass;
+		pipelineInf.layout = opaquePassPipeline.layout.v();
+		pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
 		pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
 		pipelineInf.basePipelineIndex = -1;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &opaquePassPipeline.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, opaquePassPipeline.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline!");
 		}
@@ -1864,18 +1893,18 @@ private:
 		// get shader data
 		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
 		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
-		VkShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
-		VkShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
+		VkhShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
+		VkhShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
 
 		VkPipelineShaderStageCreateInfo vertStage{};
 		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertStage.module = shadowVertShaderModule;
+		vertStage.module = shadowVertShaderModule.v();
 		vertStage.pName = "main";
 		VkPipelineShaderStageCreateInfo fragStage{};
 		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragStage.module = shadowFragShaderModule;
+		fragStage.module = shadowFragShaderModule.v();
 		fragStage.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
@@ -2001,7 +2030,7 @@ private:
 		renderPassInfo.pAttachments = &depthAttachment;
 		renderPassInfo.subpassCount = 1;
 		renderPassInfo.pSubpasses = &subpass;
-		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, &shadowMapPipeline.renderPass) != VK_SUCCESS) {
+		if (vkCreateRenderPass(device, &renderPassInfo, nullptr, shadowMapPipeline.renderPass.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map render pass!");
 		}
 
@@ -2014,14 +2043,13 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int); // 1 int for the light index
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[1] }; // the light data ssbo
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.pSetLayouts = descs.layouts[1].p();
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &shadowMapPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowMapPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout!!");
 		}
@@ -2038,12 +2066,12 @@ private:
 		pipelineInfo.pMultisampleState = &multiSamp;
 		pipelineInfo.pDepthStencilState = &dStencil;
 		pipelineInfo.pColorBlendState = &colorBS;
-		pipelineInfo.layout = shadowMapPipeline.layout;
-		pipelineInfo.renderPass = shadowMapPipeline.renderPass;
+		pipelineInfo.layout = shadowMapPipeline.layout.v();
+		pipelineInfo.renderPass = shadowMapPipeline.renderPass.v();
 		pipelineInfo.subpass = 0;
 		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
 
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &shadowMapPipeline.pipeline) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, shadowMapPipeline.pipeline.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map pipeline!");
 		}
 	}
@@ -2051,18 +2079,18 @@ private:
 	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2142,12 +2170,12 @@ private:
 		colorBS.attachmentCount = 1;
 		colorBS.pAttachments = &colorBA;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3], descs.layouts[4] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3].v(), descs.layouts[4].v() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &skybox.pipelineLayout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, skybox.pipelineLayout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for skybox!");
 		}
@@ -2163,10 +2191,10 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = skybox.pipelineLayout;
-		pipelineInf.renderPass = opaquePassPipeline.renderPass;
+		pipelineInf.layout = skybox.pipelineLayout.v();
+		pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &skybox.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, skybox.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for skybox!");
 		}
@@ -2175,18 +2203,18 @@ private:
 	void createWBOITPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "wboit_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "wboit_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2347,7 +2375,7 @@ private:
 		renderPassInf.pAttachments = &colorAttachment;
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &wboitPipeline.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, wboitPipeline.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
@@ -2357,14 +2385,14 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 2;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0], descs.layouts[1], descs.layouts[2], descs.layouts[4], descs.layouts[6] };
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[2].v(), descs.layouts[4].v(), descs.layouts[6].v() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &wboitPipeline.layout);
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, wboitPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for WBOIT!!");
 		}
@@ -2380,10 +2408,10 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = wboitPipeline.layout;
-		pipelineInf.renderPass = wboitPipeline.renderPass;
+		pipelineInf.layout = wboitPipeline.layout.v();
+		pipelineInf.renderPass = wboitPipeline.renderPass.v();
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &wboitPipeline.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, wboitPipeline.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for WBOIT!");
 		}
@@ -2392,18 +2420,18 @@ private:
 	void createCompositionPipeline() {
 		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "composition_vert_shader.spv");
 		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "composition_frag_shader.spv");
-		vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
+		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
 
 		VkPipelineShaderStageCreateInfo vertShader{};
 		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule;
+		vertShader.module = vertShaderModule.v();
 		vertShader.pName = "main";
 		VkPipelineShaderStageCreateInfo fragShader{};
 		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule;
+		fragShader.module = fragShaderModule.v();
 		fragShader.pName = "main";
 		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
 
@@ -2517,17 +2545,16 @@ private:
 		renderPassInf.pAttachments = attachments.data();
 		renderPassInf.subpassCount = 1;
 		renderPassInf.pSubpasses = &subpass;
-		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, &compPipelineData.renderPass);
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, compPipelineData.renderPass.p());
 		if (renderPassResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create render pass!");
 		}
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[5] };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, &compPipelineData.layout);
+		pipelineLayoutInf.setLayoutCount = 1;
+		pipelineLayoutInf.pSetLayouts = descs.layouts[5].p();
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipelineData.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for composition!!");
 		}
@@ -2543,20 +2570,28 @@ private:
 		pipelineInf.pMultisampleState = &multiSamp;
 		pipelineInf.pDepthStencilState = &dStencil;
 		pipelineInf.pColorBlendState = &colorBS;
-		pipelineInf.layout = compPipelineData.layout;
-		pipelineInf.renderPass = compPipelineData.renderPass;
+		pipelineInf.layout = compPipelineData.layout.v();
+		pipelineInf.renderPass = compPipelineData.renderPass.v();
 		pipelineInf.subpass = 0;
-		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, &compPipelineData.pipeline);
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, compPipelineData.pipeline.p());
 		if (pipelineResult != VK_SUCCESS) {
 			throw std::runtime_error("failed to create graphics pipeline for the composition pass!");
 		}
 	}
 
 	void setupPipelines(bool shadow) {
+		opaquePassPipeline.reset();
+		compPipelineData.reset();
+		skybox.resetPipeline();
+		wboitPipeline.reset();
+
 		createGraphicsPipeline();
 		createCompositionPipeline();
 		createSkyboxPipeline();
-		if (shadow) createShadowPipeline();
+		if (shadow) {
+			shadowMapPipeline.reset();
+			createShadowPipeline();
+		}
 		createWBOITPipeline();
 	}
 
@@ -2579,7 +2614,7 @@ private:
 		imguiLayoutInfo.bindingCount = 1;
 		imguiLayoutInfo.pBindings = &imguiBinding;
 
-		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, &imguiDescriptorSetLayout) != VK_SUCCESS) {
+		if (vkCreateDescriptorSetLayout(device, &imguiLayoutInfo, nullptr, imguiDescriptorSetLayout.p()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create ImGui descriptor set layout!");
 		}
 	}
@@ -2596,7 +2631,7 @@ private:
 		poolInfo.poolSizeCount = 1;
 		poolInfo.pPoolSizes = &poolSize;
 
-		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &imguiDescriptorPool) != VK_SUCCESS) {
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, imguiDescriptorPool.p()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create Imgui descriptor pool!");
 		}
 	}
@@ -2615,20 +2650,25 @@ private:
 		initInfo.QueueFamily = graphicsQueueFamily;
 		initInfo.Queue = graphicsQueue;
 		initInfo.PipelineCache = VK_NULL_HANDLE; // no pipeline cache for now
-		initInfo.DescriptorPool = imguiDescriptorPool;
+		initInfo.DescriptorPool = imguiDescriptorPool.v();
 		initInfo.Allocator = VK_NULL_HANDLE;
 		initInfo.MinImageCount = swap.imageCount;
 		initInfo.ImageCount = swap.imageCount;
 		initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
 		initInfo.MSAASamples = compTex.sampleCount;
-		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass);
+		ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass.v());
 
 		// upload fonts, etc:
-		VkCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
-		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer);
+		VkhCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkhCommandBuffer guiCommandBuffer = vkh::beginSingleTimeCommands(guiCommandPool);
+		ImGui_ImplVulkan_CreateFontsTexture(guiCommandBuffer.v());
 		vkh::endSingleTimeCommands(guiCommandBuffer, guiCommandPool, graphicsQueue);
 		ImGui_ImplVulkan_DestroyFontUploadObjects();
+	}
+
+	void imguiCleanup() {
+		ImGui_ImplVulkan_Shutdown();
+		ImGui::DestroyContext();
 	}
 
 	void setupFences() {
@@ -2637,27 +2677,26 @@ private:
 		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
 		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
 		for (size_t i = 0; i < inFlightFences.size(); i++) {
-			if (vkCreateFence(device, &fenceInfo, nullptr, &inFlightFences[i]) != VK_SUCCESS) {
+			if (vkCreateFence(device, &fenceInfo, nullptr, inFlightFences[i].p()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to create synchronization objects for a frame!");
 			}
 		}
 	}
 
 	void allocateCommandBuffers(CommandBufferSet& cmdBuffers, size_t primaryCount, size_t secondaryCount = 0) {
-		cmdBuffers.primary.resize(primaryCount);
+		cmdBuffers.primary.reserveClear(primaryCount);
 
 		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-			cmdBuffers.primary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]);
+			cmdBuffers.primary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+			cmdBuffers.primary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
 		}
 
 		if (secondaryCount) {
-			cmdBuffers.secondary.resize(secondaryCount);
-			cmdBuffers.secondary.resize(secondaryCount);
+			cmdBuffers.secondary.reserveClear(secondaryCount);
 
 			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools[i] = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-				cmdBuffers.secondary.buffers[i] = vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+				cmdBuffers.secondary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+				cmdBuffers.secondary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
 			}
 		}
 	}
@@ -2670,7 +2709,7 @@ private:
 	}
 
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {
-		VkAccelerationStructureKHR blas{};
+		VkhAccelerationStructure blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
 
 		// get the device addresses (location of the data on the device) of the vertex and index buffers
@@ -2708,11 +2747,11 @@ private:
 		// size requirements for the BLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
+		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the BLAS - the buffer used in the creation of the blas
-		VkBuffer blasBuffer;
-		VkDeviceMemory blasMem;
+		VkhBuffer blasBuffer;
+		VkhDeviceMemory blasMem;
 		VkBufferUsageFlags blasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
@@ -2720,15 +2759,15 @@ private:
 		VkAccelerationStructureCreateInfoKHR createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-		createInfo.buffer = blasBuffer;
+		createInfo.buffer = blasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &blas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, blas.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the BLAS
-		VkBuffer scratchBuffer;
-		VkDeviceMemory scratchMem;
+		VkhBuffer blasScratchBuffer;
+		VkhDeviceMemory blasScratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(blasScratchBuffer, blasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// build range info - specifies the primitive count and offsets for the blas
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
@@ -2739,74 +2778,67 @@ private:
 		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
 		// set the dst of the build info to be the blas and add the scratch buffer address
-		buildInfo.dstAccelerationStructure = blas;
-		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(scratchBuffer);
+		buildInfo.dstAccelerationStructure = blas.v();
+		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer);
 
 		// build and populate the BLAS with the geometry data
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted BLAS
-		VkQueryPool queryPool;
+		VkhQueryPool queryPool;
 		VkQueryPoolCreateInfo queryPoolInfo = {};
 		queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
 		queryPoolInfo.queryCount = 1;
-		vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool);
+		vkCreateQueryPool(device, &queryPoolInfo, nullptr, queryPool.p());
 
 		// query the size of the BLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &blas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, blas.p(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
-		vkGetQueryPoolResults(device, queryPool, 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
+		vkGetQueryPoolResults(device, queryPool.v(), 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
 
 		// create a buffer for the compacted BLAS
-		VkBuffer compBlasBuffer;
-		VkDeviceMemory compBlasMem;
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(compBlasBuffer, compBlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(BLAS[index].compBuffer, BLAS[index].compMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the compacted BLAS
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-		compactedCreateInfo.buffer = compBlasBuffer;
+		compactedCreateInfo.buffer = BLAS[index].compBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &BLAS[index]);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].blas.p());
 
 		// the info for the copying of the original blas to the compacted blas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
-		copyInfo.src = blas;
-		copyInfo.dst = BLAS[index];
+		copyInfo.src = blas.v();
+		copyInfo.dst = BLAS[index].blas.v();
 
 		// copy the original BLAS to the compacted one
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBufferC.v(), &copyInfo);
+		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
 	void createMeshInstances() {
 		for (size_t i = 0; i < objects.size(); i++) {
 			VkAccelerationStructureInstanceKHR meshInstance{};
 			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
-			std::cout << bufferInd << std::endl;
 
 			// copy the models model matrix into the instance data
 			memcpy(&meshInstance.transform, &objects[i]->modelMatrix, sizeof(VkTransformMatrixKHR));
 
-			// device address of the BLAS
-			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
-			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd];
-			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd].blas);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
@@ -2820,16 +2852,14 @@ private:
 
 
 	void createTLAS() {
+		if (TLAS.valid()) TLAS.reset();
 		// create a buffer to hold all of the instances
 		VkDeviceSize iSize = meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
 		VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-		VkBuffer tlasInstanceBuffer;
-		VkDeviceMemory tlasInstanceBufferMem;
-
 		vkh::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
-		VkAccelerationStructureKHR tlas;
+		VkhAccelerationStructure tlas;
 		VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlasInstanceBuffer);
 		uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
 
@@ -2858,11 +2888,9 @@ private:
 		// size requirements for the TLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
+		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
 		// create a buffer for the TLAS - the buffer used in the creation of the tlas
-		VkBuffer tlasBuffer;
-		VkDeviceMemory tlasMem;
 		VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(tlasBuffer, tlasMem, sizeInfo.accelerationStructureSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
@@ -2870,15 +2898,13 @@ private:
 		VkAccelerationStructureCreateInfoKHR createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		createInfo.buffer = tlasBuffer;
+		createInfo.buffer = tlasBuffer.v();
 		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, &tlas);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, tlas.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the TLAS
-		VkBuffer scratchBuffer;
-		VkDeviceMemory scratchMem;
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(scratchBuffer, scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(tlasScratchBuffer, tlasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// build range info - specifies the primitive count and offsets for the tlas
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
@@ -2889,36 +2915,34 @@ private:
 		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
 		// set the dst of the build info to be the tlas and add the scratch buffer address
-		buildInfo.dstAccelerationStructure = tlas;
-		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(scratchBuffer);
+		buildInfo.dstAccelerationStructure = tlas.v();
+		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlasScratchBuffer);
 
 		// build and populate the TLAS
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdBuildAccelerationStructuresKHR(commandBuffer, 1, &buildInfo, &pBuildRangeInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 
 		// create a query pool used to store the size of the compacted TLAS
-		VkQueryPool queryPool;
+		VkhQueryPool queryPool;
 		VkQueryPoolCreateInfo queryPoolInfo = {};
 		queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
 		queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
 		queryPoolInfo.queryCount = 1;
-		vkCreateQueryPool(device, &queryPoolInfo, nullptr, &queryPool);
+		vkCreateQueryPool(device, &queryPoolInfo, nullptr, queryPool.p());
 
 		// query the size of the TLAS by writing its properties to the query pool
 		// the data becomes avaible after submitting the command buffer
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBuffer, queryPool, 0, 1);
-		vkCmdWriteAccelerationStructuresPropertiesKHR(commandBuffer, 1, &tlas, VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool, 0);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
+		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, tlas.p(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
+		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
 
 		// get the compacted size from the query pool
 		VkDeviceSize compactedSize = 0;
-		vkGetQueryPoolResults(device, queryPool, 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
+		vkGetQueryPoolResults(device, queryPool.v(), 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
 
 		// create a buffer for the compacted TLAS
-		VkBuffer compTlasBuffer;
-		VkDeviceMemory compTlasMem;
 		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		vkh::createBuffer(compTlasBuffer, compTlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
@@ -2926,21 +2950,21 @@ private:
 		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
 		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		compactedCreateInfo.buffer = compTlasBuffer;
+		compactedCreateInfo.buffer = compTlasBuffer.v();
 		compactedCreateInfo.size = compactedSize;
-		vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, &TLAS);
+		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, TLAS.p());
 
 		// the info for the copying of the original tlas to the compacted tlas
 		VkCopyAccelerationStructureInfoKHR copyInfo = {};
 		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
 		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
-		copyInfo.src = tlas;
-		copyInfo.dst = TLAS;
+		copyInfo.src = tlas.v();
+		copyInfo.dst = TLAS.v();
 
 		// copy the original TLAS to the compacted one
-		commandBuffer = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdCopyAccelerationStructureKHR(commandBuffer, &copyInfo);
-		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBufferC.v(), &copyInfo);
+		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
 	void updateTLAS(size_t* objectsIndices, size_t objCount) {
@@ -2956,8 +2980,8 @@ private:
 			// device address of the BLAS
 			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
 			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd];
-			VkDeviceAddress blasAddress = vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+			addrInfo.accelerationStructure = BLAS[bufferInd].blas.v();
+			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
 
 			// populate the instance data
 			meshInstance.accelerationStructureReference = blasAddress;
@@ -2971,10 +2995,10 @@ private:
 		createTLAS();
 	}
 
-	void createModelBuffers() { // creates the vertex and index buffers for the unique models into a single buffer
+	void createModelBuffers(bool recreate) {
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
-		bufferData.resize(getUniqueModels());
+		if (!recreate) bufferData.resize(getUniqueModels());
 		uniqueModelIndex.clear();
 		modelHashToBufferIndex.clear();
 
@@ -2986,31 +3010,35 @@ private:
 		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
 			if (uniqueModelIndex.find(obj->meshHash) == uniqueModelIndex.end()) {
-				totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
-				totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+				if (!recreate) {
+					totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
+					totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+				}
 				uniqueModelIndex[obj->meshHash] = i; //store the index of the object
 				modelHashToBufferIndex[obj->meshHash] = ind++;
 			}
 		}
 
-		VkBuffer stagingVertBuffer;
-		VkDeviceMemory stagingVertBufferMem;
+		if (recreate) return;
 
-		VkBuffer stagingIndexBuffer;
-		VkDeviceMemory stagingIndexBufferMem;
+		VkhBuffer stagingVertBuffer;
+		VkhDeviceMemory stagingVertBufferMem;
+
+		VkhBuffer stagingIndexBuffer;
+		VkhDeviceMemory stagingIndexBufferMem;
 
 		const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
 		// create and map the vertex buffer
 		vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* vertexData;
-		vkMapMemory(device, stagingVertBufferMem, 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
+		vkMapMemory(device, stagingVertBufferMem.v(), 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
 		VkDeviceSize currentVertexOffset = 0;
 
 		// create and map the index buffer
 		vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
 		char* indexData;
-		vkMapMemory(device, stagingIndexBufferMem, 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+		vkMapMemory(device, stagingIndexBufferMem.v(), 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
 		VkDeviceSize currentIndexOffset = 0;
 
 		for (size_t i = 0; i < objects.size(); i++) {
@@ -3032,8 +3060,8 @@ private:
 			indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
 			currentIndexOffset += bufferData[bufferInd].indexCount;
 		}
-		vkUnmapMemory(device, stagingVertBufferMem);
-		vkUnmapMemory(device, stagingIndexBufferMem);
+		vkUnmapMemory(device, stagingVertBufferMem.v());
+		vkUnmapMemory(device, stagingIndexBufferMem.v());
 
 		VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
 		VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -3044,27 +3072,19 @@ private:
 		vkh::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
 		vkh::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
-		VkCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
+		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
 		VkBufferCopy copyRegion{};
 
 		// copy the vert staging buffer into the dst vert buffer
 		copyRegion.size = totalVertexBufferSize;
-		vkCmdCopyBuffer(commandBuffer, stagingVertBuffer, vertBuffer, 1, &copyRegion);
+		vkCmdCopyBuffer(commandBuffer.v(), stagingVertBuffer.v(), vertBuffer.v(), 1, &copyRegion);
 
 		// copy the index staging buffer into the dst index buffer
 		copyRegion.size = totalIndexBufferSize;
-		vkCmdCopyBuffer(commandBuffer, stagingIndexBuffer, indBuffer, 1, &copyRegion);
+		vkCmdCopyBuffer(commandBuffer.v(), stagingIndexBuffer.v(), indBuffer.v(), 1, &copyRegion);
 
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
-
-		// free the staging buffers
-		vkDestroyBuffer(device, stagingVertBuffer, nullptr);
-		vkDestroyBuffer(device, stagingIndexBuffer, nullptr);
-
-		vkFreeMemory(device, stagingVertBufferMem, nullptr);
-		vkFreeMemory(device, stagingIndexBufferMem, nullptr);
 	}
-
 
 	void setupAccelerationStructures() {
 		if (!rtEnabled) return;
@@ -3082,17 +3102,20 @@ private:
 		createTLAS();
 	}
 
-	void cloneObject(dml::vec3 pos, uint16_t object, dml::vec3 scale, dml::vec4 rotation) {
-		auto m = std::make_unique<dvl::Mesh>(*originalObjects[object]);
+	void cloneObject(dml::vec3 pos, uint16_t index, dml::vec3 scale, dml::vec4 rotation) {
+		const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
+		dvl::Mesh m;
 
-		m->scale = scale;
-		m->position = pos;
-		m->startObj = false;
-		m->rotation = rotation;
+		m.scale = scale;
+		m.position = pos;
+		m.startObj = false;
+		m.rotation = rotation;
+		m.meshHash = other->meshHash;
+		m.material = other->material;
 
 		dml::mat4 newModel = dml::translate(pos) * dml::rotateQuat(rotation) * dml::scale(scale);
-		m->modelMatrix = newModel * m->modelMatrix;
-		objects.push_back(std::move(m));
+		m.modelMatrix = newModel * other->modelMatrix;
+		objects.push_back(std::make_unique<dvl::Mesh>(std::move(m)));
 	}
 
 	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
@@ -3113,22 +3136,15 @@ private:
 		return uniqueModels.size();
 	}
 
-	void recreateModelBuffers() {
-		vkDestroyBuffer(device, vertBuffer, nullptr);
-		vkFreeMemory(device, vertBufferMem, nullptr);
-		vkDestroyBuffer(device, indBuffer, nullptr);
-		vkFreeMemory(device, indBufferMem, nullptr);
-		createModelBuffers();
-	}
-
 	void summonModel() {
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+		if (objects.size() + 2 >= MAX_MODELS) return;
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
 		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 9, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, 10, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
-		recreateModelBuffers();
+		createModelBuffers(true);
 
 		if (rtEnabled) {
 			std::array<size_t, 2> indices = { objects.size() - 2, objects.size() - 1 };
@@ -3142,7 +3158,7 @@ private:
 
 		recreateLightBuffer();
 		VkDescriptorBufferInfo lightBufferInfo{};
-		lightBufferInfo.buffer = lightBuffer;
+		lightBufferInfo.buffer = lightBuffer.v();
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = lightData.memSize;
 
@@ -3155,7 +3171,7 @@ private:
 
 	void summonLight() {
 		if (lights.size() + 1 > MAX_LIGHTS) return;
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 		dml::vec3 target = pos + dml::quatToDir(cam.quat);
@@ -3166,25 +3182,26 @@ private:
 		vkh::createImageView(l.shadowMapData, vkh::DEPTH);
 		vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
 
-		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, &l.shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
 
-		VkCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c = vkh::allocateCommandBuffers(p);
-		shadowMapCommandBuffers.primary.buffers.push_back(c);
+		VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
+
 		shadowMapCommandBuffers.primary.pools.push_back(p);
+		shadowMapCommandBuffers.primary.buffers.push_back(c);
 
-		VkCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+		VkhCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+		VkhCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
-		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 		shadowMapCommandBuffers.secondary.pools.push_back(p2);
+		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 
 		lights.push_back(std::make_unique<Light>(l));
 
 		VkDescriptorImageInfo shadowInfo{};
 		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-		shadowInfo.imageView = lights.back()->shadowMapData.imageView;
-		shadowInfo.sampler = lights.back()->shadowMapData.sampler;
+		shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
+		shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
 		shadowInfos.push_back(shadowInfo);
 
 		updateLightDS();
@@ -3192,27 +3209,25 @@ private:
 	}
 
 	void recreateLightBuffer() {
-		vkDestroyBuffer(device, lightBuffer, nullptr);
-		vkFreeMemory(device, lightBufferMem, nullptr);
 		createLightBuffer();
 	}
 
-	void recordOpaqueSecondaryCommandBuffers(VkCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
-		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
+	void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), instanceBuffer.v() };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		if (startCommand) {
-			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+			if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording opaque secondary command buffer!");
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 		// bind the vertex and instance buffers
-		vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), offsets.data());
-		vkCmdBindIndexBuffer(secondary, indBuffer, 0, VK_INDEX_TYPE_UINT32);
+		vkCmdBindVertexBuffers(secondary.v(), 0, 2, vertexBuffersArray.data(), offsets.data());
+		vkCmdBindIndexBuffer(secondary.v(), indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
 
 		uint32_t p = 0;
 		for (size_t j = 0; j < objects.size(); j++) {
@@ -3234,43 +3249,43 @@ private:
 				pushConst.textureExist = textureExistence;
 				pushConst.texIndex = meshTexStartInd[p];
 
-				vkCmdPushConstants(secondary, pipe.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+				vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
-				vkCmdDrawIndexed(secondary, bufferData[bufferInd].indexCount, instanceCount,
+				vkCmdDrawIndexed(secondary.v(), bufferData[bufferInd].indexCount, instanceCount,
 					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				p++;
 			}
 		}
 
 		if (endCommand) {
-			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+			if (vkEndCommandBuffer(secondary.v()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record opaque secondary command buffer!");
 			}
 		}
 	}
 
-	void recordShadowSecondaryCommandBuffers(std::vector<VkCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		size_t size = secondaries.size();
 
-		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer, instanceBuffer };
+		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), instanceBuffer.v() };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		for (size_t i = 0; i < size; i++) {
 			if (startCommand) {
-				if (vkBeginCommandBuffer(secondaries[i], &beginInfo) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(secondaries[i].v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording shadow secondary command buffer!");
 				}
 			}
 
-			vkCmdBindPipeline(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline);
-			vkCmdBindDescriptorSets(secondaries[i], VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+			vkCmdBindPipeline(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
+			vkCmdBindDescriptorSets(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
 			int lightIndex = static_cast<int>(i);
-			vkCmdPushConstants(secondaries[i], shadowMapPipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
+			vkCmdPushConstants(secondaries[i].v(), shadowMapPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
 
-			vkCmdBindVertexBuffers(secondaries[i], 0, 2, vertexBuffersArray.data(), offsets.data());
-			vkCmdBindIndexBuffer(secondaries[i], indBuffer, 0, VK_INDEX_TYPE_UINT32);
+			vkCmdBindVertexBuffers(secondaries[i].v(), 0, 2, vertexBuffersArray.data(), offsets.data());
+			vkCmdBindIndexBuffer(secondaries[i].v(), indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
 		}
 
 		// iterate through all objects that cast shadows
@@ -3281,7 +3296,7 @@ private:
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 				for (size_t i = 0; i < size; i++) {
-					vkCmdDrawIndexed(secondaries[i], bufferData[bufferInd].indexCount, instanceCount,
+					vkCmdDrawIndexed(secondaries[i].v(), bufferData[bufferInd].indexCount, instanceCount,
 						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
 				}
 				p++;
@@ -3290,24 +3305,24 @@ private:
 
 		if (endCommand) {
 			for (size_t i = 0; i < size; i++) {
-				if (vkEndCommandBuffer(secondaries[i]) != VK_SUCCESS) {
+				if (vkEndCommandBuffer(secondaries[i].v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record shadow secondary command buffer!");
 				}
 			}
 		}
 	}
 
-	void recordCompSecondaryCommandBuffers(VkCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+	void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		if (startCommand) {
-			if (vkBeginCommandBuffer(secondary, &beginInfo) != VK_SUCCESS) {
+			if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
 				throw std::runtime_error("failed to begin recording composition secondary command buffer!");
 			}
 		}
 
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout, 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
-		vkCmdDraw(secondary, 6, 1, 0, 0);
+		vkCmdDraw(secondary.v(), 6, 1, 0, 0);
 
 		// prepare for next frame in ImGui
 		ImGui_ImplVulkan_NewFrame();
@@ -3332,24 +3347,24 @@ private:
 
 		// render the imgui frame and draw imgui's commands into the command buffer
 		ImGui::Render();
-		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), secondary);
+		ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), secondary.v());
 
 		if (endCommand) {
-			if (vkEndCommandBuffer(secondary) != VK_SUCCESS) {
+			if (vkEndCommandBuffer(secondary.v()) != VK_SUCCESS) {
 				throw std::runtime_error("failed to record composition secondary command buffer!");
 			}
 		}
 	}
 
 	void recordSecondaryCommandBuffers() {
-		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4] };
-		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0], descs.sets[1], descs.sets[2], descs.sets[4], descs.sets[6] };
-		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3], descs.sets[4] };
+		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0].v(), descs.sets[1].v(), descs.sets[2].v(), descs.sets[4].v() };
+		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0].v(), descs.sets[1].v(), descs.sets[2].v(), descs.sets[4].v(), descs.sets[6].v() };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3].v(), descs.sets[4].v() };
 
 		// FOR THE SHADOW PASS
 		VkCommandBufferInheritanceInfo shadowInheritInfo{};
 		shadowInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		shadowInheritInfo.renderPass = shadowMapPipeline.renderPass;
+		shadowInheritInfo.renderPass = shadowMapPipeline.renderPass.v();
 		shadowInheritInfo.framebuffer = VK_NULL_HANDLE;
 		shadowInheritInfo.subpass = 0;
 
@@ -3358,12 +3373,12 @@ private:
 		shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, &descs.sets[1], 1, true, true);
+		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, descs.sets[1].p(), 1, true, true);
 
 		// FOR THE OPAQUE & SKYBOX PASS
 		VkCommandBufferInheritanceInfo opaqueInheritInfo{};
 		opaqueInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass;
+		opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass.v();
 		opaqueInheritInfo.framebuffer = VK_NULL_HANDLE;
 		opaqueInheritInfo.subpass = 0;
 
@@ -3372,24 +3387,24 @@ private:
 		opaqueBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		opaqueBeginInfo.pInheritanceInfo = &opaqueInheritInfo;
 
-		VkCommandBuffer& secondary = opaquePassCommandBuffers.secondary[0];
-		if (vkBeginCommandBuffer(secondary, &opaqueBeginInfo) != VK_SUCCESS) {
+		VkhCommandBuffer& secondary = opaquePassCommandBuffers.secondary[0];
+		if (vkBeginCommandBuffer(secondary.v(), &opaqueBeginInfo) != VK_SUCCESS) {
 			throw std::runtime_error("failed to begin recording secondary command buffer!");
 		}
 
 		const VkDeviceSize skyboxOffset = 0;
-		vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline);
-		vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout, 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-		vkCmdBindVertexBuffers(secondary, 0, 1, &skybox.vertBuffer, &skyboxOffset);
-		vkCmdBindIndexBuffer(secondary, skybox.indBuffer, 0, VK_INDEX_TYPE_UINT32);
-		vkCmdDrawIndexed(secondary, skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
+		vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline.v());
+		vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout.v(), 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
+		vkCmdBindVertexBuffers(secondary.v(), 0, 1, skybox.vertBuffer.p(), &skyboxOffset);
+		vkCmdBindIndexBuffer(secondary.v(), skybox.indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
+		vkCmdDrawIndexed(secondary.v(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
 		recordOpaqueSecondaryCommandBuffers(secondary, opaquePassPipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
 
 		// FOR THE WBOIT PASS
 		VkCommandBufferInheritanceInfo wboitInheritInfo{};
 		wboitInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		wboitInheritInfo.renderPass = wboitPipeline.renderPass;
+		wboitInheritInfo.renderPass = wboitPipeline.renderPass.v();
 		wboitInheritInfo.framebuffer = VK_NULL_HANDLE;
 		wboitInheritInfo.subpass = 0;
 
@@ -3415,29 +3430,29 @@ private:
 #else
 			tfCmd.emplace([&, i, beginInfoP, clearValue]() {
 #endif
-				VkCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
-				VkCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
+				VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
+				VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
-				if (vkBeginCommandBuffer(shadowCommandBuffer, &beginInfoP) != VK_SUCCESS) {
+				if (vkBeginCommandBuffer(shadowCommandBuffer.v(), &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
 				// render pass
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = shadowMapPipeline.renderPass;
-				renderPassInfo.framebuffer = lights[i]->frameBuffer;
+				renderPassInfo.renderPass = shadowMapPipeline.renderPass.v();
+				renderPassInfo.framebuffer = lights[i]->frameBuffer.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
 				renderPassInfo.clearValueCount = 1;
 				renderPassInfo.pClearValues = &clearValue;
-				vkCmdBeginRenderPass(shadowCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdBeginRenderPass(shadowCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
 
-				vkCmdExecuteCommands(shadowCommandBuffer, 1, &secondary);
+				vkCmdExecuteCommands(shadowCommandBuffer.v(), 1, secondary.p());
 
 				// end the render pass and command buffer
-				vkCmdEndRenderPass(shadowCommandBuffer);
-				if (vkEndCommandBuffer(shadowCommandBuffer) != VK_SUCCESS) {
+				vkCmdEndRenderPass(shadowCommandBuffer.v());
+				if (vkEndCommandBuffer(shadowCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3459,24 +3474,24 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, beginInfoP]() {
 #endif
-				VkCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(opaqueCommandBuffer, &beginInfoP) != VK_SUCCESS) {
+				VkhCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
+				if (vkBeginCommandBuffer(opaqueCommandBuffer.v(), &beginInfoP) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = opaquePassPipeline.renderPass;
-				renderPassInfo.framebuffer = opaquePassFB;
+				renderPassInfo.renderPass = opaquePassPipeline.renderPass.v();
+				renderPassInfo.framebuffer = opaquePassFB.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(opaqueCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(opaqueCommandBuffer, static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
-				vkCmdEndRenderPass(opaqueCommandBuffer);
-				if (vkEndCommandBuffer(opaqueCommandBuffer) != VK_SUCCESS) {
+				vkCmdBeginRenderPass(opaqueCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(opaqueCommandBuffer.v(), static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
+				vkCmdEndRenderPass(opaqueCommandBuffer.v());
+				if (vkEndCommandBuffer(opaqueCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3500,15 +3515,15 @@ private:
 #else
 			tfCmd.emplace([&, i, clearValues, offset, beginInfo]() {
 #endif
-				VkCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
-				if (vkBeginCommandBuffer(wboitCommandBuffer, &beginInfo) != VK_SUCCESS) {
+				VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
+				if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = wboitPipeline.renderPass;
-				renderPassInfo.framebuffer = wboit.frameBuffer;
+				renderPassInfo.renderPass = wboitPipeline.renderPass.v();
+				renderPassInfo.framebuffer = wboit.frameBuffer.v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3516,11 +3531,11 @@ private:
 
 				vkh::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
-				vkCmdBeginRenderPass(wboitCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(wboitCommandBuffer, static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
-				vkCmdEndRenderPass(wboitCommandBuffer);
+				vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(wboitCommandBuffer.v(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
+				vkCmdEndRenderPass(wboitCommandBuffer.v());
 
-				if (vkEndCommandBuffer(wboitCommandBuffer) != VK_SUCCESS) {
+				if (vkEndCommandBuffer(wboitCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3532,7 +3547,7 @@ private:
 
 	void recordCompCommandBuffers() {
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkDescriptorSet compDS = descs.sets[5];
+		VkhDescriptorSet compDS = descs.sets[5];
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3541,7 +3556,7 @@ private:
 
 		VkCommandBufferInheritanceInfo inheritInfo{};
 		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-		inheritInfo.renderPass = compPipelineData.renderPass;
+		inheritInfo.renderPass = compPipelineData.renderPass.v();
 		inheritInfo.framebuffer = VK_NULL_HANDLE;
 		inheritInfo.subpass = 0;
 
@@ -3550,31 +3565,31 @@ private:
 		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 		beginInfoS.pInheritanceInfo = &inheritInfo;
 
-		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, &compDS, 1, true, true);
+		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, compDS.p(), 1, true, true);
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
 #ifdef PROFILE_COMMAND_BUFFERS
 #else
 			tfCmd.emplace([&, i, clearValues, beginInfo]() {
 #endif
-				VkCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
-				if (vkBeginCommandBuffer(compCommandBuffer, &beginInfo) != VK_SUCCESS) {
+				VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
+				if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
 					throw std::runtime_error("failed to begin recording command buffer!");
 				}
 
 				VkRenderPassBeginInfo renderPassInfo{};
 				renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-				renderPassInfo.renderPass = compPipelineData.renderPass;
-				renderPassInfo.framebuffer = swap.framebuffers[i];
+				renderPassInfo.renderPass = compPipelineData.renderPass.v();
+				renderPassInfo.framebuffer = swap.framebuffers[i].v();
 				renderPassInfo.renderArea.offset = { 0, 0 };
 				renderPassInfo.renderArea.extent = swap.extent;
 				renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
 				renderPassInfo.pClearValues = clearValues.data();
 
-				vkCmdBeginRenderPass(compCommandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-				vkCmdExecuteCommands(compCommandBuffer, 1, &compCommandBuffers.secondary[0]);
-				vkCmdEndRenderPass(compCommandBuffer);
-				if (vkEndCommandBuffer(compCommandBuffer) != VK_SUCCESS) {
+				vkCmdBeginRenderPass(compCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+				vkCmdExecuteCommands(compCommandBuffer.v(), 1, compCommandBuffers.secondary[0].p());
+				vkCmdEndRenderPass(compCommandBuffer.v());
+				if (vkEndCommandBuffer(compCommandBuffer.v()) != VK_SUCCESS) {
 					throw std::runtime_error("failed to record command buffer!");
 				}
 #ifdef PROFILE_COMMAND_BUFFERS
@@ -3643,23 +3658,22 @@ private:
 		if (initial) {
 			// create the shadowmap framebuffers
 			for (size_t i = 0; i < lights.size(); i++) {
-				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, &lights[i]->shadowMapData.imageView, 1, shadowProps.width, shadowProps.height);
+				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
 			}
 		}
 
 		// create the opaque pass framebuffer
-		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView, opaquePassTextures.depth.imageView };
+		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView.v(), opaquePassTextures.depth.imageView.v() };
 		vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
 
 		// create the wboit framebuffer
-		std::vector<VkImageView> attachmentsW = { wboit.weightedColor.imageView };
-		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, attachmentsW.data(), attachmentsW.size(), swap.extent.width, swap.extent.height);
+		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.p(), 1, swap.extent.width, swap.extent.height);
 
 		// create the composition framebuffers
 		size_t swapSize = swap.imageViews.size();
 		if (initial) swap.framebuffers.resize(swapSize);
 		for (size_t i = 0; i < swapSize; i++) {
-			std::vector<VkImageView> attachments = { compTex.imageView, swap.imageViews[i] };
+			std::vector<VkImageView> attachments = { compTex.imageView.v(), swap.imageViews[i].v() };
 			vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
 		}
 	}
@@ -3672,13 +3686,6 @@ private:
 		vkh::createSemaphore(compSemaphore);
 	}
 
-	void freeTexture(dvl::Texture& t) {
-		vkDestroyImageView(device, t.imageView, nullptr);
-		vkDestroySampler(device, t.sampler, nullptr);
-		vkDestroyImage(device, t.image, nullptr);
-		vkFreeMemory(device, t.memory, nullptr);
-	}
-
 	void recreateSwap() {
 		std::cout << "Recreating swap chain..." << std::endl;
 		int width = 0, height = 0;
@@ -3686,29 +3693,14 @@ private:
 			glfwGetFramebufferSize(window, &width, &height);
 			glfwWaitEvents();
 		}
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		vkDeviceWaitIdle(device); // wait for thr device to be idle
 
-		// free the textures
-		freeTexture(opaquePassTextures.color);
-		freeTexture(opaquePassTextures.depth);
-		freeTexture(wboit.weightedColor);
-
-		for (auto imageView : swap.imageViews) {
-			vkDestroyImageView(device, imageView, nullptr);
-		}
-		vkDestroySwapchainKHR(device, swap.swapChain, nullptr);
+		swap.swapChain.reset(); // reset the SC
 
 		createSC();
 		createSCImageViews();
 		setupTextures();
-
-		for (VkDescriptorPool& pool : descs.pools) {
-			vkDestroyDescriptorPool(device, pool, nullptr);
-		}
-		for (VkDescriptorSetLayout& layout : descs.layouts) {
-			vkDestroyDescriptorSetLayout(device, layout, nullptr);
-		}
 
 		// create the descriptorsets
 		setupDescriptorSets(false);
@@ -3726,10 +3718,10 @@ private:
 
 	void drawFrame() {
 		uint32_t imageIndex;
-		vkResetFences(device, 1, &inFlightFences[currentFrame]);
+		vkResetFences(device, 1, inFlightFences[currentFrame].p());
 
 		// acquire the next image from the swapchain
-		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain, std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore, VK_NULL_HANDLE, &imageIndex);
+		VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
 		if (result == VK_ERROR_OUT_OF_DATE_KHR) {
 			vkDeviceWaitIdle(device);
 			recreateSwap();
@@ -3742,7 +3734,7 @@ private:
 		VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
 		std::vector<VkSubmitInfo> submitInfos;
 
-		for (VkCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
+		for (VkhCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
 			VkSubmitInfo sub = vkh::createSubmitInfo(&shadow, 1);
 			submitInfos.push_back(sub);
 		}
@@ -3752,7 +3744,7 @@ private:
 		submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
 
 		// submit all command buffers in a single call
-		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame]) != VK_SUCCESS) {
+		if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame].v()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to submit command buffers!");
 		}
 
@@ -3760,8 +3752,8 @@ private:
 		VkPresentInfoKHR presentInfo{};
 		presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
 		presentInfo.waitSemaphoreCount = 1;
-		presentInfo.pWaitSemaphores = &renderFinishedSemaphore;
-		VkSwapchainKHR swapChains[] = { swap.swapChain };
+		presentInfo.pWaitSemaphores = renderFinishedSemaphore.p();
+		VkSwapchainKHR swapChains[] = { swap.swapChain.v() };
 		presentInfo.swapchainCount = 1;
 		presentInfo.pSwapchains = swapChains;
 		presentInfo.pImageIndices = &imageIndex;
@@ -3778,7 +3770,7 @@ private:
 	}
 
 	void recordAllCommandBuffers() { // record every command buffer
-		vkWaitForFences(device, 1, &inFlightFences[currentFrame], VK_TRUE, UINT64_MAX);
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
 #ifdef PROFILE_COMMAND_BUFFERS
 		utils::sep();
@@ -3825,6 +3817,7 @@ private:
 			prev = endTime;
 		}
 	}
+
 
 	void mainLoop() {
 		uint8_t frameCount = 0;
@@ -3881,18 +3874,19 @@ private:
 		}
 
 		vkDeviceWaitIdle(device);
+		imguiCleanup();
 	}
 
 	void initializeMouseInput(bool initial) {
 		// set the lastX and lastY to the center of the screen
 		if (initial) {
-			cam.lastX = static_cast<float>(swap.extent.width) / 2.0f;
-			cam.lastY = static_cast<float>(swap.extent.height) / 2.0f;
-			glfwSetCursorPos(window, cam.lastX, cam.lastY);
+			mouse.lastX = static_cast<float>(swap.extent.width) / 2.0f;
+			mouse.lastY = static_cast<float>(swap.extent.height) / 2.0f;
+			glfwSetCursorPos(window, mouse.lastX, mouse.lastY);
 		}
 
 		// only hide and capture cursor if cam.locked is true
-		if (cam.locked) {
+		if (mouse.locked) {
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
 
 			// set the mouse callback
@@ -3908,18 +3902,18 @@ private:
 		float xp = static_cast<float>(xPos);
 		float yp = static_cast<float>(yPos);
 
-		if (cam.locked) {
-			float xoff = cam.lastX - xp;
-			float yoff = cam.lastY - yp;
-			cam.lastX = xp;
-			cam.lastY = yp;
+		if (mouse.locked) {
+			float xoff = mouse.lastX - xp;
+			float yoff = mouse.lastY - yp;
+			mouse.lastX = xp;
+			mouse.lastY = yp;
 
 			float sens = 0.1f;
 			xoff *= sens;
 			yoff *= sens;
 
-			cam.rightAngle -= xoff;
-			cam.upAngle -= yoff;
+			mouse.rightAngle -= xoff;
+			mouse.upAngle -= yoff;
 		}
 	}
 
@@ -3930,10 +3924,10 @@ private:
 
 		float cameraSpeed = 2.0f * deltaTime;
 
-		cam.upAngle = fmod(cam.upAngle + 360.0f, 360.0f);
-		cam.rightAngle = fmod(cam.rightAngle + 360.0f, 360.0f);
+		mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
+		mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
 
-		cam.updateQuaternion();
+		cam.updateQuaternion(mouse);
 		dml::vec3 forward = dml::quatToDir(cam.quat);
 		dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
 
@@ -3970,12 +3964,12 @@ private:
 		}
 
 		if (rKey.isPressed()) {
-			uint64_t vertCount = 0;
+			size_t vertCount = 0;
 			for (const auto& o : objects) {
 				vertCount += o->vertices.size();
 			}
 
-			double score = fps * (((vertCount) / 200000.0) + lights.size());
+			double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
 
 			utils::sep();
 			std::cout << "Vertex count: " << vertCount << std::endl;
@@ -3986,8 +3980,8 @@ private:
 
 		// lock / unlock mouse
 		if (escapeKey.isPressed()) {
-			cam.locked = !cam.locked;
-			initializeMouseInput(cam.locked);
+			mouse.locked = !mouse.locked;
+			initializeMouseInput(mouse.locked);
 		}
 	}
 
@@ -4009,7 +4003,7 @@ private:
 		loadUniqueObjects();
 
 		// create buffers and textures
-		createModelBuffers();
+		createModelBuffers(false);
 		setupAccelerationStructures();
 		setupTextures();
 		loadSkybox("night-sky.hdr");
@@ -4033,15 +4027,28 @@ private:
 		std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
 	}
 };
+
 int main() {
-	Engine app;
-	try {
-		app.run();
+	{
+		Engine app;
+		try {
+			app.run();
+		}
+		catch (const std::exception& e) {
+			std::cerr << e.what() << std::endl;
+			return EXIT_FAILURE;
+		}
 	}
-	catch (const std::exception& e) {
-		std::cerr << e.what() << std::endl;
-		return EXIT_FAILURE;
-	}
+
+	vkDestroySurfaceKHR(instance, surface, nullptr);
+	vkDestroyDevice(device, nullptr);
+	vkDestroyInstance(instance, nullptr);
+
+	utils::sep();
+	utils::sep();
+	std::cout << "CLOSING ENGINE" << std::endl;
+	utils::sep();
+	utils::sep();
 
 	return EXIT_SUCCESS;
 }

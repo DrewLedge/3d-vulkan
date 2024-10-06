@@ -7,6 +7,7 @@
 #include <unordered_set>
 #include <dml.hpp>
 #include <utils.hpp>
+#include <vkhelper.hpp>
 
 class dvl {
 public:
@@ -80,29 +81,29 @@ public:
 	};
 
 	struct Texture {
-		VkSampler sampler;
-		VkImage image;
-		VkDeviceMemory memory;
-		VkImageView imageView;
+		VkhSampler sampler;
+		VkhImage image;
+		VkhDeviceMemory memory;
+		VkhImageView imageView;
 		std::string path;
 		uint32_t mipLevels;
-		VkBuffer stagingBuffer;
-		VkDeviceMemory stagingBufferMem;
-		tinygltf::Image gltfImage;
+		VkhBuffer stagingBuffer;
+		VkhDeviceMemory stagingBufferMem;
+		std::shared_ptr<tinygltf::Image> gltfImage;
 		bool found;
 		uint16_t width;
 		uint16_t height;
 		VkSampleCountFlagBits sampleCount;
 
 		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
-			: sampler(VK_NULL_HANDLE),
-			image(VK_NULL_HANDLE),
-			memory(VK_NULL_HANDLE),
-			imageView(VK_NULL_HANDLE),
+			: sampler(),
+			image(),
+			memory(),
+			imageView(),
 			path(""),
 			mipLevels(1),
-			stagingBuffer(VK_NULL_HANDLE),
-			stagingBufferMem(VK_NULL_HANDLE),
+			stagingBuffer(),
+			stagingBufferMem(),
 			gltfImage(),
 			found(false),
 			width(1024),
@@ -128,14 +129,14 @@ public:
 	struct TexHash {
 		size_t operator()(const Texture& tex) const {
 			size_t seed = 0;
-			seed ^= std::hash<VkImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-			seed ^= std::hash<VkDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+			seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 			seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
 
@@ -547,7 +548,7 @@ public:
 				if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.baseColorTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.baseColor.gltfImage = model.images[tex.source];
+					texture.baseColor.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);
 					texture.baseColor.path = "gltf";
 					texture.baseColor.found = true;
 					newObject.textureCount++;
@@ -557,7 +558,7 @@ public:
 				if (material.pbrMetallicRoughness.metallicRoughnessTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.pbrMetallicRoughness.metallicRoughnessTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.metallicRoughness.gltfImage = model.images[tex.source];
+					texture.metallicRoughness.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.metallicRoughness.path = "gltf";
 					texture.metallicRoughness.found = true;
 					newObject.textureCount++;
@@ -567,7 +568,7 @@ public:
 				if (material.normalTexture.index >= 0) {
 					tinygltf::NormalTextureInfo& texInfo = material.normalTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.normalMap.gltfImage = model.images[tex.source];
+					texture.normalMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.normalMap.path = "gltf";
 					texture.normalMap.found = true;
 					newObject.textureCount++;
@@ -577,7 +578,7 @@ public:
 				if (material.emissiveTexture.index >= 0) {
 					tinygltf::TextureInfo& texInfo = material.emissiveTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.emissiveMap.gltfImage = model.images[tex.source];
+					texture.emissiveMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.emissiveMap.path = "gltf";
 					texture.emissiveMap.found = true;
 					newObject.textureCount++;
@@ -587,7 +588,7 @@ public:
 				if (material.occlusionTexture.index >= 0) {
 					tinygltf::OcclusionTextureInfo& texInfo = material.occlusionTexture;
 					tinygltf::Texture& tex = model.textures[texInfo.index];
-					texture.occlusionMap.gltfImage = model.images[tex.source];
+					texture.occlusionMap.gltfImage = std::make_shared<tinygltf::Image>(model.images[tex.source]);;
 					texture.occlusionMap.path = "gltf";
 					texture.occlusionMap.found = true;
 					newObject.textureCount++;
