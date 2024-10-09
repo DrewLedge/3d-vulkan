@@ -1642,25 +1642,19 @@ private:
 		skyboxData = nullptr;
 	}
 
+
+	VkhShaderModule createShaderMod(std::string name) {
+		std::vector<char> shaderCode = readFile(SHADER_DIR + name + std::string("_shader.spv"));
+		return vkh::createShaderModule(shaderCode);
+	}
+
 	void createGraphicsPipeline() {
-		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "vertex_shader.spv"); //read the vertex shader binary
-		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "fragment_shader.spv");
-		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = createShaderMod("vertex");
+		VkhShaderModule fragShaderModule = createShaderMod("fragment");
 
-		// shader stage setup 
-		VkPipelineShaderStageCreateInfo vertShader{}; //vertex shader stage info
-		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule.v();
-		vertShader.pName = "main";
-
-		VkPipelineShaderStageCreateInfo fragShader{}; //fragment shader stage info
-		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule.v();
-		fragShader.pName = "main";
-		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader }; //create an array of the shader stage structs
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
 		// input binding data: tells Vulkan how to read/organize data based on the binding, stride and rate
 		VkVertexInputBindingDescription vertBindDesc{};
@@ -1906,22 +1900,11 @@ private:
 	}
 
 	void createShadowPipeline() {
-		// get shader data
-		auto vertShaderSPV = readFile(SHADER_DIR + "shadow_vert_shader.spv");
-		auto fragShaderSPV = readFile(SHADER_DIR + "shadow_frag_shader.spv");
-		VkhShaderModule shadowVertShaderModule = vkh::createShaderModule(vertShaderSPV);
-		VkhShaderModule shadowFragShaderModule = vkh::createShaderModule(fragShaderSPV);
+		VkhShaderModule vertShaderModule = createShaderMod("shadow_vert");
+		VkhShaderModule fragShaderModule = createShaderMod("shadow_frag");
 
-		VkPipelineShaderStageCreateInfo vertStage{};
-		vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertStage.module = shadowVertShaderModule.v();
-		vertStage.pName = "main";
-		VkPipelineShaderStageCreateInfo fragStage{};
-		fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragStage.module = shadowFragShaderModule.v();
-		fragStage.pName = "main";
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
 		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
 		VkVertexInputBindingDescription vertBindDesc{};
@@ -2092,23 +2075,13 @@ private:
 		}
 	}
 
-	void createSkyboxPipeline() { // same as the normal pipeline, but with a few small changes
-		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "sky_vert_shader.spv");
-		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "sky_frag_shader.spv");
-		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
+	void createSkyboxPipeline() {
+		VkhShaderModule vertShaderModule = createShaderMod("sky_vert");
+		VkhShaderModule fragShaderModule = createShaderMod("sky_frag");
 
-		VkPipelineShaderStageCreateInfo vertShader{};
-		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule.v();
-		vertShader.pName = "main";
-		VkPipelineShaderStageCreateInfo fragShader{};
-		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule.v();
-		fragShader.pName = "main";
-		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
 		VkVertexInputBindingDescription bindDesc{};
 		bindDesc.binding = 0;
@@ -2217,22 +2190,12 @@ private:
 	}
 
 	void createWBOITPipeline() {
-		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "wboit_vert_shader.spv");
-		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "wboit_frag_shader.spv");
-		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = createShaderMod("wboit_vert");
+		VkhShaderModule fragShaderModule = createShaderMod("wboit_frag");
 
-		VkPipelineShaderStageCreateInfo vertShader{};
-		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule.v();
-		vertShader.pName = "main";
-		VkPipelineShaderStageCreateInfo fragShader{};
-		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule.v();
-		fragShader.pName = "main";
-		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
 		VkVertexInputBindingDescription vertBindDesc{};
 		vertBindDesc.binding = 0;
@@ -2434,22 +2397,12 @@ private:
 	}
 
 	void createCompositionPipeline() {
-		std::vector<char> vertShaderCode = readFile(SHADER_DIR + "composition_vert_shader.spv");
-		std::vector<char> fragShaderCode = readFile(SHADER_DIR + "composition_frag_shader.spv");
-		VkhShaderModule vertShaderModule = vkh::createShaderModule(vertShaderCode);
-		VkhShaderModule fragShaderModule = vkh::createShaderModule(fragShaderCode);
+		VkhShaderModule vertShaderModule = createShaderMod("composition_vert");
+		VkhShaderModule fragShaderModule = createShaderMod("composition_frag");
 
-		VkPipelineShaderStageCreateInfo vertShader{};
-		vertShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		vertShader.stage = VK_SHADER_STAGE_VERTEX_BIT;
-		vertShader.module = vertShaderModule.v();
-		vertShader.pName = "main";
-		VkPipelineShaderStageCreateInfo fragShader{};
-		fragShader.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-		fragShader.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-		fragShader.module = fragShaderModule.v();
-		fragShader.pName = "main";
-		VkPipelineShaderStageCreateInfo stages[] = { vertShader, fragShader };
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
 
 		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
 		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2595,6 +2548,57 @@ private:
 		}
 	}
 
+	void createPathTracingPipeline(bool translucent) {
+		std::vector<std::string> shaderNames;
+		shaderNames.emplace_back("gen");
+		shaderNames.emplace_back("miss");
+		shaderNames.emplace_back("closehit");
+		if (translucent) shaderNames.emplace_back("anyhit");
+
+		std::vector<VkShaderStageFlagBits> shaderStageFlagBits;;
+		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_MISS_BIT_KHR);
+		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+		if (translucent) shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+
+		std::vector<VkhShaderModule> shaderModules;
+		std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
+
+		size_t numShaders = translucent ? 4 : 3;
+
+		// populate the shader module and shader stages data
+		for (uint8_t i = 0; i < numShaders; i++) {
+			shaderModules.emplace_back(createShaderMod(shaderNames[i]));
+			shaderStages.emplace_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
+		}
+
+		std::array<VkRayTracingShaderGroupCreateInfoKHR, 3> shaderGroups{};
+
+		// populate the shader group data
+		for (uint8_t i = 0; i < 3; i++) {
+			shaderGroups[i].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
+			shaderGroups[i].anyHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups[i].closestHitShader = VK_SHADER_UNUSED_KHR;
+			shaderGroups[i].intersectionShader = VK_SHADER_UNUSED_KHR;
+		}
+
+		// ray generation group
+		shaderGroups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+		shaderGroups[0].generalShader = 0; // ray gen index
+
+		// ray miss group
+		shaderGroups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+		shaderGroups[1].generalShader = 1; // ray miss index
+
+		// ray hit group
+		shaderGroups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+		shaderGroups[2].generalShader = VK_SHADER_UNUSED_KHR;
+
+		// only use the anyhit shader for translucent objects to increase performance
+		shaderGroups[2].anyHitShader = translucent ? 3 : VK_SHADER_UNUSED_KHR;
+		shaderGroups[2].closestHitShader = 2; // closest hit index
+	}
+
 	void setupPipelines(bool shadow) {
 		opaquePassPipeline.reset();
 		compPipelineData.reset();
@@ -2609,6 +2613,8 @@ private:
 			createShadowPipeline();
 		}
 		createWBOITPipeline();
+
+		createPathTracingPipeline(true);
 	}
 
 	static void check_vk_result(VkResult err) { // used to debug imgui errors that have to do with vulkan 

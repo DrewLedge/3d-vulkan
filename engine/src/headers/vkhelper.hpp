@@ -1012,4 +1012,14 @@ public:
 
 		return shaderModule;
 	}
+
+
+	static VkPipelineShaderStageCreateInfo createShaderStage(const VkShaderStageFlagBits& stage, const VkhShaderModule& shaderModule) {
+		VkPipelineShaderStageCreateInfo s{};
+		s.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+		s.stage = stage;
+		s.module = shaderModule.v();
+		s.pName = "main";
+		return s;
+	}
 };
