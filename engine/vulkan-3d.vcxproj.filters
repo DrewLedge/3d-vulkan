@@ -31,6 +31,9 @@
     <Filter Include="Shader Libraries">
       <UniqueIdentifier>{8ea1ebdd-012e-4024-95f7-7a348d8c3cbc}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Shaders\pathtracing">
+      <UniqueIdentifier>{f6732b55-7f96-43cc-9528-681d97a7ea68}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="ext\imgui\imgui.cpp">
@@ -101,6 +104,18 @@
     </None>
     <None Include="..\README.md">
       <Filter>Source Files\Other files</Filter>
+    </None>
+    <None Include="shaders\pathtracing\closehit.rchit">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\gen.rgen">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\hit.rhit">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\miss.rmiss">
+      <Filter>Shaders\pathtracing</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
