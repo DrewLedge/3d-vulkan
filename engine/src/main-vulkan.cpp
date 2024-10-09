@@ -416,6 +416,10 @@ private:
 		VkhDeviceMemory scratchMem;
 	};
 
+	struct RaytracingPipelines {
+		PipelineData opaque;
+		PipelineData translucent;
+	};
 
 	CamData cam;
 
@@ -493,6 +497,7 @@ private:
 	// path tracing
 	std::vector<BlasData> BLAS;
 	TlasData tlas;
+	RaytracingPipelines rtPipelines;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1983,7 +1988,6 @@ private:
 		rasterizer.depthBiasSlopeFactor = 1.75f;
 		rasterizer.depthBiasClamp = 0.0f;
 
-
 		VkPipelineMultisampleStateCreateInfo multiSamp{};
 		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
 		multiSamp.sampleShadingEnable = VK_FALSE;
@@ -2054,23 +2058,23 @@ private:
 		}
 
 		// create the pipeline based off this pipeline and some data from the opaque pipeline
-		VkGraphicsPipelineCreateInfo pipelineInfo{};
-		pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-		pipelineInfo.stageCount = 2;
-		pipelineInfo.pStages = stages;
-		pipelineInfo.pVertexInputState = &vertexInputInfo;
-		pipelineInfo.pInputAssemblyState = &inputAssem;
-		pipelineInfo.pViewportState = &vpState;
-		pipelineInfo.pRasterizationState = &rasterizer;
-		pipelineInfo.pMultisampleState = &multiSamp;
-		pipelineInfo.pDepthStencilState = &dStencil;
-		pipelineInfo.pColorBlendState = &colorBS;
-		pipelineInfo.layout = shadowMapPipeline.layout.v();
-		pipelineInfo.renderPass = shadowMapPipeline.renderPass.v();
-		pipelineInfo.subpass = 0;
-		pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+		VkGraphicsPipelineCreateInfo pipelineInf{};
+		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInf.stageCount = 2;
+		pipelineInf.pStages = stages;
+		pipelineInf.pVertexInputState = &vertexInputInfo;
+		pipelineInf.pInputAssemblyState = &inputAssem;
+		pipelineInf.pViewportState = &vpState;
+		pipelineInf.pRasterizationState = &rasterizer;
+		pipelineInf.pMultisampleState = &multiSamp;
+		pipelineInf.pDepthStencilState = &dStencil;
+		pipelineInf.pColorBlendState = &colorBS;
+		pipelineInf.layout = shadowMapPipeline.layout.v();
+		pipelineInf.renderPass = shadowMapPipeline.renderPass.v();
+		pipelineInf.subpass = 0;
+		pipelineInf.basePipelineHandle = VK_NULL_HANDLE;
 
-		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, shadowMapPipeline.pipeline.p()) != VK_SUCCESS) {
+		if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, shadowMapPipeline.pipeline.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create shadow map pipeline!");
 		}
 	}
@@ -2548,7 +2552,10 @@ private:
 		}
 	}
 
-	void createPathTracingPipeline(bool translucent) {
+	PipelineData createRayTracingPipeline(bool translucent) {
+		PipelineData out;
+		size_t numShaders = translucent ? 4 : 3;
+
 		std::vector<std::string> shaderNames;
 		shaderNames.emplace_back("gen");
 		shaderNames.emplace_back("miss");
@@ -2561,12 +2568,9 @@ private:
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 		if (translucent) shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
+		// populate the shader module and shader stages data
 		std::vector<VkhShaderModule> shaderModules;
 		std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
-
-		size_t numShaders = translucent ? 4 : 3;
-
-		// populate the shader module and shader stages data
 		for (uint8_t i = 0; i < numShaders; i++) {
 			shaderModules.emplace_back(createShaderMod(shaderNames[i]));
 			shaderStages.emplace_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
@@ -2597,6 +2601,32 @@ private:
 		// only use the anyhit shader for translucent objects to increase performance
 		shaderGroups[2].anyHitShader = translucent ? 3 : VK_SHADER_UNUSED_KHR;
 		shaderGroups[2].closestHitShader = 2; // closest hit index
+
+		// create the pipeline layoyut
+		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[3].v(), descs.layouts[4].v() };
+		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
+		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = setLayouts;
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, out.layout.p());
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create raytracing pipeline layout!!");
+		}
+
+		// create the pipeline
+		VkRayTracingPipelineCreateInfoKHR pipelineInf{};
+		pipelineInf.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
+		pipelineInf.maxPipelineRayRecursionDepth = (translucent) ? 5 : 3;
+		pipelineInf.pStages = shaderStages.data();
+		pipelineInf.stageCount = static_cast<uint32_t>(shaderStages.size());
+		pipelineInf.pGroups = shaderGroups.data();
+		pipelineInf.groupCount = static_cast<uint32_t>(shaderGroups.size());
+		pipelineInf.layout = out.layout.v();
+		if (vkhfp::vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, out.pipeline.p()) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create ray tracing pipeline!!");
+		}
+
+		return out;
 	}
 
 	void setupPipelines(bool shadow) {
@@ -2614,7 +2644,10 @@ private:
 		}
 		createWBOITPipeline();
 
-		createPathTracingPipeline(true);
+		if (rtEnabled) {
+			rtPipelines.translucent = createRayTracingPipeline(true);
+			rtPipelines.opaque = createRayTracingPipeline(false);
+		}
 	}
 
 	static void check_vk_result(VkResult err) { // used to debug imgui errors that have to do with vulkan 
@@ -2910,7 +2943,7 @@ private:
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
 		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas.buildInfo, &primitiveCountMax, &sizeInfo);
 
-		uint32_t asSize = sizeInfo.accelerationStructureSize;
+		VkDeviceSize asSize = sizeInfo.accelerationStructureSize;
 
 		// create a buffer for the TLAS - the buffer used in the creation of the tlas
 		VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
