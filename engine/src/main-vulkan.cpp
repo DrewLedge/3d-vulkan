@@ -110,7 +110,7 @@ private:
 		float farP;
 
 		CamData()
-			: pos(0.0f, 0.0f, 0.0f),
+			: pos(0.0f, -0.75f, -3.5f),
 			quat(0.0f, 0.0f, 0.0f, 1.0f),
 			projectionMatrix(),
 			viewMatrix(),
@@ -401,6 +401,21 @@ private:
 		VkhDeviceMemory compMem;
 	};
 
+	struct TlasData {
+		VkhAccelerationStructure as;
+		VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
+		VkAccelerationStructureGeometryKHR geometry{};
+
+		VkhBuffer buffer;
+		VkhDeviceMemory mem;
+
+		VkhBuffer instanceBuffer;
+		VkhDeviceMemory instanceBufferMem;
+
+		VkhBuffer scratchBuffer;
+		VkhDeviceMemory scratchMem;
+	};
+
 
 	CamData cam;
 
@@ -477,16 +492,7 @@ private:
 
 	// path tracing
 	std::vector<BlasData> BLAS;
-
-	VkhAccelerationStructure TLAS;
-	VkhBuffer tlasBuffer;
-	VkhDeviceMemory tlasMem;
-	VkhBuffer tlasInstanceBuffer;
-	VkhDeviceMemory tlasInstanceBufferMem;
-	VkhBuffer tlasScratchBuffer;
-	VkhDeviceMemory tlasScratchMem;
-	VkhBuffer compTlasBuffer;
-	VkhDeviceMemory compTlasMem;
+	TlasData tlas;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1194,6 +1200,21 @@ private:
 		l.proj = dml::projection(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
 	}
 
+	void copyLightToLightCords(const Light& src, LightDataObject& dst) {
+		memcpy(&dst.view, &src.view, sizeof(dml::mat4));
+		memcpy(&dst.proj, &src.proj, sizeof(dml::mat4));
+
+		memcpy(&dst.pos, &src.pos, sizeof(dml::vec3));
+		memcpy(&dst.col, &src.col, sizeof(dml::vec3));
+		memcpy(&dst.target, &src.target, sizeof(dml::vec3));
+		memcpy(&dst.baseIntensity, &src.baseIntensity, sizeof(float));
+		memcpy(&dst.innerConeAngle, &src.innerConeAngle, sizeof(float));
+		memcpy(&dst.outerConeAngle, &src.outerConeAngle, sizeof(float));
+		memcpy(&dst.constantAttenuation, &src.constantAttenuation, sizeof(float));
+		memcpy(&dst.linearAttenuation, &src.linearAttenuation, sizeof(float));
+		memcpy(&dst.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
+	}
+
 	void updateUBO() {
 		// calc matricies for lights
 		for (size_t i = 0; i < lights.size(); i++) {
@@ -1219,18 +1240,30 @@ private:
 
 		// calc matricies for objects
 		for (size_t i = 0; i < objects.size(); i++) {
-			int render = 0;
 			if (objects[i]->player) {
 				dml::mat4 t = dml::translate(cam.pos);
 				dml::mat4 r;
 				dml::mat4 s = dml::scale(objects[i]->scale);
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
+
+				int render = 1;
 				memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
-				render = 1;
 				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 			else {
-				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				dml::mat4 t;
+				dml::mat4 r = dml::rotateQuat(dml::inverseQuat(cam.quat));
+				dml::mat4 s;
+				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
+
+				if (i % 2 == 0) {
+					memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+				}
+				else {
+					memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				}
+
+				int render = 0;
 				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 		}
@@ -1238,21 +1271,6 @@ private:
 		vkMapMemory(device, instanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
 		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
 		vkUnmapMemory(device, instanceBufferMem.v());
-	}
-
-	void copyLightToLightCords(const Light& src, LightDataObject& dest) {
-		memcpy(&dest.view, &src.view, sizeof(dml::mat4));
-		memcpy(&dest.proj, &src.proj, sizeof(dml::mat4));
-
-		memcpy(&dest.pos, &src.pos, sizeof(dml::vec3));
-		memcpy(&dest.col, &src.col, sizeof(dml::vec3));
-		memcpy(&dest.target, &src.target, sizeof(dml::vec3));
-		memcpy(&dest.baseIntensity, &src.baseIntensity, sizeof(float));
-		memcpy(&dest.innerConeAngle, &src.innerConeAngle, sizeof(float));
-		memcpy(&dest.outerConeAngle, &src.outerConeAngle, sizeof(float));
-		memcpy(&dest.constantAttenuation, &src.constantAttenuation, sizeof(float));
-		memcpy(&dest.linearAttenuation, &src.linearAttenuation, sizeof(float));
-		memcpy(&dest.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
 	}
 
 	void getAllTextures() {
@@ -2834,7 +2852,7 @@ private:
 			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
 
 			// copy the models model matrix into the instance data
-			memcpy(&meshInstance.transform, &objects[i]->modelMatrix, sizeof(VkTransformMatrixKHR));
+			meshInstance.transform = mat4ToVk(objInstanceData.object[i].model);
 
 			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd].blas);
 
@@ -2850,59 +2868,59 @@ private:
 
 
 	void createTLAS() {
-		if (TLAS.valid()) TLAS.reset();
+		if (tlas.as.valid()) tlas.as.reset();
+
 		// create a buffer to hold all of the instances
-		VkDeviceSize iSize = meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR);
+		VkDeviceSize iSize = MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
 		VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(tlasInstanceBuffer, tlasInstanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
+		vkh::createBuffer(tlas.instanceBuffer, tlas.instanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
-		VkhAccelerationStructure tlas;
-		VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlasInstanceBuffer);
 		uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
+		uint32_t primitiveCountMax = MAX_MODELS;
 
 		// acceleration structure geometry
-		VkAccelerationStructureGeometryKHR geometry = {};
-		geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-		geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-		geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-		geometry.geometry.instances.data.deviceAddress = instanceAddress;
-		geometry.geometry.instances.arrayOfPointers = VK_FALSE;
+		VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
+		tlas.geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+		tlas.geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+		tlas.geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+		tlas.geometry.geometry.instances.data.deviceAddress = instanceAddress;
+		tlas.geometry.geometry.instances.arrayOfPointers = VK_FALSE;
 
 		VkBuildAccelerationStructureFlagsKHR accelerationFlags = 0;
-		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_COMPACTION_BIT_KHR; // allows the tlas to be compacted
 		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR; // optimizes the tlas for faster path tracing
 		accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR; // allows the tlas to be updated, without having to fully recreate it
 
 		// TLAS build info - specifies the acceleration structure type, the flags, and the geometry
-		VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
-		buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-		buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-		buildInfo.flags = accelerationFlags;
-		buildInfo.geometryCount = 1;
-		buildInfo.pGeometries = &geometry;
+		tlas.buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+		tlas.buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+		tlas.buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+		tlas.buildInfo.flags = accelerationFlags;
+		tlas.buildInfo.geometryCount = 1;
+		tlas.buildInfo.pGeometries = &tlas.geometry;
 
 		// size requirements for the TLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
 		VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
 		sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
+		vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas.buildInfo, &primitiveCountMax, &sizeInfo);
+
+		uint32_t asSize = sizeInfo.accelerationStructureSize;
 
 		// create a buffer for the TLAS - the buffer used in the creation of the tlas
 		VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(tlasBuffer, tlasMem, sizeInfo.accelerationStructureSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(tlas.buffer, tlas.mem, asSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// create the TLAS
 		VkAccelerationStructureCreateInfoKHR createInfo = {};
 		createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
 		createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		createInfo.buffer = tlasBuffer.v();
-		createInfo.size = sizeInfo.accelerationStructureSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, tlas.p());
+		createInfo.buffer = tlas.buffer.v();
+		createInfo.size = asSize;
+		vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, tlas.as.p());
 
 		// scratch buffer - used to create space for intermediate data thats used when building the TLAS
 		VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(tlasScratchBuffer, tlasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+		vkh::createBuffer(tlas.scratchBuffer, tlas.scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
 		// build range info - specifies the primitive count and offsets for the tlas
 		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
@@ -2913,84 +2931,79 @@ private:
 		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
 		// set the dst of the build info to be the tlas and add the scratch buffer address
-		buildInfo.dstAccelerationStructure = tlas.v();
-		buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlasScratchBuffer);
+		tlas.buildInfo.dstAccelerationStructure = tlas.as.v();
+		tlas.buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlas.scratchBuffer);
 
 		// build and populate the TLAS
 		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &buildInfo, &pBuildRangeInfo);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &tlas.buildInfo, &pBuildRangeInfo);
 		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
-
-		// create a query pool used to store the size of the compacted TLAS
-		VkhQueryPool queryPool;
-		VkQueryPoolCreateInfo queryPoolInfo = {};
-		queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-		queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
-		queryPoolInfo.queryCount = 1;
-		vkCreateQueryPool(device, &queryPoolInfo, nullptr, queryPool.p());
-
-		// query the size of the TLAS by writing its properties to the query pool
-		// the data becomes avaible after submitting the command buffer
-		VkhCommandBuffer commandBufferQ = vkh::beginSingleTimeCommands(commandPool);
-		vkCmdResetQueryPool(commandBufferQ.v(), queryPool.v(), 0, 1);
-		vkhfp::vkCmdWriteAccelerationStructuresPropertiesKHR(commandBufferQ.v(), 1, tlas.p(), VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR, queryPool.v(), 0);
-		vkh::endSingleTimeCommands(commandBufferQ, commandPool, graphicsQueue);
-
-		// get the compacted size from the query pool
-		VkDeviceSize compactedSize = 0;
-		vkGetQueryPoolResults(device, queryPool.v(), 0, 1, sizeof(VkDeviceSize), &compactedSize, sizeof(VkDeviceSize), VK_QUERY_RESULT_WAIT_BIT);
-
-		// create a buffer for the compacted TLAS
-		VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(compTlasBuffer, compTlasMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
-
-		// create the compacted TLAS
-		VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
-		compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
-		compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-		compactedCreateInfo.buffer = compTlasBuffer.v();
-		compactedCreateInfo.size = compactedSize;
-		vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, TLAS.p());
-
-		// the info for the copying of the original tlas to the compacted tlas
-		VkCopyAccelerationStructureInfoKHR copyInfo = {};
-		copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
-		copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
-		copyInfo.src = tlas.v();
-		copyInfo.dst = TLAS.v();
-
-		// copy the original TLAS to the compacted one
-		VkhCommandBuffer commandBufferC = vkh::beginSingleTimeCommands(commandPool);
-		vkhfp::vkCmdCopyAccelerationStructureKHR(commandBufferC.v(), &copyInfo);
-		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
-	void updateTLAS(size_t* objectsIndices, size_t objCount) {
-		for (size_t i = 0; i < objCount; i++) {
-			size_t index = objectsIndices[i];
+	VkTransformMatrixKHR mat4ToVk(const dml::mat4& m) {
+		dml::mat4 t = m.transpose();
 
-			VkAccelerationStructureInstanceKHR meshInstance{};
-			size_t bufferInd = modelHashToBufferIndex[objects[index]->meshHash];
+		VkTransformMatrixKHR result{};
+		memcpy(&result.matrix, &t.flat, 12 * sizeof(float));
+		return result;
+	}
 
-			// copy the models model matrix into the instance data
-			memcpy(&meshInstance.transform, &objects[index]->modelMatrix, sizeof(VkTransformMatrixKHR));
+	void updateTLAS(bool changed = false) {
+		if (changed) meshInstances.clear();
+		for (size_t i = 0; i < objects.size(); i++) {
+			if (changed) {
+				size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
 
-			// device address of the BLAS
-			VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
-			addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-			addrInfo.accelerationStructure = BLAS[bufferInd].blas.v();
-			VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+				VkAccelerationStructureInstanceKHR meshInstance{};
+				meshInstance.transform = mat4ToVk(objInstanceData.object[i].model);
 
-			// populate the instance data
-			meshInstance.accelerationStructureReference = blasAddress;
-			meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			meshInstance.instanceCustomIndex = static_cast<uint32_t>(index);
-			meshInstance.instanceShaderBindingTableRecordOffset = 0;
-			meshInstance.mask = 0xFF;
-			meshInstances.push_back(meshInstance);
+				// device address of the BLAS
+				VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
+				addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+				addrInfo.accelerationStructure = BLAS[bufferInd].blas.v();
+				VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
+
+				// populate the instance data
+				meshInstance.accelerationStructureReference = blasAddress;
+				meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+				meshInstance.instanceCustomIndex = static_cast<uint32_t>(i);
+				meshInstance.instanceShaderBindingTableRecordOffset = 0;
+				meshInstance.mask = 0xFF;
+				meshInstances.emplace_back(meshInstance);
+			}
+			else {
+				VkAccelerationStructureInstanceKHR& meshInstance = meshInstances[i];
+				meshInstance.transform = mat4ToVk(objInstanceData.object[i].model);
+			}
 		}
 
-		createTLAS();
+		// copy the new data into the instance buffer
+		void* data;
+		vkMapMemory(device, tlas.instanceBufferMem.v(), 0, meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR), 0, &data);
+		memcpy(data, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
+		vkUnmapMemory(device, tlas.instanceBufferMem.v());
+
+		// update the instance buffer device address
+		tlas.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
+		tlas.buildInfo.pGeometries = &tlas.geometry;
+
+		// if the amount of objects has changed, do a full rebuild, otherwise just update it
+		tlas.buildInfo.mode = changed ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+		tlas.buildInfo.srcAccelerationStructure = changed ? VK_NULL_HANDLE : tlas.as.v();
+		tlas.buildInfo.dstAccelerationStructure = tlas.as.v();
+
+		// update the buildRangeInfo
+		VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
+		buildRangeInfo.primitiveCount = static_cast<uint32_t>(meshInstances.size());
+		buildRangeInfo.primitiveOffset = 0;
+		buildRangeInfo.transformOffset = 0;
+		buildRangeInfo.firstVertex = 0;
+		const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
+
+		// rebuild and populate the TLAS
+		VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+		vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &tlas.buildInfo, &pBuildRangeInfo);
+		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 	}
 
 	void createModelBuffers(bool recreate) {
@@ -3145,8 +3158,7 @@ private:
 		createModelBuffers(true);
 
 		if (rtEnabled) {
-			std::array<size_t, 2> indices = { objects.size() - 2, objects.size() - 1 };
-			updateTLAS(indices.data(), 2);
+			updateTLAS(true);
 		}
 		recordSecondaryCommandBuffers();
 	}
@@ -3789,7 +3801,6 @@ private:
 		}
 	}
 
-
 	void mainLoop() {
 		uint8_t frameCount = 0;
 		uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
@@ -3841,6 +3852,9 @@ private:
 			recordAllCommandBuffers();
 			updateUBO();
 			calcFps(startTime, previousTime, frameCount);
+			if (rtEnabled) {
+				updateTLAS();
+			}
 #endif
 		}
 
