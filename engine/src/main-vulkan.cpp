@@ -416,17 +416,17 @@ private:
 		VkhDeviceMemory scratchMem;
 	};
 
-	struct RaytracingPipelines {
-		PipelineData opaque;
-		PipelineData translucent;
-	};
-
 	struct SBT {
 		VkhBuffer buffer;
 		VkhDeviceMemory mem;
 
-		VkDeviceSize tableS;
+		VkDeviceSize size;
 		VkDeviceSize entryS;
+
+		// sbt regions
+		VkStridedDeviceAddressRegionKHR raygenR;
+		VkStridedDeviceAddressRegionKHR missR;
+		VkStridedDeviceAddressRegionKHR hitR;
 	};
 
 	CamData cam;
@@ -506,7 +506,7 @@ private:
 	VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties{};
 	std::vector<BlasData> BLAS;
 	TlasData tlas;
-	RaytracingPipelines rtPipelines;
+	PipelineData rtPipeline;
 	SBT sbt;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
@@ -2568,21 +2568,20 @@ private:
 		}
 	}
 
-	PipelineData createRayTracingPipeline(bool translucent) {
-		PipelineData out;
-		size_t numShaders = translucent ? 4 : 3;
+	void createRayTracingPipeline() {
+		size_t numShaders = 4;
 
 		std::vector<std::string> shaderNames;
 		shaderNames.emplace_back("gen");
 		shaderNames.emplace_back("miss");
 		shaderNames.emplace_back("closehit");
-		if (translucent) shaderNames.emplace_back("anyhit");
+		shaderNames.emplace_back("anyhit");
 
 		std::vector<VkShaderStageFlagBits> shaderStageFlagBits;;
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_MISS_BIT_KHR);
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-		if (translucent) shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
+		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
 		// populate the shader module and shader stages data
 		std::vector<VkhShaderModule> shaderModules;
@@ -2592,10 +2591,10 @@ private:
 			shaderStages.emplace_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
 		}
 
-		std::array<VkRayTracingShaderGroupCreateInfoKHR, 3> shaderGroups{};
+		std::array<VkRayTracingShaderGroupCreateInfoKHR, 4> shaderGroups{};
 
 		// populate the shader group data
-		for (uint8_t i = 0; i < 3; i++) {
+		for (uint8_t i = 0; i < 4; i++) {
 			shaderGroups[i].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 			shaderGroups[i].anyHitShader = VK_SHADER_UNUSED_KHR;
 			shaderGroups[i].closestHitShader = VK_SHADER_UNUSED_KHR;
@@ -2610,13 +2609,17 @@ private:
 		shaderGroups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 		shaderGroups[1].generalShader = 1; // ray miss index
 
-		// ray hit group
+		// ray hit group for opaque objects
 		shaderGroups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
 		shaderGroups[2].generalShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[2].closestHitShader = 2;
 
-		// only use the anyhit shader for translucent objects to increase performance
-		shaderGroups[2].anyHitShader = translucent ? 3 : VK_SHADER_UNUSED_KHR;
-		shaderGroups[2].closestHitShader = 2; // closest hit index
+		// ray hit group for translucent
+		shaderGroups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+		shaderGroups[3].generalShader = VK_SHADER_UNUSED_KHR;
+		shaderGroups[3].anyHitShader = 3;
+		shaderGroups[3].closestHitShader = 2;
 
 		// create the pipeline layoyut
 		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[3].v(), descs.layouts[4].v() };
@@ -2624,7 +2627,7 @@ private:
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
 		pipelineLayoutInf.pSetLayouts = setLayouts;
-		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, out.layout.p());
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create raytracing pipeline layout!!");
 		}
@@ -2632,17 +2635,15 @@ private:
 		// create the pipeline
 		VkRayTracingPipelineCreateInfoKHR pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-		pipelineInf.maxPipelineRayRecursionDepth = (translucent) ? 5 : 3;
+		pipelineInf.maxPipelineRayRecursionDepth = 4;
 		pipelineInf.pStages = shaderStages.data();
 		pipelineInf.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineInf.pGroups = shaderGroups.data();
 		pipelineInf.groupCount = static_cast<uint32_t>(shaderGroups.size());
-		pipelineInf.layout = out.layout.v();
-		if (vkhfp::vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, out.pipeline.p()) != VK_SUCCESS) {
+		pipelineInf.layout = rtPipeline.layout.v();
+		if (vkhfp::vkCreateRayTracingPipelinesKHR(device, VK_NULL_HANDLE, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, rtPipeline.pipeline.p()) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create ray tracing pipeline!!");
 		}
-
-		return out;
 	}
 
 	void setupPipelines(bool shadow) {
@@ -2661,8 +2662,8 @@ private:
 		createWBOITPipeline();
 
 		if (rtEnabled) {
-			rtPipelines.translucent = createRayTracingPipeline(true);
-			rtPipelines.opaque = createRayTracingPipeline(false);
+			rtPipeline.reset();
+			createRayTracingPipeline();
 		}
 	}
 
@@ -2781,6 +2782,8 @@ private:
 
 
 	void createSBT() {
+		const uint32_t shaderGroupCount = 4;
+
 		// the size of a single shader group handle (in bytes)
 		// shader group handles tell the gpu where to find specific shaders
 		uint32_t handleSize = rtProperties.shaderGroupHandleSize;
@@ -2794,13 +2797,49 @@ private:
 		uint32_t baseAlignment = rtProperties.shaderGroupBaseAlignment;
 
 		sbt.entryS = baseAlignment;
-		sbt.tableS = sbt.entryS * 3; // the total size of the sbt
+		sbt.size = sbt.entryS * shaderGroupCount; // the total size of the sbt
 
 		// create the sbt buffer
 		VkBufferUsageFlags usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		VkMemoryAllocateFlags memAllocF = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-		vkh::createBuffer(sbt.buffer, sbt.mem, sbt.tableS, usage, memFlags, memAllocF);
+		vkh::createBuffer(sbt.buffer, sbt.mem, sbt.size, usage, memFlags, memAllocF);
+
+		// get the shader handles
+		std::vector<uint8_t> shaderHandles(handleSize * shaderGroupCount);
+		vkhfp::vkGetRayTracingShaderGroupHandlesKHR(device, rtPipeline.pipeline.v(), 0, shaderGroupCount, shaderHandles.size(), shaderHandles.data());
+
+		void* data;
+		vkMapMemory(device, sbt.mem.v(), 0, sbt.size, 0, &data);
+		uint8_t* d = reinterpret_cast<uint8_t*>(data);
+
+		uint32_t dataOffset = 0;
+		uint32_t handleOffset = 0;
+		// copy the data of each shader group handle into the sbt buffer
+		for (uint32_t i = 0; i < shaderGroupCount; i++) {
+			memcpy(d + dataOffset, shaderHandles.data() + handleOffset, handleSize);
+			dataOffset += sbt.entryS;
+			handleOffset += handleSize;
+		}
+
+		vkUnmapMemory(device, sbt.mem.v());
+
+		VkDeviceAddress sbtAddr = vkh::bufferDeviceAddress(sbt.buffer);
+
+		// ray gen region
+		sbt.raygenR.deviceAddress = sbtAddr;
+		sbt.raygenR.stride = sbt.entryS;
+		sbt.raygenR.size = sbt.entryS;
+
+		// ray miss region
+		sbt.missR.deviceAddress = sbtAddr + sbt.entryS;
+		sbt.missR.stride = sbt.entryS;
+		sbt.missR.size = sbt.entryS;
+
+		// ray hit region
+		sbt.hitR.deviceAddress = sbtAddr + (2 * sbt.entryS);
+		sbt.hitR.stride = sbt.entryS;
+		sbt.hitR.size = sbt.entryS * 2;
 	}
 
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {

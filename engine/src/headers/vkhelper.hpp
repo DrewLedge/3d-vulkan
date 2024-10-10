@@ -24,7 +24,8 @@ namespace vkhfp {
     F(vkCmdCopyAccelerationStructureKHR) \
     F(vkGetAccelerationStructureDeviceAddressKHR) \
     F(vkCmdPushDescriptorSetKHR) \
-	F(vkCreateRayTracingPipelinesKHR)
+	F(vkCreateRayTracingPipelinesKHR) \
+	F(vkGetRayTracingShaderGroupHandlesKHR)
 
 #define F(name) inline PFN_##name name = nullptr;
 	FUNCTIONS
