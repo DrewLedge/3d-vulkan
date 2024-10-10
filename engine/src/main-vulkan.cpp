@@ -421,6 +421,14 @@ private:
 		PipelineData translucent;
 	};
 
+	struct SBT {
+		VkhBuffer buffer;
+		VkhDeviceMemory mem;
+
+		VkDeviceSize tableS;
+		VkDeviceSize entryS;
+	};
+
 	CamData cam;
 
 	// window and rendering context
@@ -495,9 +503,11 @@ private:
 	std::vector<std::unique_ptr<Light>> lights;
 
 	// path tracing
+	VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties{};
 	std::vector<BlasData> BLAS;
 	TlasData tlas;
 	RaytracingPipelines rtPipelines;
+	SBT sbt;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -832,6 +842,12 @@ private:
 			rayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
 			rayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
 			rayTracingPipelineFeatures.pNext = &accelerationStructureFeatures;
+
+			rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
+			VkPhysicalDeviceProperties2 deviceProperties2{};
+			deviceProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+			deviceProperties2.pNext = &rtProperties;
+			vkGetPhysicalDeviceProperties2(physicalDevice, &deviceProperties2);
 		}
 
 		VkPhysicalDeviceFeatures deviceFeatures{};
@@ -2763,6 +2779,30 @@ private:
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
+
+	void createSBT() {
+		// the size of a single shader group handle (in bytes)
+		// shader group handles tell the gpu where to find specific shaders
+		uint32_t handleSize = rtProperties.shaderGroupHandleSize;
+
+		// the alignment requirement for the shader group handles in the sbt
+		// it ensures each group is properly aligned for maximum efficiency
+		uint32_t handleAlignment = rtProperties.shaderGroupHandleAlignment;
+
+		// the alignment of the shader record data inside the SBT
+		// the shader record data holds the shader group handle along with other per-shader data
+		uint32_t baseAlignment = rtProperties.shaderGroupBaseAlignment;
+
+		sbt.entryS = baseAlignment;
+		sbt.tableS = sbt.entryS * 3; // the total size of the sbt
+
+		// create the sbt buffer
+		VkBufferUsageFlags usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		VkMemoryAllocateFlags memAllocF = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+		vkh::createBuffer(sbt.buffer, sbt.mem, sbt.tableS, usage, memFlags, memAllocF);
+	}
+
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {
 		VkhAccelerationStructure blas{};
 		uint32_t primitiveCount = bufferData.indexCount / 3;
@@ -4036,6 +4076,7 @@ private:
 		// setup the descriptorsets and pipelines
 		setupDescriptorSets();
 		setupPipelines(true);
+		createSBT();
 		imguiSetup();
 		updateUBO();
 
