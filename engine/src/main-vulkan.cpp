@@ -559,8 +559,8 @@ private:
 	SkyboxObject skybox = {};
 
 	// font data
-	ImFont* font_small = nullptr;
-	ImFont* font_large = nullptr;
+	ImFont* smallFont = nullptr;
+	ImFont* largeFont = nullptr;
 
 	// performance metrics
 	uint32_t fps = 0;
@@ -589,7 +589,7 @@ private:
 		ImGui::StyleColorsDark();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
 
-		font_large = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
+		largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
 	}
 
 	void validateFiles() {
@@ -1214,8 +1214,8 @@ private:
 	}
 
 	void setupBuffers() {
-		vkh::createBuffer(instanceBuffer, instanceBufferMem, objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
-		vkh::createBuffer(cam.buffer, cam.bufferMem, camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(instanceBuffer, instanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(cam.buffer, cam.bufferMem, &camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 
 		createLightBuffer();
 
@@ -3447,6 +3447,42 @@ private:
 		}
 	}
 
+	void ImguiRenderFrame() {
+		const float p = 10.0f;
+
+		float x = static_cast<float>(swap.extent.width) - p;
+		float y = p;
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+
+		// window flags
+		ImGuiWindowFlags flags =
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoCollapse |
+			ImGuiWindowFlags_AlwaysAutoResize;
+
+		// style settings
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+		ImGui::PushFont(largeFont);
+
+		// text to display
+		std::vector<std::string> text;
+		text.push_back("FPS: " + std::to_string(fps));
+		text.push_back("Objects: " + std::to_string(objects.size()));
+		text.push_back("Lights: " + std::to_string(lights.size()));
+
+		// render the frame
+		if (ImGui::Begin("Info", nullptr, flags)) {
+			for (const auto& t : text) {
+				ImGui::TextUnformatted(t.c_str());
+			}
+		}
+
+		ImGui::End();
+		ImGui::PopFont();
+		ImGui::PopStyleVar(1);
+	}
+
 	void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		if (startCommand) {
 			if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
@@ -3464,21 +3500,7 @@ private:
 		ImGui_ImplGlfw_NewFrame();
 		ImGui::NewFrame();
 
-		// draw the imgui text
-		std::string fpsText = "fps: " + std::to_string(fps);
-		std::string objText = "objects: " + std::to_string(objects.size());
-		std::string lightText = "lights: " + std::to_string(lights.size());
-
-		ImVec4 bgColor = ImVec4(40.0f, 61.0f, 59.0f, 0.9f);
-		drawText(fpsText, static_cast<float>(swap.extent.width / 2), 30, font_large, bgColor);
-
-		float w = ImGui::CalcTextSize(fpsText.c_str()).x + 20;
-		float x = static_cast<float>(swap.extent.width / 2) + w;
-		drawText(objText, x, 30, font_large, bgColor);
-
-		float w2 = ImGui::CalcTextSize(lightText.c_str()).x + 20;
-		float x2 = static_cast<float>(swap.extent.width / 2) - w2;
-		drawText(lightText, x2, 30, font_large, bgColor);
+		ImguiRenderFrame();
 
 		// render the imgui frame and draw imgui's commands into the command buffer
 		ImGui::Render();
@@ -3727,61 +3749,6 @@ private:
 			cmdIteration++;
 		}
 		cmdTasksWait();
-	}
-
-	void drawText(std::string text, float x, float y, ImFont* font = nullptr, ImVec4 bgColor = ImVec4(-1, -1, -1, -1)) {
-		// set the pos and size of the window
-		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always);
-		ImGui::SetNextWindowSize(ImVec2(0, 0), ImGuiCond_Always);
-
-		// normalize the colors
-		bgColor.x /= 255;
-		bgColor.y /= 255;
-		bgColor.z /= 255;
-
-		if (bgColor.x != -1) {
-			ImGui::PushStyleColor(ImGuiCol_WindowBg, bgColor);
-		}
-		// unique window name
-		std::string name = ("window: " + std::to_string(x) + " " + std::to_string(y));
-
-		// get the settings for the window
-		ImGui::Begin(
-			name.c_str(),
-			nullptr,
-			ImGuiWindowFlags_NoTitleBar |
-			ImGuiWindowFlags_NoResize |
-			ImGuiWindowFlags_NoMove |
-			ImGuiWindowFlags_NoScrollbar |
-			ImGuiWindowFlags_NoSavedSettings |
-			ImGuiWindowFlags_NoInputs |
-			ImGuiWindowFlags_NoBringToFrontOnFocus);
-
-		// if font exists, use it
-		// otherwise, use the default font
-		if (font != nullptr) {
-			ImGui::PushFont(font);
-		}
-		if (font != nullptr) {
-			ImGui::PopFont();
-		}
-		const char* textChar = text.c_str();
-
-		// center the text
-		float fontSize = ImGui::GetFontSize();
-		float textWidth = ImGui::CalcTextSize(textChar).x;
-		float windowWidth = ImGui::GetWindowSize().x;
-		float centeredStartPos = (windowWidth - textWidth) / 2.0f;
-
-		// center the text around the x position cords
-		ImGui::SetCursorPosX(centeredStartPos);
-		ImGui::TextUnformatted(textChar);
-
-		// if a custom background was set, revert it
-		if (bgColor.x != -1) {
-			ImGui::PopStyleColor();
-		}
-		ImGui::End();
 	}
 
 	void createFrameBuffers(bool initial) {

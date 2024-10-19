@@ -421,8 +421,8 @@ public:
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 	}
 
-	template<typename ObjType>
-	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjType& object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+	template<typename ObjectT>
+	static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjectT* object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
 		VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
 
@@ -432,20 +432,12 @@ public:
 			throw std::runtime_error("Failed to map memory for buffer!");
 		}
 
-		// check if the object is trivally copyable
-		if constexpr (std::is_trivially_copyable_v<ObjType>) {
-			memcpy(data, object, size);
-		}
-
-		// if the object isnt trivially copyable
-		else {
-			memcpy(data, &object, size);
-		}
+		memcpy(data, object, size);
 		vkUnmapMemory(device, stagingBufferMem.v());
 	}
 
-	template<typename ObjType>
-	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjType& object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
+	template<typename ObjectT>
+	static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
 		VkhCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
 		createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
 
@@ -467,15 +459,7 @@ public:
 				throw std::runtime_error("Failed to map memory for buffer!");
 			}
 
-			// check if the object is trivally copyable
-			if constexpr (std::is_trivially_copyable_v<ObjType>) {
-				memcpy(data, object, size); /// TODO: fix
-			}
-
-			// if the object isnt trivially copyable
-			else {
-				memcpy(data, &object, size);
-			}
+			memcpy(data, object, size);
 			vkUnmapMemory(device, bufferMem.v());
 		}
 	}
