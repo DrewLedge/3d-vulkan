@@ -469,7 +469,7 @@ public:
 
 			// check if the object is trivally copyable
 			if constexpr (std::is_trivially_copyable_v<ObjType>) {
-				memcpy(data, object, size);
+				memcpy(data, object, size); /// TODO: fix
 			}
 
 			// if the object isnt trivially copyable
@@ -902,7 +902,9 @@ public:
 	}
 
 	// ------------------ DESCRIPTOR SETS ------------------ //
-	static VkhDescriptorSetLayout createDSLayout(const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
+	static void createDSLayout(VkhDescriptorSetLayout& layout, const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
+		if (layout.valid()) layout.reset();
+
 		VkDescriptorSetLayoutBinding binding{};
 		binding.binding = bindingIndex;
 		binding.descriptorType = type;
@@ -928,15 +930,14 @@ public:
 		layoutInfo.pBindings = &binding;
 		if (pushDescriptors) layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 
-		VkhDescriptorSetLayout descriptorSetLayout;
-		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, descriptorSetLayout.p()) != VK_SUCCESS) {
+		if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, layout.p()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor set layout!");
 		}
-
-		return descriptorSetLayout;
 	}
 
-	static VkhDescriptorPool createDSPool(const VkDescriptorType& type, const uint32_t descriptorCount) {
+	static void createDSPool(VkhDescriptorPool& pool, const VkDescriptorType& type, const uint32_t descriptorCount) {
+		if (pool.valid()) pool.reset();
+
 		VkDescriptorPoolSize poolSize{};
 		poolSize.type = type;
 		poolSize.descriptorCount = descriptorCount;
@@ -948,12 +949,9 @@ public:
 		poolInfo.pPoolSizes = &poolSize;
 		poolInfo.maxSets = 1;
 
-		VkhDescriptorPool descriptorPool;
-		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, descriptorPool.p()) != VK_SUCCESS) {
+		if (vkCreateDescriptorPool(device, &poolInfo, nullptr, pool.p()) != VK_SUCCESS) {
 			throw std::runtime_error("Failed to create descriptor pool!");
 		}
-
-		return descriptorPool;
 	}
 
 	template<typename InfoType>
@@ -998,6 +996,29 @@ public:
 		}
 
 		return d;
+	}
+
+	static VkhDescriptorSet allocDS(uint32_t* descriptorCounts, VkhDescriptorPool& pool, VkhDescriptorSetLayout& layout) {
+		VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
+		varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
+		varCountInfo.descriptorSetCount = 1;
+		varCountInfo.pDescriptorCounts = descriptorCounts;
+
+		VkDescriptorSetAllocateInfo allocInfo{};
+		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+		allocInfo.descriptorSetCount = 1;
+		allocInfo.pNext = &varCountInfo;
+
+		allocInfo.descriptorPool = pool.v();
+		allocInfo.pSetLayouts = layout.p();
+
+		VkhDescriptorSet set(pool.v());
+		VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("Failed to allocate descriptor set!");
+		}
+
+		return set;
 	}
 
 	// ------------------ PIPELINES ------------------ //

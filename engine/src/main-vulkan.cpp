@@ -287,9 +287,36 @@ private:
 	};
 
 	struct DSObject {
-		std::vector<VkhDescriptorPool> pools;
-		std::vector<VkhDescriptorSetLayout> layouts;
-		std::vector<VkhDescriptorSet> sets;
+		uint32_t bindning;
+		VkDescriptorType type;
+
+		VkhDescriptorPool pool;
+		VkhDescriptorSetLayout layout;
+		VkhDescriptorSet set;
+
+		DSObject() :
+			bindning(0),
+			type(),
+
+			pool(),
+			layout(),
+			set(pool.v())
+		{}
+	};
+
+	struct DesciptorSetsObj {
+		DSObject textures;
+		DSObject lightData;
+		DSObject skybox;
+		DSObject cam;
+
+		// raytracing
+		DSObject tlas;
+
+		// rasterzation
+		DSObject composition;
+		DSObject shadowmaps;
+		DSObject opaqueDepth;
 	};
 
 	struct PipelineData {
@@ -488,7 +515,7 @@ private:
 	VkhSemaphore compSemaphore;
 
 	// descriptor sets and pools
-	DSObject descs = {};
+	DesciptorSetsObj descs;
 	VkhDescriptorPool imguiDescriptorPool;
 	VkhDescriptorSetLayout imguiDescriptorSetLayout;
 
@@ -521,7 +548,7 @@ private:
 	std::vector<dvl::Texture> allTextures;
 	std::vector<VkDescriptorImageInfo> shadowInfos;
 	std::vector<int> meshTexStartInd;
-	size_t totalTextureCount = 0;
+	uint32_t totalTextureCount = 0;
 	unsigned char* imageData = nullptr;
 	dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
 	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
@@ -1332,10 +1359,15 @@ private:
 		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
 	}
 
-	template<typename Stage>
-	void createDSLayoutPool(uint32_t index, VkDescriptorType type, uint32_t size, Stage shaderStage) {
-		descs.layouts.emplace_back(vkh::createDSLayout(index, type, size, shaderStage));
-		descs.pools.emplace_back(vkh::createDSPool(type, size));
+	void createDescriptorSet(DSObject& obj, uint32_t binding, VkDescriptorType type, uint32_t size, VkShaderStageFlags shaderStages) {
+		if (obj.set.valid()) obj.set.reset(obj.pool.v());
+
+		vkh::createDSLayout(obj.layout, binding, type, size, shaderStages);
+		vkh::createDSPool(obj.pool, type, size);
+		obj.set = vkh::allocDS(&size, obj.pool, obj.layout);
+
+		obj.bindning = binding;
+		obj.type = type;
 	}
 
 	void createDS() {
@@ -1347,8 +1379,6 @@ private:
 		}
 
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
-		//uint32_t lightSize = MAX_LIGHTS;
-
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer.v();
 		lightBufferInfo.offset = 0;
@@ -1366,10 +1396,10 @@ private:
 		skyboxInfo.imageView = skybox.cubemap.imageView.v();
 		skyboxInfo.sampler = skybox.cubemap.sampler.v();
 
-		VkDescriptorBufferInfo camMatBufferInfo{};
-		camMatBufferInfo.buffer = cam.buffer.v();
-		camMatBufferInfo.offset = 0;
-		camMatBufferInfo.range = sizeof(CamUBO);
+		VkDescriptorBufferInfo camBufferInfo{};
+		camBufferInfo.buffer = cam.buffer.v();
+		camBufferInfo.offset = 0;
+		camBufferInfo.range = sizeof(CamUBO);
 
 		const uint32_t texCompSize = 2;
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
@@ -1384,52 +1414,27 @@ private:
 		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
 		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
 
-		const uint8_t size = 7;
-		descs.sets.clear(); descs.sets.reserve(size);
-		descs.pools.clear(); descs.pools.reserve(size);
-		descs.layouts.clear(); descs.layouts.reserve(size);
+		// global descriptorsets
+		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.lightData, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.skybox, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.cam, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
 
-		uint32_t texSize = static_cast<uint32_t>(totalTextureCount);
+		// rasterization specific descriptorsets
+		createDescriptorSet(descs.shadowmaps, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.composition, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
-		//initialize descriptor set layouts and pools
-		createDSLayoutPool(0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texSize, VK_SHADER_STAGE_FRAGMENT_BIT); // array of textures
-		createDSLayoutPool(1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, (VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT)); // light data ssbo
-		createDSLayoutPool(2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT); // array of shadow map samplers
-		createDSLayoutPool(3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // 1 sampler for the skybox
-		createDSLayoutPool(4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT); // camera matricies ubo
-		createDSLayoutPool(5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT); // textures for composition pass
-		createDSLayoutPool(6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT); // texture for opaque pass depth
+		// create the descriptor writes
+		std::vector<VkWriteDescriptorSet> descriptorWrites{};
+		descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.bindning, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.bindning, 0, descs.lightData.type, lightBufferInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.bindning, 0, descs.skybox.type, skyboxInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.bindning, 0, descs.cam.type, camBufferInfo));
 
-		VkDescriptorSetAllocateInfo allocInfo{};
-		allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-		allocInfo.descriptorSetCount = 1;
-
-		std::vector<uint32_t> descCountArr = { static_cast<uint32_t>(imageInfos.size()), 1, MAX_LIGHTS, 1, 1, texCompSize, 1 };
-		for (uint32_t i = 0; i < size; i++) {
-			VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
-			varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
-			varCountInfo.descriptorSetCount = 1;
-			varCountInfo.pDescriptorCounts = &descCountArr[i];
-			allocInfo.pNext = &varCountInfo;
-
-			allocInfo.descriptorPool = descs.pools[i].v();
-			allocInfo.pSetLayouts = descs.layouts[i].p();
-			VkhDescriptorSet set(descs.pools[i].v());
-			VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
-			if (result != VK_SUCCESS) {
-				throw std::runtime_error("Failed to allocate descriptor sets!");
-			}
-			descs.sets.emplace_back(set);
-		}
-
-		std::array<VkWriteDescriptorSet, size> descriptorWrites{};
-		descriptorWrites[0] = vkh::createDSWrite(descs.sets[0], 0, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, imageInfos.data(), imageInfos.size());
-		descriptorWrites[1] = vkh::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		descriptorWrites[2] = vkh::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), shadowInfos.size());
-		descriptorWrites[3] = vkh::createDSWrite(descs.sets[3], 3, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, skyboxInfo);
-		descriptorWrites[4] = vkh::createDSWrite(descs.sets[4], 4, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camMatBufferInfo);
-		descriptorWrites[5] = vkh::createDSWrite(descs.sets[5], 5, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, compositionPassImageInfo.data(), compositionPassImageInfo.size());
-		descriptorWrites[6] = vkh::createDSWrite(descs.sets[6], 6, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, opaquePassDepthInfo);
+		descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.bindning, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.bindning, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.bindning, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -1439,7 +1444,7 @@ private:
 		for (uint32_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
 			if (uniqueModelIndex[obj->meshHash] == i) {
-				totalTextureCount += obj->textureCount;
+				totalTextureCount += static_cast<uint32_t>(obj->textureCount);
 			}
 		}
 		if (initial) {
@@ -1835,11 +1840,12 @@ private:
 
 		// pipeline layout setup: defines the connection between shader stages and resources
 		// this data includes: descriptorsets and push constants
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[2].v(), descs.layouts[4].v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v() };
+
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = layouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, opaquePassPipeline.layout.p());
@@ -2065,7 +2071,7 @@ private:
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
-		pipelineLayoutInf.pSetLayouts = descs.layouts[1].p();
+		pipelineLayoutInf.pSetLayouts = descs.lightData.layout.p();
 		pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowMapPipeline.layout.p());
@@ -2179,11 +2185,11 @@ private:
 		colorBS.attachmentCount = 1;
 		colorBS.pAttachments = &colorBA;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[3].v(), descs.layouts[4].v() };
+		VkDescriptorSetLayout layouts[] = { descs.skybox.layout.v(), descs.cam.layout.v() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = layouts;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, skybox.pipelineLayout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for skybox!");
@@ -2384,11 +2390,11 @@ private:
 		pushConstantRange.offset = 0;
 		pushConstantRange.size = sizeof(int) * 2;
 
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[2].v(), descs.layouts[4].v(), descs.layouts[6].v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.opaqueDepth.layout.v() };
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = layouts;
 		pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
 		pipelineLayoutInf.pushConstantRangeCount = 1;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, wboitPipeline.layout.p());
@@ -2542,7 +2548,7 @@ private:
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
-		pipelineLayoutInf.pSetLayouts = descs.layouts[5].p();
+		pipelineLayoutInf.pSetLayouts = descs.composition.layout.p();
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipelineData.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for composition!!");
@@ -2622,11 +2628,12 @@ private:
 		shaderGroups[3].closestHitShader = 2;
 
 		// create the pipeline layoyut
-		VkDescriptorSetLayout setLayouts[] = { descs.layouts[0].v(), descs.layouts[1].v(), descs.layouts[3].v(), descs.layouts[4].v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v() };
+
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-		pipelineLayoutInf.setLayoutCount = sizeof(setLayouts) / sizeof(VkDescriptorSetLayout);
-		pipelineLayoutInf.pSetLayouts = setLayouts;
+		pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
+		pipelineLayoutInf.pSetLayouts = layouts;
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create raytracing pipeline layout!!");
@@ -2818,7 +2825,7 @@ private:
 		// copy the data of each shader group handle into the sbt buffer
 		for (uint32_t i = 0; i < shaderGroupCount; i++) {
 			memcpy(d + dataOffset, shaderHandles.data() + handleOffset, handleSize);
-			dataOffset += sbt.entryS;
+			dataOffset += static_cast<uint32_t>(sbt.entryS);
 			handleOffset += handleSize;
 		}
 
@@ -3291,8 +3298,8 @@ private:
 		lightBufferInfo.range = lightData.memSize;
 
 		std::array<VkWriteDescriptorSet, 2> dw{};
-		dw[0] = vkh::createDSWrite(descs.sets[1], 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		dw[1] = vkh::createDSWrite(descs.sets[2], 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
+		dw[0] = vkh::createDSWrite(descs.lightData.set, 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		dw[1] = vkh::createDSWrite(descs.shadowmaps.set, 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
 	}
@@ -3485,9 +3492,9 @@ private:
 	}
 
 	void recordSecondaryCommandBuffers() {
-		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.sets[0].v(), descs.sets[1].v(), descs.sets[2].v(), descs.sets[4].v() };
-		std::array<VkDescriptorSet, 5> wboitDS = { descs.sets[0].v(), descs.sets[1].v(), descs.sets[2].v(), descs.sets[4].v(), descs.sets[6].v() };
-		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.sets[3].v(), descs.sets[4].v() };
+		const std::array<VkDescriptorSet, 4> opaqueDS = { descs.textures.set.v(), descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v() };
+		std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.opaqueDepth.set.v() };
+		const std::array<VkDescriptorSet, 2> skyboxDS = { descs.skybox.set.v(), descs.cam.set.v() };
 
 		// FOR THE SHADOW PASS
 		VkCommandBufferInheritanceInfo shadowInheritInfo{};
@@ -3501,7 +3508,7 @@ private:
 		shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 		shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, descs.sets[1].p(), 1, true, true);
+		recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, descs.lightData.set.p(), 1, true, true);
 
 		// FOR THE OPAQUE & SKYBOX PASS
 		VkCommandBufferInheritanceInfo opaqueInheritInfo{};
@@ -3675,7 +3682,6 @@ private:
 		prevCmdIteration = cmdIteration;
 
 		std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
-		VkhDescriptorSet compDS = descs.sets[5];
 
 		VkCommandBufferBeginInfo beginInfo{};
 		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -3693,7 +3699,7 @@ private:
 		beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
 		beginInfoS.pInheritanceInfo = &inheritInfo;
 
-		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, compDS.p(), 1, true, true);
+		recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, descs.composition.set.p(), 1, true, true);
 
 		for (size_t i = 0; i < swap.images.size(); i++) {
 			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
@@ -4115,7 +4121,10 @@ private:
 		// setup the descriptorsets and pipelines
 		setupDescriptorSets();
 		setupPipelines(true);
-		createSBT();
+
+		if (rtEnabled) {
+			createSBT();
+		}
 		imguiSetup();
 		updateUBO();
 
