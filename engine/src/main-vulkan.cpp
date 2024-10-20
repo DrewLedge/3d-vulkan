@@ -247,6 +247,8 @@ private:
 		VkhBuffer indBuffer;
 		VkhDeviceMemory indBufferMem;
 
+		float* imgData;
+
 		std::vector<dml::vec3> vertices;
 		std::vector<uint32_t> indices;
 
@@ -264,6 +266,7 @@ private:
 			vertBufferMem(),
 			indBuffer(),
 			indBufferMem(),
+			imgData(nullptr),
 
 			indices{
 				0, 1, 2, 2, 3, 0,
@@ -549,13 +552,11 @@ private:
 	std::vector<VkDescriptorImageInfo> shadowInfos;
 	std::vector<int> meshTexStartInd;
 	uint32_t totalTextureCount = 0;
-	unsigned char* imageData = nullptr;
 	dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
 	VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 	WBOITData wboit = {};
 
 	// skybox data
-	float* skyboxData = nullptr;
 	SkyboxObject skybox = {};
 
 	// font data
@@ -568,9 +569,11 @@ private:
 
 	// multithreading
 	std::mutex modelMtx;
-	std::vector<std::future<void>> objTasks;
 
+	std::vector<std::future<void>> objTasks;
+	std::vector<std::future<void>> textureTasks;
 	std::vector<std::future<void>> cmdTasks;
+
 	size_t cmdIteration = 0;
 	size_t prevCmdIteration = 0;
 
@@ -997,7 +1000,8 @@ private:
 
 	void loadSkybox(std::string path) {
 		skybox.cubemap.path = SKYBOX_DIR + path;
-		createTexturedCubemap(skybox.cubemap);
+		createTexturedCubemap(skybox.cubemap, skybox.imgData);
+
 		vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
 		vkh::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkh::CUBEMAP);
 
@@ -1007,7 +1011,7 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
-	void loadMeshTextureData(std::unique_ptr<dvl::Mesh>& newObject) {
+	void createMeshTextures(std::unique_ptr<dvl::Mesh>& newObject) {
 		// load the textures
 		if (newObject->material.baseColor.found) {
 			createTexturedImage(newObject->material.baseColor, true);
@@ -1044,7 +1048,7 @@ private:
 		}
 	}
 
-	void loadModel(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
+	void loadModel(std::string path, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
 		uint32_t meshInd = 0; // index of the mesh in the model
 
 		tinygltf::Model gltfModel;
@@ -1094,11 +1098,18 @@ private:
 
 	void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
 		std::string path = std::string(MODEL_DIR) + name;
-		objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, scale, pos, rot, path));
+		objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
+	}
+
+	void loadTexImageData(dvl::Texture& t) {
+		if (t.found) {
+			textureTasks.emplace_back(std::async(std::launch::async, &Engine::getGLTFImageData, this, std::ref(t)));
+		}
 	}
 
 	void loadScene() {
 		objTasks.clear();
+		textureTasks.clear();
 
 		// load each mesh
 		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
@@ -1114,9 +1125,22 @@ private:
 			throw std::runtime_error("Failed to load models!");
 		}
 
-		// load the textures for all meshes
+		// load the raw image data of each image
+		for (const auto& m : objects) {
+			loadTexImageData(m->material.baseColor);
+			loadTexImageData(m->material.metallicRoughness);
+			loadTexImageData(m->material.normalMap);
+			loadTexImageData(m->material.emissiveMap);
+			loadTexImageData(m->material.occlusionMap);
+		}
+
+		for (auto& t : textureTasks) {
+			t.wait();
+		}
+
+		// create textires
 		for (auto& m : objects) {
-			loadMeshTextureData(m);
+			createMeshTextures(m);
 		}
 
 		// create all lights
@@ -1446,55 +1470,36 @@ private:
 		createDS(); //create the descriptor set
 	}
 
-	void getGLTFImageData(std::shared_ptr<tinygltf::Image>& gltfImage, dvl::Texture& t, unsigned char*& imgData) {
-		int width = gltfImage->width;
-		int height = gltfImage->height;
-		int channels = gltfImage->component;
+	void getGLTFImageData(dvl::Texture& tex) {
+		int width = tex.gltfImage->width;
+		int height = tex.gltfImage->height;
+		int channels = tex.gltfImage->component;
 
-		// delete previously allocated memory if any
-		if (imgData != nullptr) {
-			delete[] imageData;
+		std::shared_ptr<unsigned char[]> data = std::shared_ptr<unsigned char[]>(new unsigned char[width * height * 4]);
+
+		// only images with 3 or 4 channels are supported
+		if (channels != 4 && channels != 3) {
+			throw std::runtime_error("unsupported number of channels!");
 		}
-
-		imgData = new unsigned char[width * height * 4]; // create a new array to hold the image data
 
 		// iterate through the image data and copy it into the new array
 		for (int y = 0; y < height; y++) {
 			for (int x = 0; x < width; x++) {
 				for (int c = 0; c < channels; c++) {
 					// copy the data from the original image into the new array
-					imgData[(y * width + x) * 4 + c] = gltfImage->image[(y * width + x) * channels + c];
+					data[(y * width + x) * 4 + c] = tex.gltfImage->image[(y * width + x) * channels + c];
 				}
 				// if the original image doesn't have an alpha channel, set alpha to 255 (completely opaque)
-				if (channels < 4) {
-					imgData[(y * width + x) * 4 + 3] = 255;
+				if (channels == 3) {
+					data[(y * width + x) * 4 + 3] = 255;
 				}
 			}
 		}
-		imgData = resizeImage(imgData, width, height, t.width, t.height, channels);
-		gltfImage.reset();
-	}
+		tex.width = width;
+		tex.height = height;
 
-	unsigned char* resizeImage(const unsigned char* inputPixels, int originalWidth, int originalHeight,
-		int newWidth, int outputHeight, int channels) {
-		unsigned char* out = (unsigned char*)malloc(newWidth * outputHeight * channels);
-		if (out == NULL) {
-			return NULL;  // memory allocation failed
-		}
-
-		stbir_resize_uint8(inputPixels, originalWidth, originalHeight, 0,
-			out, newWidth, outputHeight, 0,
-			channels);
-
-		return out;
-	}
-
-	void getImageData(std::string path, unsigned char*& imgData) {
-		int texWidth, texHeight, texChannels;
-		imgData = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-		if (!imgData) {
-			throw std::runtime_error("failed to load image!");
-		}
+		tex.gltfImage.reset();
+		tex.rawData = data;
 	}
 
 	void createImageStagingBuffer(dvl::Texture& tex, bool cubeMap) {
@@ -1502,100 +1507,93 @@ private:
 		VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
 		if (cubeMap) {
-			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skyboxData, imageSize, 0);
+			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, skybox.imgData, imageSize, 0);
 		}
 		else {
-			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, imageData, imageSize, 0);
+			vkh::createStagingBuffer(tex.stagingBuffer, tex.stagingBufferMem, tex.rawData.get(), imageSize, 0);
 		}
 	}
 
 	void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkh::TextureType type = vkh::BASE) {
-		if (!tex.stagingBuffer.valid()) {
-			if (tex.path != "gltf") { // standard image
-				getImageData(tex.path, imageData);
-			}
-			else {
-				getGLTFImageData(tex.gltfImage, tex, imageData);
-			}
-			createImageStagingBuffer(tex, false);
-			tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
-			VkFormat imgFormat;
-			switch (type) {
-			case vkh::BASE:
-				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
-				break;
-			case vkh::EMISSIVE:
-				imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
-				break;
-			default:
-				imgFormat = VK_FORMAT_R8G8B8A8_UNORM;
-				break;
-			}
-
-			vkh::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
-
-			// init the VkBufferImageCopy struct for the styaging buffer to image copying
-			VkBufferImageCopy region{};
-			region.bufferOffset = 0;
-			region.bufferRowLength = 0;
-			region.bufferImageHeight = 0;
-			region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //specifies the aspect of the image to copy
-			region.imageSubresource.mipLevel = 0;
-			region.imageSubresource.baseArrayLayer = 0;
-			region.imageSubresource.layerCount = 1;
-			region.imageOffset = { 0, 0, 0 };
-			region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
-
-			VkhCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
-
-			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
-			vkCmdCopyBufferToImage(tempBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
-
-			int mipWidth = tex.width;
-			int mipHeight = tex.height;
-
-			// create mipmaps for the image if enabled
-			if (doMipmap) {
-				for (uint32_t j = 0; j < tex.mipLevels; j++) {
-					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
-
-					// if the cutrrent mip level isnt the last, blit the image to generate the next mip level
-					// bliting is the process of transfering the image data from one image to another usually with a form of scaling or filtering
-					if (j < tex.mipLevels - 1) {
-						VkImageBlit blit{};
-						blit.srcOffsets[0] = { 0, 0, 0 };
-						blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
-						blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						blit.srcSubresource.mipLevel = j;
-						blit.srcSubresource.baseArrayLayer = 0;
-						blit.srcSubresource.layerCount = 1;
-						blit.dstOffsets[0] = { 0, 0, 0 };
-
-						// divide the width and height by 2 if over 1
-						blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
-
-						blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-						blit.dstSubresource.mipLevel = j + 1;
-						blit.dstSubresource.baseArrayLayer = 0;
-						blit.dstSubresource.layerCount = 1;
-						vkCmdBlitImage(tempBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
-					}
-
-					vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
-
-					//for the next mip level, divide the width and height by 2, unless they are already 1
-					if (mipWidth > 1) mipWidth /= 2;
-					if (mipHeight > 1) mipHeight /= 2;
-				}
-			}
-			else {
-				vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
-			}
-
-			vkh::endSingleTimeCommands(tempBuffer, commandPool, graphicsQueue);
-			stbi_image_free(imageData);
-			imageData = nullptr;
+		if (tex.stagingBuffer.valid()) return;
+		createImageStagingBuffer(tex, false);
+		tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
+		VkFormat imgFormat;
+		switch (type) {
+		case vkh::BASE:
+			imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
+			break;
+		case vkh::EMISSIVE:
+			imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
+			break;
+		default:
+			imgFormat = VK_FORMAT_R8G8B8A8_UNORM;
+			break;
 		}
+
+		vkh::createImage(tex.image, tex.memory, tex.width, tex.height, imgFormat, tex.mipLevels, 1, false, VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, tex.sampleCount);
+
+		// init the VkBufferImageCopy struct for the styaging buffer to image copying
+		VkBufferImageCopy region{};
+		region.bufferOffset = 0;
+		region.bufferRowLength = 0;
+		region.bufferImageHeight = 0;
+		region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT; //specifies the aspect of the image to copy
+		region.imageSubresource.mipLevel = 0;
+		region.imageSubresource.baseArrayLayer = 0;
+		region.imageSubresource.layerCount = 1;
+		region.imageOffset = { 0, 0, 0 };
+		region.imageExtent = { static_cast<uint32_t>(tex.width), static_cast<uint32_t>(tex.height), 1 };
+
+		VkhCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
+
+		vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
+		vkCmdCopyBufferToImage(tempBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+
+		int mipWidth = tex.width;
+		int mipHeight = tex.height;
+
+		// create mipmaps for the image if enabled
+		if (doMipmap) {
+			for (uint32_t j = 0; j < tex.mipLevels; j++) {
+				vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, j);
+
+				// if the cutrrent mip level isnt the last, blit the image to generate the next mip level
+				// bliting is the process of transfering the image data from one image to another usually with a form of scaling or filtering
+				if (j < tex.mipLevels - 1) {
+					VkImageBlit blit{};
+					blit.srcOffsets[0] = { 0, 0, 0 };
+					blit.srcOffsets[1] = { mipWidth, mipHeight, 1 };
+					blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					blit.srcSubresource.mipLevel = j;
+					blit.srcSubresource.baseArrayLayer = 0;
+					blit.srcSubresource.layerCount = 1;
+					blit.dstOffsets[0] = { 0, 0, 0 };
+
+					// divide the width and height by 2 if over 1
+					blit.dstOffsets[1] = { mipWidth > 1 ? mipWidth / 2 : 1, mipHeight > 1 ? mipHeight / 2 : 1, 1 };
+
+					blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+					blit.dstSubresource.mipLevel = j + 1;
+					blit.dstSubresource.baseArrayLayer = 0;
+					blit.dstSubresource.layerCount = 1;
+					vkCmdBlitImage(tempBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+				}
+
+				vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, j);
+
+				//for the next mip level, divide the width and height by 2, unless they are already 1
+				if (mipWidth > 1) mipWidth /= 2;
+				if (mipHeight > 1) mipHeight /= 2;
+			}
+		}
+		else {
+			vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, tex.mipLevels, 0);
+		}
+
+		vkh::endSingleTimeCommands(tempBuffer, commandPool, graphicsQueue);
+
+		tex.rawData.reset();
 	}
 
 	void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
@@ -1609,9 +1607,14 @@ private:
 		}
 	}
 
-	void createTexturedCubemap(dvl::Texture& tex) {
-		getImageDataHDR(tex.path, tex, skyboxData);
-		if (skyboxData == nullptr) {
+	void freeHDRImage(float*& imgData) {
+		stbi_image_free(imgData);
+		imgData = nullptr;
+	}
+
+	void createTexturedCubemap(dvl::Texture& tex, float*& imgData) {
+		getImageDataHDR(tex.path, tex, imgData);
+		if (imgData == nullptr) {
 			throw std::runtime_error("failed to load image data!");
 		}
 		createImageStagingBuffer(tex, true);
@@ -1657,8 +1660,7 @@ private:
 		vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
 		vkh::transitionImageLayout(commandPool, tex.image, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 6, 1, 0);
-		stbi_image_free(skyboxData);
-		skyboxData = nullptr;
+		freeHDRImage(imgData);
 	}
 
 

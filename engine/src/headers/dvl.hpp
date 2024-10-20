@@ -98,6 +98,8 @@ public:
 		uint16_t height;
 		VkSampleCountFlagBits sampleCount;
 
+		std::shared_ptr<unsigned char[]> rawData;
+
 		Texture(VkSampleCountFlagBits s = VK_SAMPLE_COUNT_1_BIT)
 			: sampler(),
 			image(),
@@ -111,7 +113,8 @@ public:
 			found(false),
 			width(1024),
 			height(1024),
-			sampleCount(s)
+			sampleCount(s),
+			rawData(nullptr)
 		{}
 
 		bool operator==(const Texture& other) const {
