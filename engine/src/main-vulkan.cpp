@@ -4,7 +4,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 //#define PROFILE_MAIN_LOOP
-//#define ENABLE_DEBUG
+#define ENABLE_DEBUG
 
 #include <stb_image_resize.h>
 
@@ -568,7 +568,6 @@ private:
 
 	// multithreading
 	std::mutex modelMtx;
-	std::mutex compositionMutex;
 	std::vector<std::future<void>> objTasks;
 
 	std::vector<std::future<void>> cmdTasks;
@@ -608,10 +607,6 @@ private:
 		}
 	}
 
-	void createObject(std::string path, dml::vec3 scale, dml::vec4 rotation, dml::vec3 pos) {
-		loadModel(scale, pos, rotation, MODEL_DIR + path);
-	}
-
 	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
 		Light l;
 		l.col = color;
@@ -647,40 +642,6 @@ private:
 		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
 		playerModels.push_back(i);
 		objects.push_back(std::move(p));
-	}
-
-	void createObjTask(const std::string& model, const dml::vec3& scale, const dml::vec4& orientation, const dml::vec3& position) {
-		objTasks.emplace_back(std::async(std::launch::async, &Engine::createObject, this, model, scale, orientation, position));
-	}
-
-	void loadUniqueObjects() { // load all unqiue objects and all lights
-		objTasks.clear();
-
-		createObjTask("sword.glb", { 103.2f, 103.2f, 103.2f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObjTask("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-		createObjTask("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 0.0f, 2.0f, 0.0f }, { 0.0f, 0.0f, 0.0f }), { 0.0f, 2.0f, 0.0f });
-
-		for (auto& t : objTasks) {
-			t.wait();
-		}
-
-		if (!objects.size()) {
-			throw std::runtime_error("Failed to load models!");
-		}
-
-		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
-		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
-		lights.push_back(std::make_unique<Light>(createPlayerLight()));
-
-		for (auto& obj : objects) {
-			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
-		}
-
-		// setPlayer(6);
-		// setPlayer(9);
 	}
 
 	bool isRTSupported(VkPhysicalDevice device) {
@@ -1046,51 +1007,42 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
-	void loadMeshTextureData(dvl::Mesh& newObject) {
-		modelMtx.lock();
-
+	void loadMeshTextureData(std::unique_ptr<dvl::Mesh>& newObject) {
 		// load the textures
-		if (newObject.material.baseColor.found) {
-			createTexturedImage(newObject.material.baseColor, true);
-			vkh::createImageView(newObject.material.baseColor);
-			vkh::createSampler(newObject.material.baseColor.sampler, newObject.material.baseColor.mipLevels);
+		if (newObject->material.baseColor.found) {
+			createTexturedImage(newObject->material.baseColor, true);
+			vkh::createImageView(newObject->material.baseColor);
+			vkh::createSampler(newObject->material.baseColor.sampler, newObject->material.baseColor.mipLevels);
+		}
+
+		if (newObject->material.metallicRoughness.found) {
+			createTexturedImage(newObject->material.metallicRoughness, true, vkh::METALLIC);
+			vkh::createImageView(newObject->material.metallicRoughness, vkh::METALLIC);
+			vkh::createSampler(newObject->material.metallicRoughness.sampler, newObject->material.metallicRoughness.mipLevels);
 
 		}
 
-		if (newObject.material.metallicRoughness.found) {
-			createTexturedImage(newObject.material.metallicRoughness, true, vkh::METALLIC);
-			vkh::createImageView(newObject.material.metallicRoughness, vkh::METALLIC);
-			vkh::createSampler(newObject.material.metallicRoughness.sampler, newObject.material.metallicRoughness.mipLevels);
+		if (newObject->material.normalMap.found) {
+			createTexturedImage(newObject->material.normalMap, true, vkh::NORMAL);
+			vkh::createImageView(newObject->material.normalMap, vkh::NORMAL);
+			vkh::createSampler(newObject->material.normalMap.sampler, newObject->material.normalMap.mipLevels);
 
 		}
 
-		if (newObject.material.normalMap.found) {
-			createTexturedImage(newObject.material.normalMap, true, vkh::NORMAL);
-			vkh::createImageView(newObject.material.normalMap, vkh::NORMAL);
-			vkh::createSampler(newObject.material.normalMap.sampler, newObject.material.normalMap.mipLevels);
+		if (newObject->material.emissiveMap.found) {
+			createTexturedImage(newObject->material.emissiveMap, true, vkh::EMISSIVE);
+			vkh::createImageView(newObject->material.emissiveMap, vkh::EMISSIVE);
+			vkh::createSampler(newObject->material.emissiveMap.sampler, newObject->material.emissiveMap.mipLevels);
 
 		}
 
-		if (newObject.material.emissiveMap.found) {
-			createTexturedImage(newObject.material.emissiveMap, true, vkh::EMISSIVE);
-			vkh::createImageView(newObject.material.emissiveMap, vkh::EMISSIVE);
-			vkh::createSampler(newObject.material.emissiveMap.sampler, newObject.material.emissiveMap.mipLevels);
+		if (newObject->material.occlusionMap.found) {
+			createTexturedImage(newObject->material.occlusionMap, true, vkh::OCCLUSION);
+			vkh::createImageView(newObject->material.occlusionMap, vkh::OCCLUSION);
+			vkh::createSampler(newObject->material.occlusionMap.sampler, newObject->material.occlusionMap.mipLevels);
 
 		}
-
-		if (newObject.material.occlusionMap.found) {
-			createTexturedImage(newObject.material.occlusionMap, true, vkh::OCCLUSION);
-			vkh::createImageView(newObject.material.occlusionMap, vkh::OCCLUSION);
-			vkh::createSampler(newObject.material.occlusionMap.sampler, newObject.material.occlusionMap.mipLevels);
-
-		}
-
-		objects.push_back(std::make_unique<dvl::Mesh>(newObject));
-		modelMtx.unlock();
-
-		modelIndex++;
 	}
-
 
 	void loadModel(dml::vec3 scale, dml::vec3 pos, dml::vec4 rot, std::string path) {
 		uint32_t meshInd = 0; // index of the mesh in the model
@@ -1133,7 +1085,47 @@ private:
 
 		for (const auto& mesh : gltfModel.meshes) {
 			dvl::Mesh m = dvl::loadMesh(mesh, gltfModel, parentInd, meshInd++, scale, pos, rot);
+			modelMtx.lock();
+			objects.push_back(std::make_unique<dvl::Mesh>(m));
+			modelMtx.unlock();
+			modelIndex++;
+		}
+	}
+
+	void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
+		std::string path = std::string(MODEL_DIR) + name;
+		objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, scale, pos, rot, path));
+	}
+
+	void loadScene() {
+		objTasks.clear();
+
+		// load each mesh
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+
+		for (auto& t : objTasks) {
+			t.wait();
+		}
+
+		if (!objects.size()) {
+			throw std::runtime_error("Failed to load models!");
+		}
+
+		// load the textures for all meshes
+		for (auto& m : objects) {
 			loadMeshTextureData(m);
+		}
+
+		// create all lights
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
+		lights.push_back(std::make_unique<Light>(createPlayerLight()));
+
+		for (auto& obj : objects) {
+			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
 		}
 	}
 
@@ -1299,7 +1291,7 @@ private:
 				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 			else {
-				dml::mat4 t;
+				/*dml::mat4 t;
 				dml::mat4 r = dml::rotateQuat(dml::inverseQuat(cam.quat));
 				dml::mat4 s;
 				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
@@ -1309,9 +1301,10 @@ private:
 				}
 				else {
 					memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
-				}
+				}*/
 
 				int render = 0;
+				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
 				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
 			}
 		}
@@ -1441,7 +1434,7 @@ private:
 
 	void setupDescriptorSets(bool initial = true) {
 		totalTextureCount = 0;
-		for (uint32_t i = 0; i < objects.size(); i++) {
+		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
 			if (uniqueModelIndex[obj->meshHash] == i) {
 				totalTextureCount += static_cast<uint32_t>(obj->textureCount);
@@ -3238,22 +3231,6 @@ private:
 		createTLAS();
 	}
 
-	void cloneObject(dml::vec3 pos, uint16_t index, dml::vec3 scale, dml::vec4 rotation) {
-		const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
-		dvl::Mesh m;
-
-		m.scale = scale;
-		m.position = pos;
-		m.startObj = false;
-		m.rotation = rotation;
-		m.meshHash = other->meshHash;
-		m.material = other->material;
-
-		dml::mat4 newModel = dml::translate(pos) * dml::rotateQuat(rotation) * dml::scale(scale);
-		m.modelMatrix = newModel * other->modelMatrix;
-		objects.push_back(std::make_unique<dvl::Mesh>(std::move(m)));
-	}
-
 	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
 		uint32_t count = 0;
 		for (auto& m : objects) {
@@ -3272,13 +3249,40 @@ private:
 		return uniqueModels.size();
 	}
 
+	size_t originalObjectsNameIndex(std::string name) {
+		for (size_t i = 0; i < originalObjects.size(); i++) {
+			if (originalObjects[i]->name == name) {
+				return i;
+			}
+		}
+
+		LOG_WARNING("mesh: " + name + " wasnt found in originalObjects!");
+		return 0;
+	}
+
+	void cloneObject(dml::vec3 pos, std::string name, dml::vec3 scale, dml::vec4 rotation) {
+		size_t index = originalObjectsNameIndex(name);
+		const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
+
+		dvl::Mesh m;
+		m.scale = scale;
+		m.position = pos;
+		m.rotation = rotation;
+		m.meshHash = other->meshHash;
+		m.material = other->material;
+
+		dml::mat4 newModel = dml::translate(pos) * dml::rotateQuat(rotation) * dml::scale(scale);
+		m.modelMatrix = newModel * other->modelMatrix;
+		objects.push_back(std::make_unique<dvl::Mesh>(std::move(m)));
+	}
+
 	void summonModel() {
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 		if (objects.size() + 2 >= MAX_MODELS) return;
 		dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
-		cloneObject(pos, 6, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
-		cloneObject(pos, 10, { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, "Soi_SimpleArmor.001_Armour_Cloth_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
+		cloneObject(pos, "Soi_SimpleArmor.001_Armour_Metal_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
 		createModelBuffers(true);
 
@@ -3366,7 +3370,7 @@ private:
 
 		uint32_t p = 0;
 		for (size_t j = 0; j < objects.size(); j++) {
-			uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+			size_t uniqueModelInd = uniqueModelIndex[objects[j]->meshHash];
 			if (uniqueModelInd == j) { // only process unique models
 				// bitfield for which textures exist
 				int textureExistence = 0;
@@ -3388,7 +3392,7 @@ private:
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 				vkCmdDrawIndexed(secondary.v(), bufferData[bufferInd].indexCount, instanceCount,
-					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+					bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, static_cast<uint32_t>(uniqueModelInd));
 				p++;
 			}
 		}
@@ -3426,13 +3430,13 @@ private:
 		// iterate through all objects that cast shadows
 		uint32_t p = 0;
 		for (size_t j = 0; j < objects.size(); j++) {
-			uint32_t uniqueModelInd = static_cast<uint32_t>(uniqueModelIndex[objects[j]->meshHash]);
+			size_t uniqueModelInd = uniqueModelIndex[objects[j]->meshHash];
 			if (uniqueModelInd == j) {
 				size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
 				uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
 				for (size_t i = 0; i < size; i++) {
 					vkCmdDrawIndexed(secondaries[i].v(), bufferData[bufferInd].indexCount, instanceCount,
-						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, uniqueModelInd);
+						bufferData[bufferInd].indexOffset, bufferData[bufferInd].vertexOffset, static_cast<uint32_t>(uniqueModelInd));
 				}
 				p++;
 			}
@@ -4076,7 +4080,7 @@ private:
 
 		commandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
 		initializeMouseInput(true);
-		loadUniqueObjects();
+		loadScene();
 
 		// create buffers and textures
 		createModelBuffers(false);

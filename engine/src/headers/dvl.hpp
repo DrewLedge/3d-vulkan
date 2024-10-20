@@ -168,7 +168,6 @@ public:
 		size_t textureCount; // number of textures in the mesh
 		size_t texIndex; // where in the texture array the textures of the mesh start
 
-		bool startObj; // wether is loaded at the start of the program or not
 		bool player; // if the object is treated as a player mesh or not
 
 		size_t meshHash;
@@ -185,7 +184,6 @@ public:
 			modelMatrix(),
 			textureCount(0),
 			texIndex(0),
-			startObj(true),
 			player(false),
 			meshHash(),
 			name("")
@@ -202,7 +200,6 @@ public:
 			modelMatrix(other.modelMatrix),
 			textureCount(other.textureCount),
 			texIndex(other.texIndex),
-			startObj(other.startObj),
 			player(other.player),
 			meshHash(other.meshHash),
 			name(other.name) {
