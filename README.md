@@ -1,4 +1,4 @@
-![Vulkan Engine Screenshot](images/vulkan1.png)
+![Vulkan Engine Screenshot](images/v0.5.3.png)
 
 ## Vulkan Rendering Engine
 This project is a personal learning experience to deepen my understanding of the low-level intricacies of GPUs and graphics programming. 
@@ -19,4 +19,12 @@ During the engine's development, I decided to create my own libraries for more c
 - **vkhelper.hpp**: Custom Vulkan API wrapper featuring custom RAII wrappers, a function pointer manager, and more
 
 ## Dependencies
-- Vulkan SDK
+- Vulkan SDK - 1.3.296.0
+
+## 3rd Party Libraries used (libraries are in source code)
+- [GLFW](https://github.com/glfw/glfw)
+- [ImGui](https://github.com/ocornut/imgui)
+- [TinyGLTF](https://github.com/syoyo/tinygltf)
+- [STB Image](https://github.com/nothings/stb)
+
+
