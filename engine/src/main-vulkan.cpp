@@ -290,7 +290,7 @@ private:
 	};
 
 	struct DSObject {
-		uint32_t bindning;
+		uint32_t binding;
 		VkDescriptorType type;
 
 		VkhDescriptorPool pool;
@@ -298,7 +298,7 @@ private:
 		VkhDescriptorSet set;
 
 		DSObject() :
-			bindning(0),
+			binding(0),
 			type(),
 
 			pool(),
@@ -1383,7 +1383,7 @@ private:
 		vkh::createDSPool(obj.pool, type, size);
 		obj.set = vkh::allocDS(&size, obj.pool, obj.layout);
 
-		obj.bindning = binding;
+		obj.binding = binding;
 		obj.type = type;
 	}
 
@@ -1431,6 +1431,11 @@ private:
 		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
 		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
 
+		VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
+		tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+		tlasInfo.pAccelerationStructures = tlas.as.p();
+		tlasInfo.accelerationStructureCount = 1;
+
 		// global descriptorsets
 		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, VK_SHADER_STAGE_FRAGMENT_BIT);
 		createDescriptorSet(descs.lightData, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -1442,16 +1447,22 @@ private:
 		createDescriptorSet(descs.composition, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT);
 		createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
+		// raytracing specific descriptorsets
+		VkShaderStageFlags rtFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+		createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, rtFlags);
+
 		// create the descriptor writes
 		std::vector<VkWriteDescriptorSet> descriptorWrites{};
-		descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.bindning, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.bindning, 0, descs.lightData.type, lightBufferInfo));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.bindning, 0, descs.skybox.type, skyboxInfo));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.bindning, 0, descs.cam.type, camBufferInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.binding, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.binding, 0, descs.skybox.type, skyboxInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.binding, 0, descs.cam.type, camBufferInfo));
 
-		descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.bindning, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.bindning, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.bindning, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
+
+		descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
@@ -2623,7 +2634,7 @@ private:
 		shaderGroups[3].closestHitShader = 2;
 
 		// create the pipeline layoyut
-		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v() };
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;

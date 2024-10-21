@@ -940,7 +940,11 @@ public:
 
 	template<typename InfoType>
 	static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
-		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		// static assert if an invalid type is passed in
+		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
+			|| std::is_same_v<InfoType, VkDescriptorBufferInfo>
+			|| std::is_same_v<InfoType, VkWriteDescriptorSetAccelerationStructureKHR>,
+			"Invalid info type");
 
 		VkWriteDescriptorSet d{};
 		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -956,13 +960,20 @@ public:
 		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
 			d.pBufferInfo = infos;
 		}
+		else if constexpr (std::is_same_v<InfoType, VkWriteDescriptorSetAccelerationStructureKHR>) { // if the info type is an acceleration structure
+			d.pNext = infos;
+		}
 
 		return d;
 	}
 
 	template<typename InfoType>
 	static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
-		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo> || std::is_same_v<InfoType, VkDescriptorBufferInfo>, "Invalid info type");
+		// static assert if an invalid type is passed in
+		static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
+			|| std::is_same_v<InfoType, VkDescriptorBufferInfo>
+			|| std::is_same_v<InfoType, VkWriteDescriptorSetAccelerationStructureKHR>,
+			"Invalid info type");
 
 		VkWriteDescriptorSet d{};
 		d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -977,6 +988,9 @@ public:
 		}
 		else if constexpr (std::is_same_v<InfoType, VkDescriptorBufferInfo>) { // if the info type is a buffer
 			d.pBufferInfo = &info;
+		}
+		else if constexpr (std::is_same_v<InfoType, VkWriteDescriptorSetAccelerationStructureKHR>) { // if the info type is an acceleration structure
+			d.pNext = &info;
 		}
 
 		return d;

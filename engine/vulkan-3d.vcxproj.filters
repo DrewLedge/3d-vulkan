@@ -111,9 +111,6 @@
     <None Include="shaders\pathtracing\gen.rgen">
       <Filter>Shaders\pathtracing</Filter>
     </None>
-    <None Include="shaders\pathtracing\hit.rhit">
-      <Filter>Shaders\pathtracing</Filter>
-    </None>
     <None Include="shaders\pathtracing\miss.rmiss">
       <Filter>Shaders\pathtracing</Filter>
     </None>

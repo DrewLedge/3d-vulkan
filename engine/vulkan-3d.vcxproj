@@ -152,7 +152,6 @@
     <None Include="shaders\includes\vertformulas.glsl" />
     <None Include="shaders\pathtracing\closehit.rchit" />
     <None Include="shaders\pathtracing\gen.rgen" />
-    <None Include="shaders\pathtracing\hit.rhit" />
     <None Include="shaders\pathtracing\miss.rmiss" />
     <None Include="shaders\shadow.frag" />
     <None Include="shaders\shadow.vert" />
