@@ -4,7 +4,7 @@
 #define STB_IMAGE_RESIZE_IMPLEMENTATION
 
 //#define PROFILE_MAIN_LOOP
-#define ENABLE_DEBUG
+//#define ENABLE_DEBUG
 
 #include <stb_image_resize.h>
 
@@ -49,7 +49,7 @@ constexpr uint32_t MAX_LIGHTS = 300;
 constexpr uint32_t SCREEN_WIDTH = 3200;
 constexpr uint32_t SCREEN_HEIGHT = 1800;
 
-const std::string ENGINE_VER = "v0.5.1";
+const std::string ENGINE_VER = "v0.5.3";
 
 const std::string SHADER_DIR = "shaders/compiled/";
 const std::string MODEL_DIR = "assets/models/";
@@ -1762,9 +1762,12 @@ private:
 		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
 
 		VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
-		tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-		tlasInfo.pAccelerationStructures = tlas.as.p();
-		tlasInfo.accelerationStructureCount = 1;
+
+		if (rtEnabled) {
+			tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+			tlasInfo.pAccelerationStructures = tlas.as.p();
+			tlasInfo.accelerationStructureCount = 1;
+		}
 
 		// global descriptorsets
 		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, VK_SHADER_STAGE_FRAGMENT_BIT);
@@ -1778,8 +1781,10 @@ private:
 		createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 		// raytracing specific descriptorsets
-		VkShaderStageFlags rtFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-		createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, rtFlags);
+		if (rtEnabled) {
+			VkShaderStageFlags rtFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+			createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, rtFlags);
+		}
 
 		// create the descriptor writes
 		std::vector<VkWriteDescriptorSet> descriptorWrites{};
@@ -1792,7 +1797,9 @@ private:
 		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
 		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
 
-		descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
+		if (rtEnabled) {
+			descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
+		}
 
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
