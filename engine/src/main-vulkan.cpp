@@ -586,9 +586,10 @@ private:
 		std::string engineName = "3d-vulkan " + ENGINE_VER;
 
 		window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
+
+		// imgui initialization
 		IMGUI_CHECKVERSION();
 		ImGui::CreateContext();
-		ImGui::StyleColorsDark();
 		ImGui_ImplGlfw_InitForVulkan(window, true);
 
 		largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
@@ -3467,10 +3468,11 @@ private:
 			ImGuiWindowFlags_NoSavedSettings |
 			ImGuiWindowFlags_NoMove |
 			ImGuiWindowFlags_NoCollapse |
-			ImGuiWindowFlags_AlwaysAutoResize;
+			ImGuiWindowFlags_AlwaysAutoResize |
+			ImGuiWindowFlags_NoTitleBar;
 
 		// style settings
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 10.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 11.0f);
 		ImGui::PushFont(largeFont);
 
 		// text to display
