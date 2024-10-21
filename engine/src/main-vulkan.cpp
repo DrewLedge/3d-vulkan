@@ -2581,19 +2581,17 @@ private:
 	}
 
 	void createRayTracingPipeline() {
-		size_t numShaders = 4;
+		const size_t numShaders = 3;
 
 		std::vector<std::string> shaderNames;
 		shaderNames.emplace_back("gen");
 		shaderNames.emplace_back("miss");
 		shaderNames.emplace_back("closehit");
-		shaderNames.emplace_back("anyhit");
 
 		std::vector<VkShaderStageFlagBits> shaderStageFlagBits;;
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_MISS_BIT_KHR);
 		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-		shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_ANY_HIT_BIT_KHR);
 
 		// populate the shader module and shader stages data
 		std::vector<VkhShaderModule> shaderModules;
@@ -2603,10 +2601,10 @@ private:
 			shaderStages.emplace_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
 		}
 
-		std::array<VkRayTracingShaderGroupCreateInfoKHR, 4> shaderGroups{};
+		std::array<VkRayTracingShaderGroupCreateInfoKHR, numShaders> shaderGroups{};
 
 		// populate the shader group data
-		for (uint8_t i = 0; i < 4; i++) {
+		for (uint8_t i = 0; i < numShaders; i++) {
 			shaderGroups[i].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
 			shaderGroups[i].anyHitShader = VK_SHADER_UNUSED_KHR;
 			shaderGroups[i].closestHitShader = VK_SHADER_UNUSED_KHR;
@@ -2621,17 +2619,10 @@ private:
 		shaderGroups[1].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
 		shaderGroups[1].generalShader = 1; // ray miss index
 
-		// ray hit group for opaque objects
+		// ray hit group
 		shaderGroups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
 		shaderGroups[2].generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroups[2].anyHitShader = VK_SHADER_UNUSED_KHR;
 		shaderGroups[2].closestHitShader = 2;
-
-		// ray hit group for translucent
-		shaderGroups[3].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-		shaderGroups[3].generalShader = VK_SHADER_UNUSED_KHR;
-		shaderGroups[3].anyHitShader = 3;
-		shaderGroups[3].closestHitShader = 2;
 
 		// create the pipeline layoyut
 		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v() };
@@ -2648,7 +2639,7 @@ private:
 		// create the pipeline
 		VkRayTracingPipelineCreateInfoKHR pipelineInf{};
 		pipelineInf.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-		pipelineInf.maxPipelineRayRecursionDepth = 4;
+		pipelineInf.maxPipelineRayRecursionDepth = 5;
 		pipelineInf.pStages = shaderStages.data();
 		pipelineInf.stageCount = static_cast<uint32_t>(shaderStages.size());
 		pipelineInf.pGroups = shaderGroups.data();
@@ -2795,7 +2786,7 @@ private:
 
 
 	void createSBT() {
-		const uint32_t shaderGroupCount = 4;
+		const uint32_t shaderGroupCount = 3;
 
 		// the size of a single shader group handle (in bytes)
 		// shader group handles tell the gpu where to find specific shaders
@@ -2852,7 +2843,7 @@ private:
 		// ray hit region
 		sbt.hitR.deviceAddress = sbtAddr + (2 * sbt.entryS);
 		sbt.hitR.stride = sbt.entryS;
-		sbt.hitR.size = sbt.entryS * 2;
+		sbt.hitR.size = sbt.entryS;
 	}
 
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {

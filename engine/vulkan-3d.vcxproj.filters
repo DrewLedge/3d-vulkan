@@ -28,11 +28,14 @@
     <Filter Include="Shaders">
       <UniqueIdentifier>{41eb6084-856d-4bb5-b8c4-ce153d0e4683}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Shader Libraries">
-      <UniqueIdentifier>{8ea1ebdd-012e-4024-95f7-7a348d8c3cbc}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Shaders\pathtracing">
       <UniqueIdentifier>{f6732b55-7f96-43cc-9528-681d97a7ea68}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\Shader Libraries">
+      <UniqueIdentifier>{8ea1ebdd-012e-4024-95f7-7a348d8c3cbc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Shaders\rasterization">
+      <UniqueIdentifier>{0a207bdc-45e3-444e-8aeb-3859aa8b4386}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -60,44 +63,14 @@
     <ClCompile Include="src\main-vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="shaders\engine.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\engine.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\shadow.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\shadow.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\sky.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\sky.vert">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\composition.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\composition.vert">
-      <Filter>Shaders</Filter>
-    </None>
     <None Include="shaders\compile.bat">
       <Filter>Source Files\Other files</Filter>
     </None>
     <None Include="shaders\includes\fragformulas.glsl">
-      <Filter>Shader Libraries</Filter>
+      <Filter>Shaders\Shader Libraries</Filter>
     </None>
     <None Include="shaders\includes\vertformulas.glsl">
-      <Filter>Shader Libraries</Filter>
-    </None>
-    <None Include="shaders\wboit.frag">
-      <Filter>Shaders</Filter>
-    </None>
-    <None Include="shaders\wboit.vert">
-      <Filter>Shaders</Filter>
+      <Filter>Shaders\Shader Libraries</Filter>
     </None>
     <None Include="..\.gitignore">
       <Filter>Source Files\Other files</Filter>
@@ -113,6 +86,36 @@
     </None>
     <None Include="shaders\pathtracing\miss.rmiss">
       <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\composition.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\composition.vert">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\engine.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\engine.vert">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\shadow.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\shadow.vert">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\sky.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\sky.vert">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\wboit.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\wboit.vert">
+      <Filter>Shaders\rasterization</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
