@@ -39,6 +39,7 @@
 #include <cmath>
 #include <memory>
 
+
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
@@ -577,6 +578,8 @@ private:
 	size_t cmdIteration = 0;
 	size_t prevCmdIteration = 0;
 
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	void initWindow() {
 		glfwInit();
@@ -609,43 +612,6 @@ private:
 				throw std::runtime_error("Failed to create directory" + models + "!");
 			}
 		}
-	}
-
-	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
-		Light l;
-		l.col = color;
-		l.pos = pos;
-		l.baseIntensity = intensity;
-		l.target = t;
-		l.constantAttenuation = 1.0f;
-		l.linearAttenuation = 0.1f;
-		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 6.6f;
-		l.outerConeAngle = 10.0f;
-		l.followPlayer = false;
-		return l;
-	}
-
-	Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
-		Light l;
-		l.col = color;
-		l.baseIntensity = intensity;
-		l.constantAttenuation = 1.0f;
-		l.linearAttenuation = 0.1f;
-		l.quadraticAttenuation = 0.032f;
-		l.innerConeAngle = 6.6f;
-		l.outerConeAngle = 20.0f;
-		l.followPlayer = true;
-		return l;
-	}
-
-	void setPlayer(uint16_t i) {
-		auto p = std::make_unique<dvl::Mesh>(*objects[i]);
-		p->player = true;
-		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
-		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
-		playerModels.push_back(i);
-		objects.push_back(std::move(p));
 	}
 
 	bool isRTSupported(VkPhysicalDevice device) {
@@ -904,19 +870,6 @@ private:
 		utils::sep();
 	}
 
-	std::vector<char> readFile(const std::string& filename) { //outputs binary data from a SPIRV shader file
-		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
-		if (!file.is_open()) {
-			throw std::runtime_error("Failed to open file: " + filename);
-		}
-		size_t fileSize = static_cast<size_t>(file.tellg()); //tellg gets the position of the read/write head
-		std::vector<char> buffer(fileSize);
-		file.seekg(0); //seekg sets the position of the read/write head
-		file.read(buffer.data(), fileSize);
-		file.close();
-		return buffer;
-	}
-
 	void createSurface() {
 		if (glfwCreateWindowSurface(instance, window, nullptr, &surface) != VK_SUCCESS) {
 			throw std::runtime_error("failed to create window surface!");
@@ -928,6 +881,35 @@ private:
 		vkGetDeviceQueue(device, queueFamilyIndices.presentFamily.value(), 0, &presentQueue);
 		vkGetDeviceQueue(device, queueFamilyIndices.computeFamily.value(), 0, &computeQueue);
 		vkGetDeviceQueue(device, queueFamilyIndices.transferFamily.value(), 0, &transferQueue);
+	}
+
+	void createSCImageViews() { //create the image views for the swap chain images
+		swap.imageViews.resize(swap.images.size());
+
+		for (size_t i = 0; i < swap.images.size(); i++) {
+			if (swap.imageViews[i].valid()) swap.imageViews[i].reset();
+			VkImageViewCreateInfo newinfo{};
+			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+			newinfo.image = swap.images[i].v(); // assign the current swap chain image
+			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+			newinfo.format = swap.imageFormat;
+
+			// image will maintain its original component ordering
+			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+			newinfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+			newinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			newinfo.subresourceRange.baseMipLevel = 0;
+			newinfo.subresourceRange.levelCount = 1;
+			newinfo.subresourceRange.baseArrayLayer = 0;
+			newinfo.subresourceRange.layerCount = 1;
+			VkResult result = vkCreateImageView(device, &newinfo, nullptr, swap.imageViews[i].p());
+			if (result != VK_SUCCESS) {
+				throw std::runtime_error("Failed to create image views for the swapchain!!");
+			}
+		}
 	}
 
 	void createSC() {
@@ -999,488 +981,140 @@ private:
 		swapVP.maxDepth = 1.0f;
 	}
 
-	void loadSkybox(std::string path) {
-		skybox.cubemap.path = SKYBOX_DIR + path;
-		createTexturedCubemap(skybox.cubemap, skybox.imgData);
-
-		vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
-		vkh::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkh::CUBEMAP);
-
-		skybox.bufferData.vertexOffset = 0;
-		skybox.bufferData.vertexCount = 8;
-		skybox.bufferData.indexOffset = 0;
-		skybox.bufferData.indexCount = 36;
-	}
-
-	void createMeshTextures(std::unique_ptr<dvl::Mesh>& newObject) {
-		// load the textures
-		if (newObject->material.baseColor.found) {
-			createTexturedImage(newObject->material.baseColor, true);
-			vkh::createImageView(newObject->material.baseColor);
-			vkh::createSampler(newObject->material.baseColor.sampler, newObject->material.baseColor.mipLevels);
-		}
-
-		if (newObject->material.metallicRoughness.found) {
-			createTexturedImage(newObject->material.metallicRoughness, true, vkh::METALLIC);
-			vkh::createImageView(newObject->material.metallicRoughness, vkh::METALLIC);
-			vkh::createSampler(newObject->material.metallicRoughness.sampler, newObject->material.metallicRoughness.mipLevels);
-
-		}
-
-		if (newObject->material.normalMap.found) {
-			createTexturedImage(newObject->material.normalMap, true, vkh::NORMAL);
-			vkh::createImageView(newObject->material.normalMap, vkh::NORMAL);
-			vkh::createSampler(newObject->material.normalMap.sampler, newObject->material.normalMap.mipLevels);
-
-		}
-
-		if (newObject->material.emissiveMap.found) {
-			createTexturedImage(newObject->material.emissiveMap, true, vkh::EMISSIVE);
-			vkh::createImageView(newObject->material.emissiveMap, vkh::EMISSIVE);
-			vkh::createSampler(newObject->material.emissiveMap.sampler, newObject->material.emissiveMap.mipLevels);
-
-		}
-
-		if (newObject->material.occlusionMap.found) {
-			createTexturedImage(newObject->material.occlusionMap, true, vkh::OCCLUSION);
-			vkh::createImageView(newObject->material.occlusionMap, vkh::OCCLUSION);
-			vkh::createSampler(newObject->material.occlusionMap.sampler, newObject->material.occlusionMap.mipLevels);
-
-		}
-	}
-
-	void loadModel(std::string path, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
-		uint32_t meshInd = 0; // index of the mesh in the model
-
-		tinygltf::Model gltfModel;
-		tinygltf::TinyGLTF loader;
-		std::string err;
-		std::string warn;
-
-		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
-		LOG_WARNING_IF(warn, !warn.empty());
-
-		if (!err.empty()) {
-			std::cerr << err << std::endl;
-			return;
-		}
-		if (!ret) {
-			std::cerr << "Failed to load GLTF model" << std::endl;
-			return;
-		}
-
-		// get the index of the parent node for each node
-		std::unordered_map<int, int> parentInd;
-		for (size_t nodeIndex = 0; nodeIndex < gltfModel.nodes.size(); nodeIndex++) {
-			const auto& node = gltfModel.nodes[nodeIndex];
-			for (const auto& childIndex : node.children) {
-				parentInd[childIndex] = static_cast<int>(nodeIndex);
-			}
-		}
-
-		// check if the model has any skins or animations (not supported for now)
-		LOG_WARNING_IF("The " + path + " contains skinning information", !gltfModel.skins.empty());
-		LOG_WARNING_IF("The " + path + " contains animation data", !gltfModel.animations.empty());
-		LOG_WARNING_IF("The " + path + " contains cameras", !gltfModel.cameras.empty());
-
-		// check if the gltf model relies on any extensions
-		for (const auto& extension : gltfModel.extensionsUsed) {
-			LOG_WARNING("The" + path + " relies on: " + extension);
-		}
-
-		for (const auto& mesh : gltfModel.meshes) {
-			dvl::Mesh m = dvl::loadMesh(mesh, gltfModel, parentInd, meshInd++, scale, pos, rot);
-			modelMtx.lock();
-			objects.push_back(std::make_unique<dvl::Mesh>(m));
-			modelMtx.unlock();
-			modelIndex++;
-		}
-	}
-
-	void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
-		std::string path = std::string(MODEL_DIR) + name;
-		objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
-	}
-
-	void loadTexImageData(dvl::Texture& t) {
-		if (t.found) {
-			textureTasks.emplace_back(std::async(std::launch::async, &Engine::getGLTFImageData, this, std::ref(t)));
-		}
-	}
-
-	void loadScene() {
-		objTasks.clear();
-		textureTasks.clear();
-
-		// load each mesh
-		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
-		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
-		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
-		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
-
-		for (auto& t : objTasks) {
-			t.wait();
-		}
-
-		if (!objects.size()) {
-			throw std::runtime_error("Failed to load models!");
-		}
-
-		// load the raw image data of each image
-		for (const auto& m : objects) {
-			loadTexImageData(m->material.baseColor);
-			loadTexImageData(m->material.metallicRoughness);
-			loadTexImageData(m->material.normalMap);
-			loadTexImageData(m->material.emissiveMap);
-			loadTexImageData(m->material.occlusionMap);
-		}
-
-		for (auto& t : textureTasks) {
-			t.wait();
-		}
-
-		// create textires
-		for (auto& m : objects) {
-			createMeshTextures(m);
-		}
-
-		// create all lights
-		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
-		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
-		lights.push_back(std::make_unique<Light>(createPlayerLight()));
-
-		for (auto& obj : objects) {
-			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
-		}
-	}
-
-	void setupTextures() {
-		depthFormat = vkh::findDepthFormat();
-		static bool init = true;
-
-		// opaque pass color image
-		vkh::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-			commandPool, opaquePassTextures.color.sampleCount);
-		vkh::createImageView(opaquePassTextures.color, swap.imageFormat);
-		vkh::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
-
-		// opaque pass depth image
-		vkh::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			opaquePassTextures.depth.sampleCount);
-		vkh::createImageView(opaquePassTextures.depth, vkh::DEPTH);
-		vkh::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkh::DEPTH);
-
-		// weighted color image
-		vkh::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			wboit.weightedColor.sampleCount);
-		vkh::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
-		vkh::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
-
-		// composition image
-		vkh::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			compTex.sampleCount);
-		vkh::createImageView(compTex, swap.imageFormat);
-		vkh::createSampler(compTex.sampler, compTex.mipLevels);
-
-		// shadowmaps
-		if (init) {
-			for (size_t i = 0; i < lights.size(); i++) {
-				vkh::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-					lights[i]->shadowMapData.sampleCount);
-				vkh::createImageView(lights[i]->shadowMapData, vkh::DEPTH);
-				vkh::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkh::DEPTH);
-			}
-			init = false;
-		}
-	}
-
-	void createSCImageViews() { //create the image views for the swap chain images
-		swap.imageViews.resize(swap.images.size());
-
-		for (size_t i = 0; i < swap.images.size(); i++) {
-			if (swap.imageViews[i].valid()) swap.imageViews[i].reset();
-			VkImageViewCreateInfo newinfo{};
-			newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-			newinfo.image = swap.images[i].v(); // assign the current swap chain image
-			newinfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-			newinfo.format = swap.imageFormat;
-
-			// image will maintain its original component ordering
-			newinfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
-			newinfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
-			newinfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
-			newinfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
-
-			newinfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-			newinfo.subresourceRange.baseMipLevel = 0;
-			newinfo.subresourceRange.levelCount = 1;
-			newinfo.subresourceRange.baseArrayLayer = 0;
-			newinfo.subresourceRange.layerCount = 1;
-			VkResult result = vkCreateImageView(device, &newinfo, nullptr, swap.imageViews[i].p());
-			if (result != VK_SUCCESS) {
-				throw std::runtime_error("Failed to create image views for the swapchain!!");
+	void setupFences() {
+		inFlightFences.resize(swap.images.size());
+		VkFenceCreateInfo fenceInfo{};
+		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
+		for (size_t i = 0; i < inFlightFences.size(); i++) {
+			if (vkCreateFence(device, &fenceInfo, nullptr, inFlightFences[i].p()) != VK_SUCCESS) {
+				throw std::runtime_error("failed to create synchronization objects for a frame!");
 			}
 		}
 	}
 
-	void createLightBuffer() {
-		lightData.lightCords.resize(lights.size());
-		lightData.memSize = lights.size() * sizeof(LightDataObject);
-
-		vkh::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+	void createSemaphores() {
+		vkh::createSemaphore(imageAvailableSemaphore);
+		vkh::createSemaphore(renderFinishedSemaphore);
+		vkh::createSemaphore(shadowSemaphore);
+		vkh::createSemaphore(wboitSemaphore);
+		vkh::createSemaphore(compSemaphore);
 	}
 
-	void setupBuffers() {
-		vkh::createBuffer(instanceBuffer, instanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
-		vkh::createBuffer(cam.buffer, cam.bufferMem, &camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-		createLightBuffer();
 
-		// skybox buffer data
-		vkh::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
-		vkh::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
-	}
-
-	void calcCameraMats() {
-		cam.viewMatrix = cam.getViewMatrix(mouse);
-		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
-	}
-
-	void calcShadowMats(Light& l) {
-		if (l.followPlayer) {
-			l.pos = dml::getCamWorldPos(cam.viewMatrix);
-			l.target = l.pos + dml::quatToDir(cam.quat);
-		}
-		// spotlight shadow mapping math code
-		float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
-		float nearPlane = 0.01f, farPlane = 100.0f;
-
-		dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
-		if (l.pos == l.target) {
-			std::cerr << "Light position and target are the same!" << std::endl;
-			return;
-		}
-
-		l.view = dml::lookAt(l.pos, l.target, up);
-		l.proj = dml::projection(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
-	}
-
-	void copyLightToLightCords(const Light& src, LightDataObject& dst) {
-		memcpy(&dst.view, &src.view, sizeof(dml::mat4));
-		memcpy(&dst.proj, &src.proj, sizeof(dml::mat4));
-
-		memcpy(&dst.pos, &src.pos, sizeof(dml::vec3));
-		memcpy(&dst.col, &src.col, sizeof(dml::vec3));
-		memcpy(&dst.target, &src.target, sizeof(dml::vec3));
-		memcpy(&dst.baseIntensity, &src.baseIntensity, sizeof(float));
-		memcpy(&dst.innerConeAngle, &src.innerConeAngle, sizeof(float));
-		memcpy(&dst.outerConeAngle, &src.outerConeAngle, sizeof(float));
-		memcpy(&dst.constantAttenuation, &src.constantAttenuation, sizeof(float));
-		memcpy(&dst.linearAttenuation, &src.linearAttenuation, sizeof(float));
-		memcpy(&dst.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
-	}
-
-	void updateUBO() {
-		// calc matricies for lights
-		for (size_t i = 0; i < lights.size(); i++) {
-			Light& l = *lights[i];
-			calcShadowMats(l);
-			copyLightToLightCords(l, lightData.lightCords[i]);
-		}
-
-		void* lData;
-		vkMapMemory(device, lightBufferMem.v(), 0, lightData.memSize, 0, &lData);
-		memcpy(lData, lightData.lightCords.data(), lightData.memSize);
-		vkUnmapMemory(device, lightBufferMem.v());
-
-		// calc matricies for camera
-		calcCameraMats();
-		memcpy(&camMatData.view, &cam.viewMatrix, sizeof(cam.viewMatrix));
-		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
-
-		void* cData;
-		vkMapMemory(device, cam.bufferMem.v(), 0, sizeof(camMatData), 0, &cData);
-		memcpy(cData, &camMatData, sizeof(camMatData));
-		vkUnmapMemory(device, cam.bufferMem.v());
-
-		// calc matricies for objects
-		for (size_t i = 0; i < objects.size(); i++) {
-			if (objects[i]->player) {
-				dml::mat4 t = dml::translate(cam.pos);
-				dml::mat4 r;
-				dml::mat4 s = dml::scale(objects[i]->scale);
-				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
-
-				int render = 1;
-				memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
-				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
-			}
-			else {
-				/*dml::mat4 t;
-				dml::mat4 r = dml::rotateQuat(dml::inverseQuat(cam.quat));
-				dml::mat4 s;
-				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
-
-				if (i % 2 == 0) {
-					memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
-				}
-				else {
-					memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
-				}*/
-
-				int render = 0;
-				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
-				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
-			}
-		}
-		void* matrixData;
-		vkMapMemory(device, instanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
-		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
-		vkUnmapMemory(device, instanceBufferMem.v());
-	}
-
-	void getAllTextures() {
-		allTextures.reserve(totalTextureCount);
-		size_t currentIndex = 0;
-		for (size_t i = 0; i < objects.size(); i++) {
-			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->meshHash] == i) {
-				meshTexStartInd.push_back(static_cast<int>(currentIndex));
-				if (obj->material.baseColor.found) {
-					allTextures.emplace_back(obj->material.baseColor);
-					currentIndex++;
-				}
-				if (obj->material.metallicRoughness.found) {
-					allTextures.emplace_back(obj->material.metallicRoughness);
-					currentIndex++;
-				}
-				if (obj->material.normalMap.found) {
-					allTextures.emplace_back(obj->material.normalMap);
-					currentIndex++;
-				}
-				if (obj->material.emissiveMap.found) {
-					allTextures.emplace_back(obj->material.emissiveMap);
-					currentIndex++;
-				}
-				if (obj->material.occlusionMap.found) {
-					allTextures.emplace_back(obj->material.occlusionMap);
-					currentIndex++;
-				}
-			}
-		}
-		for (size_t i = 0; i < objects.size(); i++) {
-			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->meshHash] == i) {
-				objects[i]->texIndex = i;
-			}
-		}
-		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
-	}
-
-	void createDescriptorSet(DSObject& obj, uint32_t binding, VkDescriptorType type, uint32_t size, VkShaderStageFlags shaderStages) {
-		if (obj.set.valid()) obj.set.reset(obj.pool.v());
-
-		vkh::createDSLayout(obj.layout, binding, type, size, shaderStages);
-		vkh::createDSPool(obj.pool, type, size);
-		obj.set = vkh::allocDS(&size, obj.pool, obj.layout);
-
-		obj.binding = binding;
-		obj.type = type;
-	}
-
-	void createDS() {
-		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
-		for (size_t i = 0; i < totalTextureCount; i++) {
-			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			imageInfos[i].imageView = allTextures[i].imageView.v();
-			imageInfos[i].sampler = allTextures[i].sampler.v();
-		}
-
-		uint32_t lightSize = static_cast<uint32_t>(lights.size());
-		VkDescriptorBufferInfo lightBufferInfo{};
-		lightBufferInfo.buffer = lightBuffer.v();
-		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = lightData.memSize;
-
-		shadowInfos.resize(lightSize);
-		for (size_t i = 0; i < lightSize; i++) {
-			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.v();
-			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler.v();
-		}
-
-		VkDescriptorImageInfo skyboxInfo{};
-		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		skyboxInfo.imageView = skybox.cubemap.imageView.v();
-		skyboxInfo.sampler = skybox.cubemap.sampler.v();
-
-		VkDescriptorBufferInfo camBufferInfo{};
-		camBufferInfo.buffer = cam.buffer.v();
-		camBufferInfo.offset = 0;
-		camBufferInfo.range = sizeof(CamUBO);
-
-		const uint32_t texCompSize = 2;
-		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
-		for (size_t i = 0; i < texCompSize; i++) {
-			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.v() : wboit.weightedColor.imageView.v();
-			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler.v() : wboit.weightedColor.sampler.v();
-		}
-
-		VkDescriptorImageInfo opaquePassDepthInfo{};
-		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
-		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
-
-		VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
-		tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-		tlasInfo.pAccelerationStructures = tlas.as.p();
-		tlasInfo.accelerationStructureCount = 1;
-
-		// global descriptorsets
-		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, VK_SHADER_STAGE_FRAGMENT_BIT);
-		createDescriptorSet(descs.lightData, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-		createDescriptorSet(descs.skybox, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-		createDescriptorSet(descs.cam, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
-
-		// rasterization specific descriptorsets
-		createDescriptorSet(descs.shadowmaps, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
-		createDescriptorSet(descs.composition, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT);
-		createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
-
-		// raytracing specific descriptorsets
-		VkShaderStageFlags rtFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
-		createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, rtFlags);
-
-		// create the descriptor writes
-		std::vector<VkWriteDescriptorSet> descriptorWrites{};
-		descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.binding, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.binding, 0, descs.skybox.type, skyboxInfo));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.binding, 0, descs.cam.type, camBufferInfo));
-
-		descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
-		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
-
-		descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
-
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-	}
-
-	void setupDescriptorSets(bool initial = true) {
-		totalTextureCount = 0;
-		for (size_t i = 0; i < objects.size(); i++) {
-			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->meshHash] == i) {
-				totalTextureCount += static_cast<uint32_t>(obj->textureCount);
-			}
-		}
+	void initializeMouseInput(bool initial) {
+		// set the lastX and lastY to the center of the screen
 		if (initial) {
-			getAllTextures();
+			mouse.lastX = static_cast<float>(swap.extent.width) / 2.0f;
+			mouse.lastY = static_cast<float>(swap.extent.height) / 2.0f;
+			glfwSetCursorPos(window, mouse.lastX, mouse.lastY);
 		}
-		createDS(); //create the descriptor set
+
+		// only hide and capture cursor if cam.locked is true
+		if (mouse.locked) {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+
+			// set the mouse callback
+			glfwSetCursorPosCallback(window, mouseCallback);
+		}
+		else {
+			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+		}
 	}
+
+	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
+		static bool mouseFirst = true;
+		float xp = static_cast<float>(xPos);
+		float yp = static_cast<float>(yPos);
+
+		if (mouse.locked) {
+			float xoff = mouse.lastX - xp;
+			float yoff = mouse.lastY - yp;
+			mouse.lastX = xp;
+			mouse.lastY = yp;
+
+			float sens = 0.1f;
+			xoff *= sens;
+			yoff *= sens;
+
+			mouse.rightAngle -= xoff;
+			mouse.upAngle -= yoff;
+		}
+	}
+
+	void handleKeyboardInput() {
+		double currentFrame = glfwGetTime();
+		float deltaTime = static_cast<float>(currentFrame - lastFrame);
+		lastFrame = currentFrame;
+
+		float cameraSpeed = 2.0f * deltaTime;
+
+		mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
+		mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
+
+		cam.updateQuaternion(mouse);
+		dml::vec3 forward = dml::quatToDir(cam.quat);
+		dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
+
+		// camera movement
+		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+			cam.pos -= forward * cameraSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+			cam.pos += forward * cameraSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+			cam.pos += right * cameraSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+			cam.pos -= right * cameraSpeed;
+		}
+
+		// up and down movement
+		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+			cam.pos.y -= 1 * cameraSpeed;
+		}
+		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+			cam.pos.y += 1 * cameraSpeed;
+		}
+
+		// realtime object loading
+		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
+			summonModel();
+		}
+
+		// realtime light loading
+		if (eKey.isPressed()) {
+			summonLight();
+		}
+
+		if (rKey.isPressed()) {
+			size_t vertCount = 0;
+			for (const auto& o : objects) {
+				vertCount += o->vertices.size();
+			}
+
+			double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
+
+			utils::sep();
+			std::cout << "Vertex count: " << vertCount << std::endl;
+			std::cout << "Object count: " << objects.size() << std::endl;
+			std::cout << "Light count: " << lights.size() << " / " << MAX_LIGHTS << std::endl;
+			std::cout << "Score: " << score << std::endl;
+		}
+
+		// lock / unlock mouse
+		if (escapeKey.isPressed()) {
+			mouse.locked = !mouse.locked;
+			initializeMouseInput(mouse.locked);
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	void getGLTFImageData(dvl::Texture& tex) {
 		int width = tex.gltfImage->width;
@@ -1675,6 +1309,539 @@ private:
 		freeHDRImage(imgData);
 	}
 
+	void createMeshTextures(std::unique_ptr<dvl::Mesh>& newObject) {
+		// load the textures
+		if (newObject->material.baseColor.found) {
+			createTexturedImage(newObject->material.baseColor, true);
+			vkh::createImageView(newObject->material.baseColor);
+			vkh::createSampler(newObject->material.baseColor.sampler, newObject->material.baseColor.mipLevels);
+		}
+
+		if (newObject->material.metallicRoughness.found) {
+			createTexturedImage(newObject->material.metallicRoughness, true, vkh::METALLIC);
+			vkh::createImageView(newObject->material.metallicRoughness, vkh::METALLIC);
+			vkh::createSampler(newObject->material.metallicRoughness.sampler, newObject->material.metallicRoughness.mipLevels);
+
+		}
+
+		if (newObject->material.normalMap.found) {
+			createTexturedImage(newObject->material.normalMap, true, vkh::NORMAL);
+			vkh::createImageView(newObject->material.normalMap, vkh::NORMAL);
+			vkh::createSampler(newObject->material.normalMap.sampler, newObject->material.normalMap.mipLevels);
+
+		}
+
+		if (newObject->material.emissiveMap.found) {
+			createTexturedImage(newObject->material.emissiveMap, true, vkh::EMISSIVE);
+			vkh::createImageView(newObject->material.emissiveMap, vkh::EMISSIVE);
+			vkh::createSampler(newObject->material.emissiveMap.sampler, newObject->material.emissiveMap.mipLevels);
+
+		}
+
+		if (newObject->material.occlusionMap.found) {
+			createTexturedImage(newObject->material.occlusionMap, true, vkh::OCCLUSION);
+			vkh::createImageView(newObject->material.occlusionMap, vkh::OCCLUSION);
+			vkh::createSampler(newObject->material.occlusionMap.sampler, newObject->material.occlusionMap.mipLevels);
+
+		}
+	}
+
+	void loadTexImageData(dvl::Texture& t) {
+		if (t.found) {
+			textureTasks.emplace_back(std::async(std::launch::async, &Engine::getGLTFImageData, this, std::ref(t)));
+		}
+	}
+
+	void setupTextures() {
+		depthFormat = vkh::findDepthFormat();
+		static bool init = true;
+
+		// opaque pass color image
+		vkh::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+			commandPool, opaquePassTextures.color.sampleCount);
+		vkh::createImageView(opaquePassTextures.color, swap.imageFormat);
+		vkh::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
+
+		// opaque pass depth image
+		vkh::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			opaquePassTextures.depth.sampleCount);
+		vkh::createImageView(opaquePassTextures.depth, vkh::DEPTH);
+		vkh::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkh::DEPTH);
+
+		// weighted color image
+		vkh::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			wboit.weightedColor.sampleCount);
+		vkh::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
+		vkh::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
+
+		// composition image
+		vkh::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+			compTex.sampleCount);
+		vkh::createImageView(compTex, swap.imageFormat);
+		vkh::createSampler(compTex.sampler, compTex.mipLevels);
+
+		// shadowmaps
+		if (init) {
+			for (size_t i = 0; i < lights.size(); i++) {
+				vkh::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+					lights[i]->shadowMapData.sampleCount);
+				vkh::createImageView(lights[i]->shadowMapData, vkh::DEPTH);
+				vkh::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkh::DEPTH);
+			}
+			init = false;
+		}
+	}
+
+	void loadSkybox(std::string path) {
+		skybox.cubemap.path = SKYBOX_DIR + path;
+		createTexturedCubemap(skybox.cubemap, skybox.imgData);
+
+		vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
+		vkh::createSampler(skybox.cubemap.sampler, skybox.cubemap.mipLevels, vkh::CUBEMAP);
+
+		skybox.bufferData.vertexOffset = 0;
+		skybox.bufferData.vertexCount = 8;
+		skybox.bufferData.indexOffset = 0;
+		skybox.bufferData.indexCount = 36;
+	}
+
+	void getAllTextures() {
+		allTextures.reserve(totalTextureCount);
+		size_t currentIndex = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->meshHash] == i) {
+				meshTexStartInd.push_back(static_cast<int>(currentIndex));
+				if (obj->material.baseColor.found) {
+					allTextures.emplace_back(obj->material.baseColor);
+					currentIndex++;
+				}
+				if (obj->material.metallicRoughness.found) {
+					allTextures.emplace_back(obj->material.metallicRoughness);
+					currentIndex++;
+				}
+				if (obj->material.normalMap.found) {
+					allTextures.emplace_back(obj->material.normalMap);
+					currentIndex++;
+				}
+				if (obj->material.emissiveMap.found) {
+					allTextures.emplace_back(obj->material.emissiveMap);
+					currentIndex++;
+				}
+				if (obj->material.occlusionMap.found) {
+					allTextures.emplace_back(obj->material.occlusionMap);
+					currentIndex++;
+				}
+			}
+		}
+		for (size_t i = 0; i < objects.size(); i++) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->meshHash] == i) {
+				objects[i]->texIndex = i;
+			}
+		}
+		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	void loadModel(std::string path, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
+		uint32_t meshInd = 0; // index of the mesh in the model
+
+		tinygltf::Model gltfModel;
+		tinygltf::TinyGLTF loader;
+		std::string err;
+		std::string warn;
+
+		bool ret = loader.LoadBinaryFromFile(&gltfModel, &err, &warn, path);
+		LOG_WARNING_IF(warn, !warn.empty());
+
+		if (!err.empty()) {
+			std::cerr << err << std::endl;
+			return;
+		}
+		if (!ret) {
+			std::cerr << "Failed to load GLTF model" << std::endl;
+			return;
+		}
+
+		// get the index of the parent node for each node
+		std::unordered_map<int, int> parentInd;
+		for (size_t nodeIndex = 0; nodeIndex < gltfModel.nodes.size(); nodeIndex++) {
+			const auto& node = gltfModel.nodes[nodeIndex];
+			for (const auto& childIndex : node.children) {
+				parentInd[childIndex] = static_cast<int>(nodeIndex);
+			}
+		}
+
+		// check if the model has any skins or animations (not supported for now)
+		LOG_WARNING_IF("The " + path + " contains skinning information", !gltfModel.skins.empty());
+		LOG_WARNING_IF("The " + path + " contains animation data", !gltfModel.animations.empty());
+		LOG_WARNING_IF("The " + path + " contains cameras", !gltfModel.cameras.empty());
+
+		// check if the gltf model relies on any extensions
+		for (const auto& extension : gltfModel.extensionsUsed) {
+			LOG_WARNING("The" + path + " relies on: " + extension);
+		}
+
+		for (const auto& mesh : gltfModel.meshes) {
+			dvl::Mesh m = dvl::loadMesh(mesh, gltfModel, parentInd, meshInd++, scale, pos, rot);
+			modelMtx.lock();
+			objects.push_back(std::make_unique<dvl::Mesh>(m));
+			modelMtx.unlock();
+			modelIndex++;
+		}
+	}
+
+	void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
+		std::string path = std::string(MODEL_DIR) + name;
+		objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
+	}
+
+	Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
+		Light l;
+		l.col = color;
+		l.pos = pos;
+		l.baseIntensity = intensity;
+		l.target = t;
+		l.constantAttenuation = 1.0f;
+		l.linearAttenuation = 0.1f;
+		l.quadraticAttenuation = 0.032f;
+		l.innerConeAngle = 6.6f;
+		l.outerConeAngle = 10.0f;
+		l.followPlayer = false;
+		return l;
+	}
+
+	Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
+		Light l;
+		l.col = color;
+		l.baseIntensity = intensity;
+		l.constantAttenuation = 1.0f;
+		l.linearAttenuation = 0.1f;
+		l.quadraticAttenuation = 0.032f;
+		l.innerConeAngle = 6.6f;
+		l.outerConeAngle = 20.0f;
+		l.followPlayer = true;
+		return l;
+	}
+
+	void setPlayer(uint16_t i) {
+		auto p = std::make_unique<dvl::Mesh>(*objects[i]);
+		p->player = true;
+		p->scale = dml::vec3(0.3f, 0.3f, 0.3f);
+		p->position = dml::vec3(-3.0f, 0.0f, 3.0f);
+		playerModels.push_back(i);
+		objects.push_back(std::move(p));
+	}
+
+	void loadScene() {
+		objTasks.clear();
+		textureTasks.clear();
+
+		// load each mesh
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 1.23f, 0.0f, 2.11f });
+		createObject("knight.glb", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ 3.0f, 1.0f, -2.11f }, { 0.0f, 0.0f, 0.0f }), { 3.0f, 1.0f, -2.11f });
+		createObject("sniper_rifle_pbr.glb", { 0.3f, 0.3f, 0.3f }, dml::targetToQuat({ -2.0f, 0.0f, 2.11f }, { 0.0f, 0.0f, 0.0f }), { -2.0f, 0.0f, 2.11f });
+
+		for (auto& t : objTasks) {
+			t.wait();
+		}
+
+		if (!objects.size()) {
+			throw std::runtime_error("Failed to load models!");
+		}
+
+		// load the raw image data of each image
+		for (const auto& m : objects) {
+			loadTexImageData(m->material.baseColor);
+			loadTexImageData(m->material.metallicRoughness);
+			loadTexImageData(m->material.normalMap);
+			loadTexImageData(m->material.emissiveMap);
+			loadTexImageData(m->material.occlusionMap);
+		}
+
+		for (auto& t : textureTasks) {
+			t.wait();
+		}
+
+		// create textires
+		for (auto& m : objects) {
+			createMeshTextures(m);
+		}
+
+		// create all lights
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, -4.0f }, { 0.0f, 1.4f, 0.0f })));
+		lights.push_back(std::make_unique<Light>(createLight({ -2.0f, 0.0f, 4.0f }, { 0.0f, 1.4f, 0.0f })));
+		lights.push_back(std::make_unique<Light>(createPlayerLight()));
+
+		for (auto& obj : objects) {
+			originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
+		}
+	}
+
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+
+	void createLightBuffer() {
+		lightData.lightCords.resize(lights.size());
+		lightData.memSize = lights.size() * sizeof(LightDataObject);
+
+		vkh::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+	}
+
+	void setupBuffers() {
+		vkh::createBuffer(instanceBuffer, instanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(cam.buffer, cam.bufferMem, &camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+
+		createLightBuffer();
+
+		// skybox buffer data
+		vkh::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+		vkh::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+	}
+
+	void calcCameraMats() {
+		cam.viewMatrix = cam.getViewMatrix(mouse);
+		cam.projectionMatrix = dml::projection(cam.fov, swap.extent.width / static_cast<float>(swap.extent.height), cam.nearP, cam.farP);
+	}
+
+	void calcShadowMats(Light& l) {
+		if (l.followPlayer) {
+			l.pos = dml::getCamWorldPos(cam.viewMatrix);
+			l.target = l.pos + dml::quatToDir(cam.quat);
+		}
+		// spotlight shadow mapping math code
+		float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
+		float nearPlane = 0.01f, farPlane = 100.0f;
+
+		dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
+		if (l.pos == l.target) {
+			std::cerr << "Light position and target are the same!" << std::endl;
+			return;
+		}
+
+		l.view = dml::lookAt(l.pos, l.target, up);
+		l.proj = dml::projection(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
+	}
+
+	void copyLightToLightCords(const Light& src, LightDataObject& dst) {
+		memcpy(&dst.view, &src.view, sizeof(dml::mat4));
+		memcpy(&dst.proj, &src.proj, sizeof(dml::mat4));
+
+		memcpy(&dst.pos, &src.pos, sizeof(dml::vec3));
+		memcpy(&dst.col, &src.col, sizeof(dml::vec3));
+		memcpy(&dst.target, &src.target, sizeof(dml::vec3));
+		memcpy(&dst.baseIntensity, &src.baseIntensity, sizeof(float));
+		memcpy(&dst.innerConeAngle, &src.innerConeAngle, sizeof(float));
+		memcpy(&dst.outerConeAngle, &src.outerConeAngle, sizeof(float));
+		memcpy(&dst.constantAttenuation, &src.constantAttenuation, sizeof(float));
+		memcpy(&dst.linearAttenuation, &src.linearAttenuation, sizeof(float));
+		memcpy(&dst.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
+	}
+
+	void updateUBO() {
+		// calc matricies for lights
+		for (size_t i = 0; i < lights.size(); i++) {
+			Light& l = *lights[i];
+			calcShadowMats(l);
+			copyLightToLightCords(l, lightData.lightCords[i]);
+		}
+
+		void* lData;
+		vkMapMemory(device, lightBufferMem.v(), 0, lightData.memSize, 0, &lData);
+		memcpy(lData, lightData.lightCords.data(), lightData.memSize);
+		vkUnmapMemory(device, lightBufferMem.v());
+
+		// calc matricies for camera
+		calcCameraMats();
+		memcpy(&camMatData.view, &cam.viewMatrix, sizeof(cam.viewMatrix));
+		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
+
+		void* cData;
+		vkMapMemory(device, cam.bufferMem.v(), 0, sizeof(camMatData), 0, &cData);
+		memcpy(cData, &camMatData, sizeof(camMatData));
+		vkUnmapMemory(device, cam.bufferMem.v());
+
+		// calc matricies for objects
+		for (size_t i = 0; i < objects.size(); i++) {
+			if (objects[i]->player) {
+				dml::mat4 t = dml::translate(cam.pos);
+				dml::mat4 r;
+				dml::mat4 s = dml::scale(objects[i]->scale);
+				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
+
+				int render = 1;
+				memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
+			}
+			else {
+				/*dml::mat4 t;
+				dml::mat4 r = dml::rotateQuat(dml::inverseQuat(cam.quat));
+				dml::mat4 s;
+				dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
+
+				if (i % 2 == 0) {
+					memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+				}
+				else {
+					memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				}*/
+
+				int render = 0;
+				memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+				memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
+			}
+		}
+		void* matrixData;
+		vkMapMemory(device, instanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
+		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
+		vkUnmapMemory(device, instanceBufferMem.v());
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	void createDescriptorSet(DSObject& obj, uint32_t binding, VkDescriptorType type, uint32_t size, VkShaderStageFlags shaderStages) {
+		if (obj.set.valid()) obj.set.reset(obj.pool.v());
+
+		vkh::createDSLayout(obj.layout, binding, type, size, shaderStages);
+		vkh::createDSPool(obj.pool, type, size);
+		obj.set = vkh::allocDS(&size, obj.pool, obj.layout);
+
+		obj.binding = binding;
+		obj.type = type;
+	}
+
+	void createDS() {
+		std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
+		for (size_t i = 0; i < totalTextureCount; i++) {
+			imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			imageInfos[i].imageView = allTextures[i].imageView.v();
+			imageInfos[i].sampler = allTextures[i].sampler.v();
+		}
+
+		uint32_t lightSize = static_cast<uint32_t>(lights.size());
+		VkDescriptorBufferInfo lightBufferInfo{};
+		lightBufferInfo.buffer = lightBuffer.v();
+		lightBufferInfo.offset = 0;
+		lightBufferInfo.range = lightData.memSize;
+
+		shadowInfos.resize(lightSize);
+		for (size_t i = 0; i < lightSize; i++) {
+			shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.v();
+			shadowInfos[i].sampler = lights[i]->shadowMapData.sampler.v();
+		}
+
+		VkDescriptorImageInfo skyboxInfo{};
+		skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		skyboxInfo.imageView = skybox.cubemap.imageView.v();
+		skyboxInfo.sampler = skybox.cubemap.sampler.v();
+
+		VkDescriptorBufferInfo camBufferInfo{};
+		camBufferInfo.buffer = cam.buffer.v();
+		camBufferInfo.offset = 0;
+		camBufferInfo.range = sizeof(CamUBO);
+
+		const uint32_t texCompSize = 2;
+		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(texCompSize);
+		for (size_t i = 0; i < texCompSize; i++) {
+			compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.v() : wboit.weightedColor.imageView.v();
+			compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler.v() : wboit.weightedColor.sampler.v();
+		}
+
+		VkDescriptorImageInfo opaquePassDepthInfo{};
+		opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
+		opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
+
+		VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
+		tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+		tlasInfo.pAccelerationStructures = tlas.as.p();
+		tlasInfo.accelerationStructureCount = 1;
+
+		// global descriptorsets
+		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.lightData, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.skybox, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.cam, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT);
+
+		// rasterization specific descriptorsets
+		createDescriptorSet(descs.shadowmaps, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.composition, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, texCompSize, VK_SHADER_STAGE_FRAGMENT_BIT);
+		createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+
+		// raytracing specific descriptorsets
+		VkShaderStageFlags rtFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_MISS_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_ANY_HIT_BIT_KHR;
+		createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, rtFlags);
+
+		// create the descriptor writes
+		std::vector<VkWriteDescriptorSet> descriptorWrites{};
+		descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.binding, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.binding, 0, descs.skybox.type, skyboxInfo));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.binding, 0, descs.cam.type, camBufferInfo));
+
+		descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), texCompSize));
+		descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
+
+		descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
+	}
+
+	void setupDescriptorSets(bool initial = true) {
+		totalTextureCount = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			auto& obj = objects[i];
+			if (uniqueModelIndex[obj->meshHash] == i) {
+				totalTextureCount += static_cast<uint32_t>(obj->textureCount);
+			}
+		}
+		if (initial) {
+			getAllTextures();
+		}
+		createDS(); //create the descriptor set
+	}
+
+	void updateLightDS() {
+		uint32_t lightSize = static_cast<uint32_t>(lights.size());
+
+		createLightBuffer();
+		VkDescriptorBufferInfo lightBufferInfo{};
+		lightBufferInfo.buffer = lightBuffer.v();
+		lightBufferInfo.offset = 0;
+		lightBufferInfo.range = lightData.memSize;
+
+		std::array<VkWriteDescriptorSet, 2> dw{};
+		dw[0] = vkh::createDSWrite(descs.lightData.set, 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		dw[1] = vkh::createDSWrite(descs.shadowmaps.set, 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
+
+		vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	std::vector<char> readFile(const std::string& filename) { //outputs binary data from a SPIRV shader file
+		std::ifstream file(filename, std::ios::ate | std::ios::binary); //ate means start reading at the end of the file and binary means read the file as binary
+		if (!file.is_open()) {
+			throw std::runtime_error("Failed to open file: " + filename);
+		}
+		size_t fileSize = static_cast<size_t>(file.tellg()); //tellg gets the position of the read/write head
+		std::vector<char> buffer(fileSize);
+		file.seekg(0); //seekg sets the position of the read/write head
+		file.read(buffer.data(), fileSize);
+		file.close();
+		return buffer;
+	}
 
 	VkhShaderModule createShaderMod(std::string name) {
 		std::vector<char> shaderCode = readFile(SHADER_DIR + name + std::string("_shader.spv"));
@@ -2672,6 +2839,9 @@ private:
 		}
 	}
 
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 	static void check_vk_result(VkResult err) { // used to debug imgui errors that have to do with vulkan 
 		if (err == 0)
 			return;
@@ -2748,42 +2918,45 @@ private:
 		ImGui::DestroyContext();
 	}
 
-	void setupFences() {
-		inFlightFences.resize(swap.images.size());
-		VkFenceCreateInfo fenceInfo{};
-		fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-		fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
-		for (size_t i = 0; i < inFlightFences.size(); i++) {
-			if (vkCreateFence(device, &fenceInfo, nullptr, inFlightFences[i].p()) != VK_SUCCESS) {
-				throw std::runtime_error("failed to create synchronization objects for a frame!");
+	void ImguiRenderFrame() {
+		const float p = 10.0f;
+
+		float x = static_cast<float>(swap.extent.width) - p;
+		float y = p;
+		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
+
+		// window flags
+		ImGuiWindowFlags flags =
+			ImGuiWindowFlags_NoSavedSettings |
+			ImGuiWindowFlags_NoMove |
+			ImGuiWindowFlags_NoCollapse |
+			ImGuiWindowFlags_AlwaysAutoResize |
+			ImGuiWindowFlags_NoTitleBar;
+
+		// style settings
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 11.0f);
+		ImGui::PushFont(largeFont);
+
+		// text to display
+		std::vector<std::string> text;
+		text.push_back("FPS: " + std::to_string(fps));
+		text.push_back("Objects: " + std::to_string(objects.size()));
+		text.push_back("Lights: " + std::to_string(lights.size()));
+
+		// render the frame
+		if (ImGui::Begin("Info", nullptr, flags)) {
+			for (const auto& t : text) {
+				ImGui::TextUnformatted(t.c_str());
 			}
 		}
+
+		ImGui::End();
+		ImGui::PopFont();
+		ImGui::PopStyleVar(1);
 	}
 
-	void allocateCommandBuffers(CommandBufferSet& cmdBuffers, size_t primaryCount, size_t secondaryCount = 0) {
-		cmdBuffers.primary.reserveClear(primaryCount);
-
-		for (size_t i = 0; i < primaryCount; i++) {
-			cmdBuffers.primary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
-			cmdBuffers.primary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
-		}
-
-		if (secondaryCount) {
-			cmdBuffers.secondary.reserveClear(secondaryCount);
-
-			for (size_t i = 0; i < secondaryCount; i++) {
-				cmdBuffers.secondary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
-				cmdBuffers.secondary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
-			}
-		}
-	}
-
-	void createCommandBuffers() {
-		allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
-		allocateCommandBuffers(opaquePassCommandBuffers, swap.imageCount, 1);
-		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
-		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
-	}
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
 	void createSBT() {
@@ -2989,7 +3162,6 @@ private:
 		}
 	}
 
-
 	void createTLAS() {
 		if (tlas.as.valid()) tlas.as.reset();
 
@@ -3129,6 +3301,54 @@ private:
 		vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
 	}
 
+	void setupAccelerationStructures() {
+		if (!rtEnabled) return;
+		BLAS.resize(getUniqueModels());
+
+		for (size_t i = 0; i < objects.size(); i++) {
+			size_t modelInd = uniqueModelIndex[objects[i]->meshHash];
+			if (modelInd != i) continue; // skip if not the first instance of the model
+			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
+
+			createBLAS(bufferData[bufferInd], bufferInd);
+		}
+
+		createMeshInstances();
+		createTLAS();
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
+		uint32_t count = 0;
+		for (auto& m : objects) {
+			if (m->meshHash == hash) {
+				count++;
+			}
+		}
+		return count;
+	}
+
+	size_t getUniqueModels() { // get the number of unique models
+		std::unordered_set<size_t> uniqueModels;
+		for (auto& m : objects) {
+			uniqueModels.insert(m->meshHash);
+		}
+		return uniqueModels.size();
+	}
+
+	size_t originalObjectsNameIndex(std::string name) {
+		for (size_t i = 0; i < originalObjects.size(); i++) {
+			if (originalObjects[i]->name == name) {
+				return i;
+			}
+		}
+
+		LOG_WARNING("mesh: " + name + " wasnt found in originalObjects!");
+		return 0;
+	}
+
 	void createModelBuffers(bool recreate) {
 		std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
@@ -3220,51 +3440,6 @@ private:
 		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
 	}
 
-	void setupAccelerationStructures() {
-		if (!rtEnabled) return;
-		BLAS.resize(getUniqueModels());
-
-		for (size_t i = 0; i < objects.size(); i++) {
-			size_t modelInd = uniqueModelIndex[objects[i]->meshHash];
-			if (modelInd != i) continue; // skip if not the first instance of the model
-			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
-
-			createBLAS(bufferData[bufferInd], bufferInd);
-		}
-
-		createMeshInstances();
-		createTLAS();
-	}
-
-	uint32_t getModelNumHash(size_t hash) { // get the number of models that have the same hash
-		uint32_t count = 0;
-		for (auto& m : objects) {
-			if (m->meshHash == hash) {
-				count++;
-			}
-		}
-		return count;
-	}
-
-	size_t getUniqueModels() { // get the number of unique models
-		std::unordered_set<size_t> uniqueModels;
-		for (auto& m : objects) {
-			uniqueModels.insert(m->meshHash);
-		}
-		return uniqueModels.size();
-	}
-
-	size_t originalObjectsNameIndex(std::string name) {
-		for (size_t i = 0; i < originalObjects.size(); i++) {
-			if (originalObjects[i]->name == name) {
-				return i;
-			}
-		}
-
-		LOG_WARNING("mesh: " + name + " wasnt found in originalObjects!");
-		return 0;
-	}
-
 	void cloneObject(dml::vec3 pos, std::string name, dml::vec3 scale, dml::vec4 rotation) {
 		size_t index = originalObjectsNameIndex(name);
 		const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
@@ -3295,22 +3470,6 @@ private:
 			updateTLAS(true);
 		}
 		recordSecondaryCommandBuffers();
-	}
-
-	void updateLightDS() {
-		uint32_t lightSize = static_cast<uint32_t>(lights.size());
-
-		recreateLightBuffer();
-		VkDescriptorBufferInfo lightBufferInfo{};
-		lightBufferInfo.buffer = lightBuffer.v();
-		lightBufferInfo.offset = 0;
-		lightBufferInfo.range = lightData.memSize;
-
-		std::array<VkWriteDescriptorSet, 2> dw{};
-		dw[0] = vkh::createDSWrite(descs.lightData.set, 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
-		dw[1] = vkh::createDSWrite(descs.shadowmaps.set, 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
-
-		vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
 	}
 
 	void summonLight() {
@@ -3352,9 +3511,67 @@ private:
 		recordSecondaryCommandBuffers();
 	}
 
-	void recreateLightBuffer() {
-		createLightBuffer();
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+	void allocateCommandBuffers(CommandBufferSet& cmdBuffers, size_t primaryCount, size_t secondaryCount = 0) {
+		cmdBuffers.primary.reserveClear(primaryCount);
+
+		for (size_t i = 0; i < primaryCount; i++) {
+			cmdBuffers.primary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+			cmdBuffers.primary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
+		}
+
+		if (secondaryCount) {
+			cmdBuffers.secondary.reserveClear(secondaryCount);
+
+			for (size_t i = 0; i < secondaryCount; i++) {
+				cmdBuffers.secondary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+				cmdBuffers.secondary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
+			}
+		}
 	}
+
+	void createCommandBuffers() {
+		allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
+		allocateCommandBuffers(opaquePassCommandBuffers, swap.imageCount, 1);
+		allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
+		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
+	}
+
+
+	void cmdTasksWait() {
+		for (size_t i = prevCmdIteration; i < cmdIteration; i++) {
+			cmdTasks[i].wait();
+		}
+	}
+
+	void createFrameBuffers(bool initial) {
+		if (initial) {
+			// create the shadowmap framebuffers
+			for (size_t i = 0; i < lights.size(); i++) {
+				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+			}
+		}
+
+		// create the opaque pass framebuffer
+		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView.v(), opaquePassTextures.depth.imageView.v() };
+		vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
+
+		// create the wboit framebuffer
+		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.p(), 1, swap.extent.width, swap.extent.height);
+
+		// create the composition framebuffers
+		size_t swapSize = swap.imageViews.size();
+		if (initial) swap.framebuffers.resize(swapSize);
+		for (size_t i = 0; i < swapSize; i++) {
+			std::vector<VkImageView> attachments = { compTex.imageView.v(), swap.imageViews[i].v() };
+			vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
+		}
+	}
+
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), instanceBuffer.v() };
@@ -3456,43 +3673,6 @@ private:
 		}
 	}
 
-	void ImguiRenderFrame() {
-		const float p = 10.0f;
-
-		float x = static_cast<float>(swap.extent.width) - p;
-		float y = p;
-		ImGui::SetNextWindowPos(ImVec2(x, y), ImGuiCond_Always, ImVec2(1.0f, 0.0f));
-
-		// window flags
-		ImGuiWindowFlags flags =
-			ImGuiWindowFlags_NoSavedSettings |
-			ImGuiWindowFlags_NoMove |
-			ImGuiWindowFlags_NoCollapse |
-			ImGuiWindowFlags_AlwaysAutoResize |
-			ImGuiWindowFlags_NoTitleBar;
-
-		// style settings
-		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 11.0f);
-		ImGui::PushFont(largeFont);
-
-		// text to display
-		std::vector<std::string> text;
-		text.push_back("FPS: " + std::to_string(fps));
-		text.push_back("Objects: " + std::to_string(objects.size()));
-		text.push_back("Lights: " + std::to_string(lights.size()));
-
-		// render the frame
-		if (ImGui::Begin("Info", nullptr, flags)) {
-			for (const auto& t : text) {
-				ImGui::TextUnformatted(t.c_str());
-			}
-		}
-
-		ImGui::End();
-		ImGui::PopFont();
-		ImGui::PopStyleVar(1);
-	}
-
 	void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		if (startCommand) {
 			if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
@@ -3581,13 +3761,6 @@ private:
 		wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
 
 		recordOpaqueSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
-	}
-
-
-	void cmdTasksWait() {
-		for (size_t i = prevCmdIteration; i < cmdIteration; i++) {
-			cmdTasks[i].wait();
-		}
 	}
 
 	void recordShadowCommandBuffers() {
@@ -3761,37 +3934,21 @@ private:
 		cmdTasksWait();
 	}
 
-	void createFrameBuffers(bool initial) {
-		if (initial) {
-			// create the shadowmap framebuffers
-			for (size_t i = 0; i < lights.size(); i++) {
-				vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
-			}
-		}
+	void recordAllCommandBuffers() { // record every command buffer
+		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
-		// create the opaque pass framebuffer
-		std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView.v(), opaquePassTextures.depth.imageView.v() };
-		vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
+		cmdTasks.clear();
+		cmdIteration = 0;
+		prevCmdIteration = 0;
 
-		// create the wboit framebuffer
-		vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.p(), 1, swap.extent.width, swap.extent.height);
-
-		// create the composition framebuffers
-		size_t swapSize = swap.imageViews.size();
-		if (initial) swap.framebuffers.resize(swapSize);
-		for (size_t i = 0; i < swapSize; i++) {
-			std::vector<VkImageView> attachments = { compTex.imageView.v(), swap.imageViews[i].v() };
-			vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
-		}
+		recordShadowCommandBuffers();
+		recordOpaqueCommandBuffers();
+		recordWBOITCommandBuffers();
+		recordCompCommandBuffers();
 	}
 
-	void createSemaphores() {
-		vkh::createSemaphore(imageAvailableSemaphore);
-		vkh::createSemaphore(renderFinishedSemaphore);
-		vkh::createSemaphore(shadowSemaphore);
-		vkh::createSemaphore(wboitSemaphore);
-		vkh::createSemaphore(compSemaphore);
-	}
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	void recreateSwap() {
 		std::cout << "Recreating swap chain..." << std::endl;
@@ -3876,19 +4033,6 @@ private:
 		}
 	}
 
-	void recordAllCommandBuffers() { // record every command buffer
-		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
-
-		cmdTasks.clear();
-		cmdIteration = 0;
-		prevCmdIteration = 0;
-
-		recordShadowCommandBuffers();
-		recordOpaqueCommandBuffers();
-		recordWBOITCommandBuffers();
-		recordCompCommandBuffers();
-	}
-
 	void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
 		auto endTime = std::chrono::steady_clock::now();
 		frameCount++;
@@ -3961,114 +4105,6 @@ private:
 
 		vkDeviceWaitIdle(device);
 		imguiCleanup();
-	}
-
-	void initializeMouseInput(bool initial) {
-		// set the lastX and lastY to the center of the screen
-		if (initial) {
-			mouse.lastX = static_cast<float>(swap.extent.width) / 2.0f;
-			mouse.lastY = static_cast<float>(swap.extent.height) / 2.0f;
-			glfwSetCursorPos(window, mouse.lastX, mouse.lastY);
-		}
-
-		// only hide and capture cursor if cam.locked is true
-		if (mouse.locked) {
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-
-			// set the mouse callback
-			glfwSetCursorPosCallback(window, mouseCallback);
-		}
-		else {
-			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-		}
-	}
-
-	static void mouseCallback(GLFWwindow* window, double xPos, double yPos) {
-		static bool mouseFirst = true;
-		float xp = static_cast<float>(xPos);
-		float yp = static_cast<float>(yPos);
-
-		if (mouse.locked) {
-			float xoff = mouse.lastX - xp;
-			float yoff = mouse.lastY - yp;
-			mouse.lastX = xp;
-			mouse.lastY = yp;
-
-			float sens = 0.1f;
-			xoff *= sens;
-			yoff *= sens;
-
-			mouse.rightAngle -= xoff;
-			mouse.upAngle -= yoff;
-		}
-	}
-
-	void handleKeyboardInput() {
-		double currentFrame = glfwGetTime();
-		float deltaTime = static_cast<float>(currentFrame - lastFrame);
-		lastFrame = currentFrame;
-
-		float cameraSpeed = 2.0f * deltaTime;
-
-		mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
-		mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
-
-		cam.updateQuaternion(mouse);
-		dml::vec3 forward = dml::quatToDir(cam.quat);
-		dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
-
-		// camera movement
-		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-			cam.pos -= forward * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-			cam.pos += forward * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-			cam.pos += right * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-			cam.pos -= right * cameraSpeed;
-		}
-
-		// up and down movement
-		if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-			cam.pos.y -= 1 * cameraSpeed;
-		}
-		if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-			cam.pos.y += 1 * cameraSpeed;
-		}
-
-		// realtime object loading
-		if (glfwGetKey(window, GLFW_KEY_Q) == GLFW_PRESS) {
-			summonModel();
-		}
-
-		// realtime light loading
-		if (eKey.isPressed()) {
-			summonLight();
-		}
-
-		if (rKey.isPressed()) {
-			size_t vertCount = 0;
-			for (const auto& o : objects) {
-				vertCount += o->vertices.size();
-			}
-
-			double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
-
-			utils::sep();
-			std::cout << "Vertex count: " << vertCount << std::endl;
-			std::cout << "Object count: " << objects.size() << std::endl;
-			std::cout << "Light count: " << lights.size() << " / " << MAX_LIGHTS << std::endl;
-			std::cout << "Score: " << score << std::endl;
-		}
-
-		// lock / unlock mouse
-		if (escapeKey.isPressed()) {
-			mouse.locked = !mouse.locked;
-			initializeMouseInput(mouse.locked);
-		}
 	}
 
 	void initVulkan() {
