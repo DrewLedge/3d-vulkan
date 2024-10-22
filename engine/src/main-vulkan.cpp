@@ -38,7 +38,6 @@
 #include <cmath>
 #include <memory>
 
-
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
@@ -458,6 +457,7 @@ private:
 		VkStridedDeviceAddressRegionKHR raygenR;
 		VkStridedDeviceAddressRegionKHR missR;
 		VkStridedDeviceAddressRegionKHR hitR;
+		VkStridedDeviceAddressRegionKHR callR;
 	};
 
 	CamData cam;
@@ -495,6 +495,7 @@ private:
 	CommandBufferSet shadowMapCommandBuffers;
 	CommandBufferSet wboitCommandBuffers;
 	CommandBufferSet compCommandBuffers;
+	CommandBufferSet rtCommandBuffers;
 
 	// buffers
 	VkhBuffer vertBuffer;
@@ -3104,6 +3105,10 @@ private:
 		sbt.hitR.deviceAddress = sbtAddr + (2 * sbt.entryS);
 		sbt.hitR.stride = sbt.entryS;
 		sbt.hitR.size = sbt.entryS;
+
+		sbt.callR.deviceAddress = 0;
+		sbt.callR.stride = 0;
+		sbt.callR.size = 0;
 	}
 
 	void createBLAS(const vkh::BufData& bufferData, size_t index) {
@@ -3623,6 +3628,10 @@ private:
 			allocateCommandBuffers(opaquePassCommandBuffers, swap.imageCount, 1);
 			allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
 		}
+		else {
+			allocateCommandBuffers(rtCommandBuffers, swap.imageCount, 0);
+		}
+
 		allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
 	}
 
@@ -3844,10 +3853,7 @@ private:
 	}
 
 	void recordSecondaryCommandBuffers() {
-		if (rtEnabled) {
-
-		}
-		else {
+		if (!rtEnabled) {
 			recordRasterizationSecondaryCommandBuffers();
 		}
 	}
@@ -4024,6 +4030,44 @@ private:
 		cmdTasksWait();
 	}
 
+	void recordRTCommandBuffers() {
+		prevCmdIteration = cmdIteration;
+
+		const std::array<VkDescriptorSet, 5> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v() };
+
+		VkCommandBufferInheritanceInfo inheritInfo{};
+		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+		inheritInfo.renderPass = VK_NULL_HANDLE;
+		inheritInfo.framebuffer = VK_NULL_HANDLE;
+		inheritInfo.subpass = 0;
+
+		VkCommandBufferBeginInfo beginInfo{};
+		beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+		beginInfo.pInheritanceInfo = &inheritInfo;
+
+		for (size_t i = 0; i < swap.images.size(); i++) {
+			cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
+				VkCommandBuffer& commandBuffer = rtCommandBuffers.primary[i].v();
+				if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+					throw std::runtime_error("failed to begin recording rt command buffer!");
+				}
+
+				vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.pipeline.v());
+				vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.layout.v(), 0, static_cast<uint32_t>(ds.size()), ds.data(), 0, nullptr);
+
+				vkhfp::vkCmdTraceRaysKHR(commandBuffer, &sbt.raygenR, &sbt.missR, &sbt.hitR, &sbt.callR, swap.extent.width, swap.extent.height, 1);
+
+				if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+					throw std::runtime_error("failed to record rt command buffer!");
+				}
+				}));
+			cmdIteration++;
+		}
+
+		cmdTasksWait();
+	}
+
 	void recordAllCommandBuffers() { // record every command buffer
 		vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
@@ -4031,11 +4075,15 @@ private:
 		cmdIteration = 0;
 		prevCmdIteration = 0;
 
-		if (!rtEnabled) {
+		if (rtEnabled) {
+			recordRTCommandBuffers();
+		}
+		else {
 			recordShadowCommandBuffers();
 			recordOpaqueCommandBuffers();
 			recordWBOITCommandBuffers();
 		}
+
 		recordCompCommandBuffers();
 	}
 
