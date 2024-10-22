@@ -315,6 +315,7 @@ private:
 
 		// raytracing
 		DSObject tlas;
+		DSObject rtPresent;
 
 		// rasterzation
 		DSObject composition;
@@ -537,7 +538,9 @@ private:
 	std::vector<BlasData> BLAS;
 	TlasData tlas;
 	PipelineData rtPipeline;
+	PipelineData rtPresentPipeline;
 	SBT sbt;
+	dvl::Texture presentTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1756,11 +1759,16 @@ private:
 
 		// raytracing
 		VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
+		VkDescriptorImageInfo rtPresentInfo{};
 
 		if (rtEnabled) {
 			tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
 			tlasInfo.pAccelerationStructures = tlas.as.p();
 			tlasInfo.accelerationStructureCount = 1;
+
+			rtPresentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+			rtPresentInfo.imageView = presentTex.imageView.v();
+			rtPresentInfo.sampler = presentTex.sampler.v();
 		}
 		else {
 			for (size_t i = 0; i < 2; i++) {
@@ -1790,12 +1798,12 @@ private:
 		if (rtEnabled) {
 			VkShaderStageFlags tlasSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, tlasSS);
+			createDescriptorSet(descs.rtPresent, 7, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			textursSS = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			lightDataSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			skyboxSS = VK_SHADER_STAGE_MISS_BIT_KHR;
 			camSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
-
 		}
 
 		// rasterization specific descriptorsets
@@ -1825,6 +1833,7 @@ private:
 
 		if (rtEnabled) {
 			descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
+			descriptorWrites.push_back(vkh::createDSWrite(descs.rtPresent.set, descs.rtPresent.binding, 0, descs.rtPresent.type, rtPresentInfo));
 		}
 		else {
 			descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
@@ -2863,10 +2872,165 @@ private:
 		}
 	}
 
+	void createRTPresentationPipeline() {
+		VkhShaderModule vertShaderModule = createShaderMod("rt_present_vert");
+		VkhShaderModule fragShaderModule = createShaderMod("rt_present_frag");
+
+		VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+		VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+		VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+
+		VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+		vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+		vertexInputInfo.vertexBindingDescriptionCount = 0;
+		vertexInputInfo.pVertexBindingDescriptions = nullptr;
+		vertexInputInfo.vertexAttributeDescriptionCount = 0;
+		vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+
+		VkPipelineInputAssemblyStateCreateInfo inputAssem{};
+		inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+		inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+		inputAssem.primitiveRestartEnable = VK_FALSE;
+
+		VkRect2D scissor{};
+		scissor.offset = { 0, 0 };
+		scissor.extent = swap.extent;
+		VkPipelineViewportStateCreateInfo vpState{};
+		vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+		vpState.viewportCount = 1;
+		vpState.pViewports = &swapVP;
+		vpState.scissorCount = 1;
+		vpState.pScissors = &scissor;
+
+		VkPipelineRasterizationStateCreateInfo rasterizer{};
+		rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+		rasterizer.depthClampEnable = VK_FALSE;
+		rasterizer.rasterizerDiscardEnable = VK_FALSE;
+		rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+		rasterizer.lineWidth = 1.0f;
+		rasterizer.cullMode = VK_CULL_MODE_NONE; // no culling
+		rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+		rasterizer.depthBiasEnable = VK_FALSE;
+		rasterizer.depthBiasConstantFactor = 0.0f;
+		rasterizer.depthBiasClamp = 0.0f;
+		rasterizer.depthBiasSlopeFactor = 0.0f;
+
+		VkPipelineMultisampleStateCreateInfo multiSamp{};
+		multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+		multiSamp.rasterizationSamples = presentTex.sampleCount;
+		multiSamp.alphaToCoverageEnable = VK_FALSE;
+		multiSamp.alphaToOneEnable = VK_FALSE;
+		multiSamp.sampleShadingEnable = VK_TRUE;
+		multiSamp.minSampleShading = 0.2f;
+
+		VkPipelineDepthStencilStateCreateInfo dStencil{};
+		dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+		dStencil.depthTestEnable = VK_FALSE; // no depth write or test
+		dStencil.depthWriteEnable = VK_FALSE;
+		dStencil.depthBoundsTestEnable = VK_FALSE;
+		dStencil.minDepthBounds = 0.0f;
+		dStencil.maxDepthBounds = 1.0f;
+		dStencil.stencilTestEnable = VK_FALSE;
+
+		VkPipelineColorBlendAttachmentState colorBA{};
+		colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+		colorBA.blendEnable = VK_TRUE;
+		colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+		colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+		colorBA.colorBlendOp = VK_BLEND_OP_ADD;
+		colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+		colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+		colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+
+		VkPipelineColorBlendStateCreateInfo colorBS{};
+		colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+		colorBS.logicOpEnable = VK_FALSE;
+		colorBS.logicOp = VK_LOGIC_OP_COPY;
+		colorBS.attachmentCount = 1;
+		colorBS.pAttachments = &colorBA;
+
+		VkAttachmentDescription colorAttachment{};
+		colorAttachment.format = swap.imageFormat;
+		colorAttachment.samples = presentTex.sampleCount;
+		colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+		colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentReference colorAttachmentRef{};
+		colorAttachmentRef.attachment = 0;
+		colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkAttachmentDescription colorResolve = {};
+		colorResolve.format = swap.imageFormat;
+		colorResolve.samples = VK_SAMPLE_COUNT_1_BIT;
+		colorResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorResolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+		colorResolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+		colorResolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+		colorResolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		colorResolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+		VkAttachmentReference colorResolveAttachmentRef{};
+		colorResolveAttachmentRef.attachment = 1;
+		colorResolveAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+		VkSubpassDescription subpass{};
+		subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+		subpass.colorAttachmentCount = 1;
+		subpass.pColorAttachments = &colorAttachmentRef;
+		subpass.pResolveAttachments = &colorResolveAttachmentRef;
+
+		std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, colorResolve };
+		VkRenderPassCreateInfo renderPassInf{};
+		renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+		renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
+		renderPassInf.pAttachments = attachments.data();
+		renderPassInf.subpassCount = 1;
+		renderPassInf.pSubpasses = &subpass;
+		VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, rtPresentPipeline.renderPass.p());
+		if (renderPassResult != VK_SUCCESS) {
+			throw std::runtime_error("failed to create render pass!");
+		}
+
+		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
+		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+		pipelineLayoutInf.setLayoutCount = 1;
+		pipelineLayoutInf.pSetLayouts = descs.composition.layout.p();
+		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPresentPipeline.layout.p());
+		if (result != VK_SUCCESS) {
+			throw std::runtime_error("failed to create pipeline layout for rt presentation!!");
+		}
+
+		VkGraphicsPipelineCreateInfo pipelineInf{};
+		pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+		pipelineInf.stageCount = 2;
+		pipelineInf.pStages = stages;
+		pipelineInf.pVertexInputState = &vertexInputInfo;
+		pipelineInf.pInputAssemblyState = &inputAssem;
+		pipelineInf.pViewportState = &vpState;
+		pipelineInf.pRasterizationState = &rasterizer;
+		pipelineInf.pMultisampleState = &multiSamp;
+		pipelineInf.pDepthStencilState = &dStencil;
+		pipelineInf.pColorBlendState = &colorBS;
+		pipelineInf.layout = rtPresentPipeline.layout.v();
+		pipelineInf.renderPass = rtPresentPipeline.renderPass.v();
+		pipelineInf.subpass = 0;
+		VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, rtPresentPipeline.pipeline.p());
+		if (pipelineResult != VK_SUCCESS) {
+			throw std::runtime_error("failed to create graphics pipeline for the composition pass!");
+		}
+	}
+
 	void setupPipelines(bool shadow) {
 		if (rtEnabled) {
 			rtPipeline.reset();
 			createRayTracingPipeline();
+
+			rtPresentPipeline.reset();
+			createRTPresentationPipeline();
 		}
 		else {
 			opaquePassPipeline.reset();
