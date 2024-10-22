@@ -56,7 +56,7 @@ const std::string SKYBOX_DIR = "assets/skyboxes/";
 const std::string FONT_DIR = "assets/fonts/";
 
 bool rtSupported = false; // a bool if raytracing is supported on the device
-bool rtEnabled = false; // a bool if raytracing has been enabled
+bool rtEnabled = true; // a bool if raytracing has been enabled
 
 struct MouseData {
 	bool locked;
@@ -540,6 +540,8 @@ private:
 	PipelineData rtPipeline;
 	PipelineData rtPresentPipeline;
 	SBT sbt;
+
+	dvl::Texture rtTex{};
 	dvl::Texture presentTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
@@ -1362,7 +1364,17 @@ private:
 		static bool init = true;
 
 		if (rtEnabled) {
+			// rtpresent image
+			vkh::createImage(presentTex.image, presentTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				presentTex.sampleCount);
+			vkh::createImageView(presentTex, swap.imageFormat);
+			vkh::createSampler(presentTex.sampler, presentTex.mipLevels);
 
+			// rt image
+			vkh::createImage(rtTex.image, rtTex.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				rtTex.sampleCount);
+			vkh::createImageView(rtTex, VK_FORMAT_R16G16B16A16_SFLOAT);
+			vkh::createSampler(rtTex.sampler, rtTex.mipLevels);
 		}
 		else {
 			// opaque pass color image
@@ -1767,8 +1779,8 @@ private:
 			tlasInfo.accelerationStructureCount = 1;
 
 			rtPresentInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-			rtPresentInfo.imageView = presentTex.imageView.v();
-			rtPresentInfo.sampler = presentTex.sampler.v();
+			rtPresentInfo.imageView = rtTex.imageView.v();
+			rtPresentInfo.sampler = rtTex.sampler.v();
 		}
 		else {
 			for (size_t i = 0; i < 2; i++) {
@@ -2998,7 +3010,7 @@ private:
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
 		pipelineLayoutInf.setLayoutCount = 1;
-		pipelineLayoutInf.pSetLayouts = descs.composition.layout.p();
+		pipelineLayoutInf.pSetLayouts = descs.rtPresent.layout.p();
 		VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPresentPipeline.layout.p());
 		if (result != VK_SUCCESS) {
 			throw std::runtime_error("failed to create pipeline layout for rt presentation!!");

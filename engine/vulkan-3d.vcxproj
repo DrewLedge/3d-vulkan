@@ -153,6 +153,8 @@
     <None Include="shaders\pathtracing\closehit.rchit" />
     <None Include="shaders\pathtracing\gen.rgen" />
     <None Include="shaders\pathtracing\miss.rmiss" />
+    <None Include="shaders\pathtracing\present.frag" />
+    <None Include="shaders\pathtracing\present.vert" />
     <None Include="shaders\shadow.frag" />
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\sky.frag" />

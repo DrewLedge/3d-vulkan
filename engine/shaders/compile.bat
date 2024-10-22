@@ -23,6 +23,6 @@ glslc --target-env=vulkan1.3 -O pathtracing/closehit.rchit -o compiled/closehit_
 glslc --target-env=vulkan1.3 -O pathtracing/gen.rgen -o compiled/gen_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 glslc --target-env=vulkan1.3 -O pathtracing/miss.rmiss -o compiled/miss_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
-glslc --target-env=vulkan1.3 -O pathtracing/present.vert -o compiled/rt_present_vert.spv >> shaderlogs/ShaderError.txt 2>&1
-glslc --target-env=vulkan1.3 -O pathtracing/present.frag -o compiled/rt_present_frag.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O pathtracing/present.vert -o compiled/rt_present_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O pathtracing/present.frag -o compiled/rt_present_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 

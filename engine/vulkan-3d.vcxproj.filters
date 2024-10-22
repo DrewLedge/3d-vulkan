@@ -117,6 +117,12 @@
     <None Include="shaders\wboit.vert">
       <Filter>Shaders\rasterization</Filter>
     </None>
+    <None Include="shaders\pathtracing\present.frag">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\present.vert">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">
