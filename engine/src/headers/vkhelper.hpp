@@ -557,6 +557,13 @@ public:
 			sourceStage = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
 			destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
 		}
+		else if (newLayout == VK_IMAGE_LAYOUT_GENERAL) {
+			VkAccessFlags a = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT;
+			barrier.srcAccessMask = a;
+			barrier.dstAccessMask = a;
+			sourceStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+			destinationStage = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+		}
 		else {
 			throw std::invalid_argument("Unsupported layout transition!");
 		}
