@@ -18,11 +18,14 @@ struct LightData {
 	float quadraticAttenuation;
 };
 
-layout (set = 1, binding = 1) readonly buffer LightBuffer {
+layout (set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-layout(set = 2, binding = 7) uniform accelerationStructureEXT TLAS;
+layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
+
+layout(location = 0) rayPayloadInEXT vec4 payload;
 
 void main() {
+    payload = vec4(1.0, 0.0, 0.0, 1.0); // red
 }

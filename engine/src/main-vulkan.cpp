@@ -518,6 +518,7 @@ private:
 	VkhSemaphore shadowSemaphore;
 	VkhSemaphore wboitSemaphore;
 	VkhSemaphore compSemaphore;
+	VkhSemaphore rtSemaphore;
 
 	// descriptor sets and pools
 	DesciptorSetsObj descs;
@@ -1002,6 +1003,9 @@ private:
 		if (!rtEnabled) {
 			vkh::createSemaphore(shadowSemaphore);
 			vkh::createSemaphore(wboitSemaphore);
+		}
+		else {
+			vkh::createSemaphore(rtSemaphore);
 		}
 
 		vkh::createSemaphore(compSemaphore);
@@ -1802,8 +1806,8 @@ private:
 		// raytracing specific descriptorsets
 		if (rtEnabled) {
 			VkShaderStageFlags tlasSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
-			createDescriptorSet(descs.tlas, 7, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, tlasSS);
-			createDescriptorSet(descs.rt, 8, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+			createDescriptorSet(descs.tlas, 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, tlasSS);
+			createDescriptorSet(descs.rt, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			textursSS = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			lightDataSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
@@ -1813,9 +1817,9 @@ private:
 
 		// rasterization specific descriptorsets
 		else {
-			createDescriptorSet(descs.shadowmaps, 2, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
-			createDescriptorSet(descs.composition, 5, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT);
-			createDescriptorSet(descs.opaqueDepth, 6, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+			createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
+			createDescriptorSet(descs.composition, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT);
+			createDescriptorSet(descs.opaqueDepth, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
 			textursSS = VK_SHADER_STAGE_FRAGMENT_BIT;
 			lightDataSS = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -1825,9 +1829,9 @@ private:
 
 		// global descriptorsets
 		createDescriptorSet(descs.textures, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, totalTextureCount, textursSS);
-		createDescriptorSet(descs.lightData, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | lightDataSS);
-		createDescriptorSet(descs.skybox, 3, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, skyboxSS);
-		createDescriptorSet(descs.cam, 4, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, camSS);
+		createDescriptorSet(descs.lightData, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | lightDataSS);
+		createDescriptorSet(descs.skybox, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, skyboxSS);
+		createDescriptorSet(descs.cam, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, camSS);
 
 		// create the descriptor writes
 		std::vector<VkWriteDescriptorSet> descriptorWrites{};
@@ -2869,7 +2873,7 @@ private:
 		shaderGroups[2].closestHitShader = 2;
 
 		// create the pipeline layoyut
-		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v(), descs.rt.layout.v() };
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -4033,7 +4037,7 @@ private:
 	void recordRTCommandBuffers() {
 		prevCmdIteration = cmdIteration;
 
-		const std::array<VkDescriptorSet, 5> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v() };
+		const std::array<VkDescriptorSet, 6> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v(), descs.rt.set.v() };
 
 		VkCommandBufferInheritanceInfo inheritInfo{};
 		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -4150,7 +4154,8 @@ private:
 			submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
 		}
 		else {
-			submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, renderFinishedSemaphore));
+			submitInfos.push_back(vkh::createSubmitInfo(&rtCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, rtSemaphore));
+			submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, rtSemaphore, renderFinishedSemaphore));
 		}
 
 		// submit all command buffers in a single call

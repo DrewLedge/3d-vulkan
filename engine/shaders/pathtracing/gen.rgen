@@ -16,16 +16,35 @@ struct LightData {
 	float quadraticAttenuation;
 };
 
-layout (set = 0, binding = 1) readonly buffer LightBuffer {
+layout (set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-layout(set = 1, binding = 4) uniform CamBufferObject {
+layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;
 
-layout(set = 2, binding = 7) uniform accelerationStructureEXT TLAS;
+layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
+
+layout(set = 5, binding = 0, rgba16f) uniform image2D rtTexture;
+
+layout(location = 0) rayPayloadEXT vec4 payload;
 
 void main() {
+    traceRayEXT(
+        TLAS,
+        gl_RayFlagsOpaqueEXT, // flags
+        0xFF,                 // cull mask
+        0,                    // sbt offset
+        0,                    // sbt stride
+        0,                    // miss index
+        vec3(0.0),            // pos
+        0.0,                  // min-range
+        vec3(0.0),            // dir
+        100.0,                // max-range
+        0                     // payload
+    );
+
+    imageStore(rtTexture, ivec2(gl_LaunchIDEXT.xy), payload);
 }
