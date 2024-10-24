@@ -4,7 +4,7 @@
 #extension GL_EXT_shadow_samplers : enable
 
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
-layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
+layout(set = 2, binding = 0) uniform sampler2DShadow shadowMapSamplers[];
 
 layout(location = 0) in vec4 inFragColor;
 layout(location = 1) in vec2 inTexCoord;
@@ -32,7 +32,7 @@ struct LightData {
 	float quadraticAttenuation;
 };
 
-layout (set=1, binding = 1) readonly buffer LightBuffer {
+layout (set=1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 

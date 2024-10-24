@@ -26,7 +26,7 @@ layout(location = 5) out mat3 outTBN;
 layout(location = 8) flat out uint outRender;
 layout(location = 9) flat out uint outBitfield; // number of textures per model
 
-layout(set = 3, binding = 4) uniform CamBufferObject {
+layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;

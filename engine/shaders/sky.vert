@@ -3,7 +3,7 @@
 layout(location = 0) in vec3 inPos; 
 layout(location = 0) out vec4 outPos;
 
-layout(set = 1, binding = 4) uniform CamBufferObject {
+layout(set = 1, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;

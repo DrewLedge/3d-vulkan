@@ -5,9 +5,9 @@
 
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
-layout(set = 2, binding = 2) uniform sampler2DShadow shadowMapSamplers[];
+layout(set = 2, binding = 0) uniform sampler2DShadow shadowMapSamplers[];
 
-layout(set = 4, binding = 6) uniform sampler2D depthSampler;
+layout(set = 4, binding = 0) uniform sampler2D depthSampler;
 
 struct LightData {
     mat4 view;
@@ -23,7 +23,7 @@ struct LightData {
 	float quadraticAttenuation;
 };
 
-layout (set=1, binding = 1) readonly buffer LightBuffer {
+layout (set=1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
