@@ -55,7 +55,7 @@ const std::string SKYBOX_DIR = "assets/skyboxes/";
 const std::string FONT_DIR = "assets/fonts/";
 
 bool rtSupported = false; // a bool if raytracing is supported on the device
-bool rtEnabled = false; // a bool if raytracing has been enabled
+bool rtEnabled = true; // a bool if raytracing has been enabled
 
 struct MouseData {
 	bool locked;

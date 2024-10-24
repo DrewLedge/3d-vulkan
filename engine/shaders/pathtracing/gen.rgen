@@ -31,7 +31,28 @@ layout(set = 5, binding = 0, rgba16f) uniform image2D rtTexture;
 
 layout(location = 0) rayPayloadEXT vec4 payload;
 
+vec3 getDir(vec2 uv) {
+    // convert the uv to a -1 to 1 range (ndc)
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    // reconstruct the clip space pos from the ndc cords
+    vec4 clip = vec4(ndc, 1.0, 1.0);
+
+    // transform to view space by multiplying by the inv proj
+    vec4 view = inverse(CamUBO.proj) * clip;
+
+    // get the view dir by perspective dividing and normalizing it
+    vec3 viewDir = normalize(view.xyz / view.w);
+
+    // multiply the dir by the inverse view matrix to get dir in world space
+    return (inverse(CamUBO.view) * vec4(viewDir, 0.0)).xyz;
+}
+
+
 void main() {
+    vec2 uv = (0.5 + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
+    vec3 pos = inverse(CamUBO.view)[3].xyz;
+    vec3 dir = getDir(uv);
     traceRayEXT(
         TLAS,
         gl_RayFlagsOpaqueEXT, // flags
@@ -39,9 +60,9 @@ void main() {
         0,                    // sbt offset
         0,                    // sbt stride
         0,                    // miss index
-        vec3(0.0),            // pos
+        pos,                  // pos
         0.0,                  // min-range
-        vec3(0.0),            // dir
+        dir,                  // dir
         100.0,                // max-range
         0                     // payload
     );

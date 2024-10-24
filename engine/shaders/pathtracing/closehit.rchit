@@ -27,5 +27,5 @@ layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
 layout(location = 0) rayPayloadInEXT vec4 payload;
 
 void main() {
-    payload = vec4(1.0, 0.0, 0.0, 1.0); // red
+    payload = vec4(1.0 - gl_HitTEXT, gl_HitTEXT * 0.4, gl_HitTEXT, 1.0);
 }
