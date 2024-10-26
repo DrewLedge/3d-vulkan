@@ -707,7 +707,7 @@ public:
 		return result;
 	}
 
-	static mat3 mat4ToMat3(const mat4& m, int excludeRow, int excludeCol) {
+	static mat3 mat4ToMat3(const mat4& m, int excludeCol, int excludeRow) {
 		mat3 res;
 		int x = 0, y = 0;
 		for (int i = 0; i < 4; i++) {
@@ -715,7 +715,7 @@ public:
 			y = 0;
 			for (int j = 0; j < 4; j++) {
 				if (j == excludeCol) continue; // skip the excluded column
-				res.m[x][y] = m.m[i][j];
+				res.m[x][y] = m.m[j][i];
 				y++;
 			}
 			x++;
@@ -755,7 +755,7 @@ public:
 		for (int i = 0; i < 4; i++) {
 			for (int j = 0; j < 4; j++) {
 				int sign = ((i + j) % 2 == 0) ? 1 : -1;
-				mat3 sub = mat4ToMat3(m, i, j);
+				mat3 sub = mat4ToMat3(m, j, i);
 
 				// the adjugate is the tranpose of the cofactor (thus why its ij instead of ji)
 				adjugate.m[i][j] = sign * det3(sub);
@@ -769,7 +769,7 @@ public:
 
 	static vec3 getCamWorldPos(const mat4& viewMat) {
 		mat4 invView = inverseMatrix(viewMat);
-		vec3 cameraWorldPosition(invView.m[0][3], invView.m[1][3], invView.m[2][3]);
+		vec3 cameraWorldPosition(invView.m[3][0], invView.m[3][1], invView.m[3][2]);
 		return cameraWorldPosition;
 	}
 
