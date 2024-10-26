@@ -21,15 +21,15 @@ layout (set = 1, binding = 0) readonly buffer LightBuffer {
 };
 
 layout(set = 3, binding = 0) uniform CamBufferObject {
-    mat4 view;
-    mat4 proj;
+    mat4 iview;
+    mat4 iproj;
 } CamUBO;
 
 layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
 
 layout(set = 5, binding = 0, rgba16f) uniform image2D rtTexture;
 
-layout(location = 0) rayPayloadEXT vec4 payload;
+layout(location = 0) rayPayloadEXT vec3 payload;
 
 vec3 getDir(vec2 uv) {
     // convert the uv to a -1 to 1 range (ndc)
@@ -39,20 +39,22 @@ vec3 getDir(vec2 uv) {
     vec4 clip = vec4(ndc, 1.0, 1.0);
 
     // transform to view space by multiplying by the inv proj
-    vec4 view = inverse(CamUBO.proj) * clip;
+    vec4 view = CamUBO.iproj * clip;
 
     // get the view dir by perspective dividing and normalizing it
     vec3 viewDir = normalize(view.xyz / view.w);
 
     // multiply the dir by the inverse view matrix to get dir in world space
-    return (inverse(CamUBO.view) * vec4(viewDir, 0.0)).xyz;
+    return (CamUBO.iview * vec4(viewDir, 0.0)).xyz;
 }
-
 
 void main() {
     vec2 uv = (0.5 + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
-    vec3 pos = inverse(CamUBO.view)[3].xyz;
+    vec3 pos = CamUBO.iview[3].xyz;
     vec3 dir = getDir(uv);
+    
+    payload = vec3(0.0);
+
     traceRayEXT(
         TLAS,
         gl_RayFlagsOpaqueEXT, // flags
@@ -67,5 +69,5 @@ void main() {
         0                     // payload
     );
 
-    imageStore(rtTexture, ivec2(gl_LaunchIDEXT.xy), payload);
+    imageStore(rtTexture, ivec2(gl_LaunchIDEXT.xy), vec4(payload, 1.0));
 }

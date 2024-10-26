@@ -169,7 +169,6 @@ public:
 		dml::mat4 modelMatrix;
 
 		size_t textureCount; // number of textures in the mesh
-		size_t texIndex; // where in the texture array the textures of the mesh start
 
 		bool player; // if the object is treated as a player mesh or not
 
@@ -186,7 +185,6 @@ public:
 			scale(dml::vec3(0.1f, 0.1f, 0.1f)),
 			modelMatrix(),
 			textureCount(0),
-			texIndex(0),
 			player(false),
 			meshHash(),
 			name("")
@@ -202,7 +200,6 @@ public:
 			scale(other.scale),
 			modelMatrix(other.modelMatrix),
 			textureCount(other.textureCount),
-			texIndex(other.texIndex),
 			player(other.player),
 			meshHash(other.meshHash),
 			name(other.name) {

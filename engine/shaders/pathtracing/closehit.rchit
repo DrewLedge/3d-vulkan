@@ -1,5 +1,6 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_nonuniform_qualifier : enable
 
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
@@ -24,8 +25,20 @@ layout (set = 1, binding = 0) readonly buffer LightBuffer {
 
 layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
 
-layout(location = 0) rayPayloadInEXT vec4 payload;
+struct TexIndexData {
+    uint albedo;
+    uint bitfield;
+};
+
+layout (set = 6, binding = 0) readonly buffer TexIndexBuffer {
+    TexIndexData texIndices[];
+};
+
+layout(location = 0) rayPayloadInEXT vec3 payload;
 
 void main() {
-    payload = vec4(1.0 - gl_HitTEXT, gl_HitTEXT * 0.4, gl_HitTEXT, 1.0);
+    uint index = texIndices[gl_InstanceCustomIndexEXT].albedo;
+    float f = 1.0 / index;
+    payload += vec3(f);
+   
 }

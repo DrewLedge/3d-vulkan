@@ -315,6 +315,7 @@ private:
 		// raytracing
 		DSObject tlas;
 		DSObject rt;
+		DSObject texIndex;
 
 		// rasterzation
 		DSObject composition;
@@ -454,10 +455,20 @@ private:
 		VkDeviceSize entryS;
 
 		// sbt regions
-		VkStridedDeviceAddressRegionKHR raygenR;
-		VkStridedDeviceAddressRegionKHR missR;
-		VkStridedDeviceAddressRegionKHR hitR;
-		VkStridedDeviceAddressRegionKHR callR;
+		VkStridedDeviceAddressRegionKHR raygenR{};
+		VkStridedDeviceAddressRegionKHR missR{};
+		VkStridedDeviceAddressRegionKHR hitR{};
+		VkStridedDeviceAddressRegionKHR callR{};
+	};
+
+
+	struct TexIndexObj {
+		uint32_t albedoIndex;
+		uint32_t texBitfield;
+	};
+
+	struct TexIndexSSBO {
+		TexIndexObj indices[MAX_MODELS];
 	};
 
 	CamData cam;
@@ -500,14 +511,14 @@ private:
 	// buffers
 	VkhBuffer vertBuffer;
 	VkhBuffer indBuffer;
-	VkhBuffer instanceBuffer;
+	VkhBuffer objInstanceBuffer;
 	VkhBuffer lightBuffer;
 	VkhBuffer sceneIndexBuffer;
 
 	// buffer memory
 	VkhDeviceMemory vertBufferMem;
 	VkhDeviceMemory indBufferMem;
-	VkhDeviceMemory instanceBufferMem;
+	VkhDeviceMemory objInstanceBufferMem;
 	VkhDeviceMemory lightBufferMem;
 	VkhDeviceMemory sceneIndexBufferMem;
 
@@ -542,6 +553,9 @@ private:
 	PipelineData rtPipeline;
 	dvl::Texture rtTex{};
 	SBT sbt;
+	TexIndexSSBO texIndices;
+	VkhBuffer texIndicesBuffer;
+	VkhDeviceMemory texIndicesBufferMem;
 
 	std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1424,6 +1438,37 @@ private:
 		skybox.bufferData.indexCount = 36;
 	}
 
+	void getTexIndices() {
+		uint32_t p = 0;
+		for (size_t i = 0; i < objects.size(); i++) {
+			if (uniqueModelIndex[objects[i]->meshHash] == i) {
+				TexIndexObj& obj = texIndices.indices[i];
+
+				uint32_t bitfield = 0;
+				bitfield |= (objects[i]->material.baseColor.found ? 1 : 0);
+				bitfield |= (objects[i]->material.metallicRoughness.found ? 1 : 0) << 1;
+				bitfield |= (objects[i]->material.normalMap.found ? 1 : 0) << 2;
+				bitfield |= (objects[i]->material.emissiveMap.found ? 1 : 0) << 3;
+				bitfield |= (objects[i]->material.occlusionMap.found ? 1 : 0) << 4;
+
+				obj.texBitfield = bitfield;
+				obj.albedoIndex = meshTexStartInd[p];
+				p++;
+			}
+		}
+
+		VkhBuffer stagingBuffer;
+		VkhDeviceMemory stagingBufferMem;
+		vkh::createStagingBuffer(stagingBuffer, stagingBufferMem, &texIndices, sizeof(TexIndexSSBO), 0);
+
+		VkBufferCopy copyRegion{};
+		copyRegion.size = sizeof(TexIndexSSBO);
+
+		VkhCommandBuffer commandBuffer = vkh::beginSingleTimeCommands(commandPool);
+		vkCmdCopyBuffer(commandBuffer.v(), stagingBuffer.v(), texIndicesBuffer.v(), 1, &copyRegion);
+		vkh::endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
+	}
+
 	void getAllTextures() {
 		allTextures.reserve(totalTextureCount);
 		size_t currentIndex = 0;
@@ -1453,12 +1498,11 @@ private:
 				}
 			}
 		}
-		for (size_t i = 0; i < objects.size(); i++) {
-			auto& obj = objects[i];
-			if (uniqueModelIndex[obj->meshHash] == i) {
-				objects[i]->texIndex = i;
-			}
+
+		if (rtEnabled) {
+			getTexIndices();
 		}
+
 		std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
 	}
 
@@ -1614,7 +1658,7 @@ private:
 	}
 
 	void setupBuffers() {
-		vkh::createBuffer(instanceBuffer, instanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+		vkh::createBuffer(objInstanceBuffer, objInstanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 		vkh::createBuffer(cam.buffer, cam.bufferMem, &camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 
 		createLightBuffer();
@@ -1622,6 +1666,11 @@ private:
 		// skybox buffer data
 		vkh::createBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
 		vkh::createBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, commandPool, graphicsQueue, 0);
+
+		if (rtEnabled) {
+			vkh::createBuffer(texIndicesBuffer, texIndicesBufferMem, sizeof(TexIndexSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, 0);
+
+		}
 	}
 
 	void calcCameraMats() {
@@ -1667,7 +1716,7 @@ private:
 		// calc matricies for lights
 		for (size_t i = 0; i < lights.size(); i++) {
 			Light& l = *lights[i];
-			calcShadowMats(l);
+			if (!rtEnabled) calcShadowMats(l);
 			copyLightToLightCords(l, lightData.lightCords[i]);
 		}
 
@@ -1678,8 +1727,14 @@ private:
 
 		// calc matricies for camera
 		calcCameraMats();
-		memcpy(&camMatData.view, &cam.viewMatrix, sizeof(cam.viewMatrix));
-		memcpy(&camMatData.proj, &cam.projectionMatrix, sizeof(cam.projectionMatrix));
+		dml::mat4 view = cam.viewMatrix;
+		dml::mat4 proj = cam.projectionMatrix;
+		if (rtEnabled) {
+			view = dml::inverseMatrix(cam.viewMatrix);
+			proj = dml::inverseMatrix(cam.projectionMatrix);
+		}
+		memcpy(&camMatData.view, &view, sizeof(cam.viewMatrix));
+		memcpy(&camMatData.proj, &proj, sizeof(cam.projectionMatrix));
 
 		void* cData;
 		vkMapMemory(device, cam.bufferMem.v(), 0, sizeof(camMatData), 0, &cData);
@@ -1717,9 +1772,9 @@ private:
 			}
 		}
 		void* matrixData;
-		vkMapMemory(device, instanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
+		vkMapMemory(device, objInstanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
 		memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
-		vkUnmapMemory(device, instanceBufferMem.v());
+		vkUnmapMemory(device, objInstanceBufferMem.v());
 	}
 
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1761,6 +1816,8 @@ private:
 		camBufferInfo.offset = 0;
 		camBufferInfo.range = sizeof(CamUBO);
 
+		VkDescriptorBufferInfo texIndexInfo{};
+
 		// rasterization
 		std::vector<VkDescriptorImageInfo> compositionPassImageInfo(2);
 		shadowInfos.resize(lightSize);
@@ -1778,6 +1835,10 @@ private:
 			rtPresentTexture.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 			rtPresentTexture.imageView = rtTex.imageView.v();
 			rtPresentTexture.sampler = rtTex.sampler.v();
+
+			texIndexInfo.buffer = texIndicesBuffer.v();
+			texIndexInfo.offset = 0;
+			texIndexInfo.range = sizeof(TexIndexSSBO);
 		}
 		else {
 			for (size_t i = 0; i < 2; i++) {
@@ -1808,6 +1869,8 @@ private:
 			VkShaderStageFlags tlasSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			createDescriptorSet(descs.tlas, 0, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1, tlasSS);
 			createDescriptorSet(descs.rt, 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT);
+			createDescriptorSet(descs.texIndex, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+
 
 			textursSS = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 			lightDataSS = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
@@ -1843,6 +1906,7 @@ private:
 		if (rtEnabled) {
 			descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
 			descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, descs.rt.binding, 0, descs.rt.type, rtPresentTexture));
+			descriptorWrites.push_back(vkh::createDSWrite(descs.texIndex.set, descs.texIndex.binding, 0, descs.texIndex.type, texIndexInfo));
 		}
 		else {
 			descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
@@ -1853,7 +1917,7 @@ private:
 		vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
 	}
 
-	void setupDescriptorSets(bool initial = true) {
+	void setupDescriptorSets() {
 		totalTextureCount = 0;
 		for (size_t i = 0; i < objects.size(); i++) {
 			auto& obj = objects[i];
@@ -1861,23 +1925,19 @@ private:
 				totalTextureCount += static_cast<uint32_t>(obj->textureCount);
 			}
 		}
-		if (initial) {
-			getAllTextures();
-		}
 		createDS(); //create the descriptor set
 	}
 
 	void updateLightDS() {
 		uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
-		createLightBuffer();
 		VkDescriptorBufferInfo lightBufferInfo{};
 		lightBufferInfo.buffer = lightBuffer.v();
 		lightBufferInfo.offset = 0;
 		lightBufferInfo.range = lightData.memSize;
 
 		std::array<VkWriteDescriptorSet, 2> dw{};
-		dw[0] = vkh::createDSWrite(descs.lightData.set, 1, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightBufferInfo);
+		dw[0] = vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo);
 
 		// if raytracing is enabled, only update the buffer
 		// otherwise also update the shadowmaps
@@ -1885,7 +1945,7 @@ private:
 			vkUpdateDescriptorSets(device, 1, &dw[0], 0, nullptr);
 		}
 		else {
-			dw[1] = vkh::createDSWrite(descs.shadowmaps.set, 2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, shadowInfos.data(), lightSize);
+			dw[1] = vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), lightSize);
 			vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
 		}
 	}
@@ -2873,7 +2933,7 @@ private:
 		shaderGroups[2].closestHitShader = 2;
 
 		// create the pipeline layoyut
-		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v(), descs.rt.layout.v() };
+		VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v(), descs.rt.layout.v(), descs.texIndex.layout.v() };
 
 		VkPipelineLayoutCreateInfo pipelineLayoutInf{};
 		pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -3237,26 +3297,6 @@ private:
 		vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
 	}
 
-	void createMeshInstances() {
-		for (size_t i = 0; i < objects.size(); i++) {
-			VkAccelerationStructureInstanceKHR meshInstance{};
-			size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
-
-			// copy the models model matrix into the instance data
-			meshInstance.transform = mat4ToVk(objInstanceData.object[i].model);
-
-			VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd].blas);
-
-			// populate the instance data
-			meshInstance.accelerationStructureReference = blasAddress;
-			meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-			meshInstance.instanceCustomIndex = static_cast<uint32_t>(i);
-			meshInstance.instanceShaderBindingTableRecordOffset = 0;
-			meshInstance.mask = 0xFF;
-			meshInstances.push_back(meshInstance);
-		}
-	}
-
 	void createTLAS() {
 		if (tlas.as.valid()) tlas.as.reset();
 
@@ -3338,28 +3378,33 @@ private:
 		return result;
 	}
 
+
+	void createMeshInstace(size_t index) {
+		VkAccelerationStructureInstanceKHR meshInstance{};
+		size_t bufferInd = modelHashToBufferIndex[objects[index]->meshHash];
+
+		// copy the models model matrix into the instance data
+		meshInstance.transform = mat4ToVk(objInstanceData.object[index].model);
+
+		VkDeviceAddress blasAddress = vkh::asDeviceAddress(BLAS[bufferInd].blas);
+
+		// populate the instance data
+		meshInstance.accelerationStructureReference = blasAddress;
+		meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+
+		size_t meshInd = uniqueModelIndex[objects[index]->meshHash];
+		meshInstance.instanceCustomIndex = static_cast<uint32_t>(meshInd);
+
+		meshInstance.instanceShaderBindingTableRecordOffset = 0;
+		meshInstance.mask = 0xFF;
+		meshInstances.emplace_back(meshInstance);
+	}
+
 	void updateTLAS(bool changed = false) {
 		if (changed) meshInstances.clear();
 		for (size_t i = 0; i < objects.size(); i++) {
 			if (changed) {
-				size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
-
-				VkAccelerationStructureInstanceKHR meshInstance{};
-				meshInstance.transform = mat4ToVk(objInstanceData.object[i].model);
-
-				// device address of the BLAS
-				VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
-				addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-				addrInfo.accelerationStructure = BLAS[bufferInd].blas.v();
-				VkDeviceAddress blasAddress = vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
-
-				// populate the instance data
-				meshInstance.accelerationStructureReference = blasAddress;
-				meshInstance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-				meshInstance.instanceCustomIndex = static_cast<uint32_t>(i);
-				meshInstance.instanceShaderBindingTableRecordOffset = 0;
-				meshInstance.mask = 0xFF;
-				meshInstances.emplace_back(meshInstance);
+				createMeshInstace(i);
 			}
 			else {
 				VkAccelerationStructureInstanceKHR& meshInstance = meshInstances[i];
@@ -3407,7 +3452,9 @@ private:
 			createBLAS(bufferData[bufferInd], bufferInd);
 		}
 
-		createMeshInstances();
+		for (size_t i = 0; i < objects.size(); i++) {
+			createMeshInstace(i);
+		}
 		createTLAS();
 	}
 
@@ -3562,6 +3609,7 @@ private:
 
 		if (rtEnabled) {
 			updateTLAS(true);
+			getTexIndices();
 		}
 		recordSecondaryCommandBuffers();
 	}
@@ -3574,33 +3622,38 @@ private:
 		dml::vec3 target = pos + dml::quatToDir(cam.quat);
 		Light l = createLight(pos, target);
 
-		vkh::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-			l.shadowMapData.sampleCount);
-		vkh::createImageView(l.shadowMapData, vkh::DEPTH);
-		vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
+		if (!rtEnabled) {
+			vkh::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+				l.shadowMapData.sampleCount);
+			vkh::createImageView(l.shadowMapData, vkh::DEPTH);
+			vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
+			vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
 
-		vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+			VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+			VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
 
-		VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
+			shadowMapCommandBuffers.primary.pools.push_back(p);
+			shadowMapCommandBuffers.primary.buffers.push_back(c);
 
-		shadowMapCommandBuffers.primary.pools.push_back(p);
-		shadowMapCommandBuffers.primary.buffers.push_back(c);
+			VkhCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+			VkhCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
 
-		VkhCommandPool p2 = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
-		VkhCommandBuffer c2 = vkh::allocateCommandBuffers(p2, VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+			shadowMapCommandBuffers.secondary.pools.push_back(p2);
+			shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 
-		shadowMapCommandBuffers.secondary.pools.push_back(p2);
-		shadowMapCommandBuffers.secondary.buffers.push_back(c2);
+			lights.push_back(std::make_unique<Light>(l));
 
-		lights.push_back(std::make_unique<Light>(l));
+			VkDescriptorImageInfo shadowInfo{};
+			shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+			shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
+			shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
+			shadowInfos.push_back(shadowInfo);
+		}
+		else {
+			lights.push_back(std::make_unique<Light>(l));
+		}
 
-		VkDescriptorImageInfo shadowInfo{};
-		shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-		shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
-		shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
-		shadowInfos.push_back(shadowInfo);
-
+		createLightBuffer();
 		updateLightDS();
 		recordSecondaryCommandBuffers();
 	}
@@ -3676,7 +3729,7 @@ private:
 	//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 	void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
-		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), instanceBuffer.v() };
+		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		if (startCommand) {
@@ -3731,7 +3784,7 @@ private:
 	void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
 		size_t size = secondaries.size();
 
-		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), instanceBuffer.v() };
+		const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
 		const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
 		for (size_t i = 0; i < size; i++) {
@@ -4037,7 +4090,7 @@ private:
 	void recordRTCommandBuffers() {
 		prevCmdIteration = cmdIteration;
 
-		const std::array<VkDescriptorSet, 6> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v(), descs.rt.set.v() };
+		const std::array<VkDescriptorSet, 7> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v(), descs.rt.set.v(), descs.texIndex.set.v() };
 
 		VkCommandBufferInheritanceInfo inheritInfo{};
 		inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -4111,7 +4164,7 @@ private:
 		setupTextures();
 
 		// create the descriptorsets
-		setupDescriptorSets(false);
+		setupDescriptorSets();
 
 		// create the pipelines
 		setupPipelines(false);
@@ -4246,6 +4299,7 @@ private:
 		setupTextures();
 		loadSkybox("night-sky.hdr");
 		setupBuffers();
+		getAllTextures();
 
 		// setup the descriptorsets and pipelines
 		setupDescriptorSets();
