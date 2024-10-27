@@ -31,6 +31,7 @@ layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
 struct TexIndexData {
     uint albedo;
     uint bitfield;
+
     uint64_t vertexAddress;
     uint64_t indexAddress;
 };
@@ -80,7 +81,13 @@ mat3 getTBN(vec4 tangent, vec3 normal) {
     return mat3(T, B, N);
 }
 
-void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn, out vec4 albedo, out vec4 metallicRoughness, out vec3 normal, out vec3 emissive, out float occlusion) {
+vec4 albedo = vec4(0.0f);
+vec4 metallicRoughness = vec4(1.0f);
+vec3 normal = vec3(1.0f);
+vec3 emissive = vec3(0.0f);
+float occlusion = 1.0f;
+
+void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
     bool albedoExists = (bitfield & 1) != 0;
     bool metallicRoughnessExists = (bitfield & 2) != 0;
     bool normalExists = (bitfield & 4) != 0;
@@ -144,12 +151,6 @@ void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out v
 }
 
 void main() {
-    vec4 albedo = vec4(0.0f);
-    vec4 metallicRoughness = vec4(1.0f);
-    vec3 normal = vec3(1.0f);
-    vec3 emissive = vec3(0.0f);
-    float occlusion = 1.0f;
-
     uint index = 3 * gl_PrimitiveID;
 
     vec2 uv;
@@ -166,7 +167,7 @@ void main() {
     uint texindex = texIndices[gl_InstanceCustomIndexEXT].albedo;
     uint bitfield = texIndices[gl_InstanceCustomIndexEXT].bitfield;
 
-    getTextures(bitfield, texindex, uv, tbn, albedo, metallicRoughness, normal, emissive, occlusion);
+    getTextures(bitfield, texindex, uv, tbn);
 
-    payload += normal.rgb;
+    payload += emissive;
 }
