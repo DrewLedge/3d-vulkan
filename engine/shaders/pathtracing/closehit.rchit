@@ -56,7 +56,12 @@ layout(buffer_reference) readonly buffer IndexBuffer {
     uint indices[];
 };
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+struct Payload {
+    vec3 col;
+    uint rec;
+};
+
+layout(location = 0) rayPayloadInEXT Payload payload;
 layout(location = 1) rayPayloadEXT bool shadowPayload;
 hitAttributeEXT vec2 hit;
 
@@ -100,21 +105,21 @@ void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
     nextTexture += albedoExists ? 1 : 0;
 
     if (metallicRoughnessExists) {
-    	metallicRoughness = texture(texSamplers[nextTexture], uv);
-    	nextTexture += 1;
+        metallicRoughness = texture(texSamplers[nextTexture], uv);
+        nextTexture += 1;
     }
     if (normalExists) {
-    	normal = (texture(texSamplers[nextTexture], uv).rgb * 2.0 - 1.0);
-    	normal.y *= -1.0;
-    	normal = normalize(tbn * normal);
-    	nextTexture += 1;
+        normal = (texture(texSamplers[nextTexture], uv).rgb * 2.0 - 1.0);
+        normal.y *= -1.0;
+        normal = normalize(tbn * normal);
+        nextTexture += 1;
     }
     if (emissiveExists) {
-    	emissive = texture(texSamplers[nextTexture], uv).rgb;
-    	nextTexture += 1;
+        emissive = texture(texSamplers[nextTexture], uv).rgb;
+        nextTexture += 1;
     }
     if (occlusionExists) {
-    	occlusion = texture(texSamplers[nextTexture], uv).r;
+        occlusion = texture(texSamplers[nextTexture], uv).r;
     }
 }
 
@@ -152,6 +157,11 @@ void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out v
 }
 
 void main() {
+    if (payload.rec >= 10) {
+        payload.col = vec3(0);
+        return;
+    }
+
     uint index = 3 * gl_PrimitiveID;
 
     vec2 uv;
@@ -171,6 +181,34 @@ void main() {
     getTextures(bitfield, texindex, uv, tbn);
 
     vec3 hitPos = gl_WorldRayOriginEXT + (gl_WorldRayDirectionEXT * gl_HitTEXT);
+
+    vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normal);
+
+    payload.rec++;
+
+    traceRayEXT(
+        TLAS,
+        gl_RayFlagsOpaqueEXT,
+        0xFF,                 // cull mask
+        0,                    // sbt offset
+        0,                    // sbt stride
+        0,                    // miss index
+        hitPos,               // pos
+        0.01,                 // min-range
+        reflectDir,           // dir
+        100.0,                // max-range
+        0                     // payload
+    );
+
+    payload.rec--;
+
+    float roughness = metallicRoughness.g;
+    float metallic = metallicRoughness.b;
+
+    payload.col = mix(albedo.rgb, payload.col, metallic);
+    return;
+
+    /////////////////////////////////////////////////////////////
 
     vec3 accumulated = vec3(0.0);
 
@@ -232,5 +270,5 @@ void main() {
 
     // final color calculation
     vec3 ambient = vec3(0.005) * occlusion;
-    payload += accumulated + emissive + ambient;
+    payload.col += accumulated + emissive + ambient;
 }

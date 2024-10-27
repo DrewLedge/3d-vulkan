@@ -3,8 +3,12 @@
 
 layout(set = 2, binding = 0) uniform samplerCube cubeMap;
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+struct Payload {
+    vec3 col;
+    uint rec;
+};
+layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main() {
-	payload = texture(cubeMap, gl_WorldRayDirectionEXT).rgb;
+	payload.col = texture(cubeMap, gl_WorldRayDirectionEXT).rgb;
 }
