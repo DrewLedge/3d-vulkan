@@ -123,6 +123,12 @@
     <None Include="shaders\pathtracing\present.vert">
       <Filter>Shaders\pathtracing</Filter>
     </None>
+    <None Include="shaders\pathtracing\shadowhit.rchit">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\shadowmiss.rmiss">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">

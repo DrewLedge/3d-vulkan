@@ -15,11 +15,11 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
 layout (set = 1, binding = 0) readonly buffer LightBuffer {
@@ -57,6 +57,7 @@ layout(buffer_reference) readonly buffer IndexBuffer {
 };
 
 layout(location = 0) rayPayloadInEXT vec3 payload;
+layout(location = 1) rayPayloadEXT bool shadowPayload;
 hitAttributeEXT vec2 hit;
 
 
@@ -169,5 +170,67 @@ void main() {
 
     getTextures(bitfield, texindex, uv, tbn);
 
-    payload += emissive;
+    vec3 hitPos = gl_WorldRayOriginEXT + (gl_WorldRayDirectionEXT * gl_HitTEXT);
+
+    vec3 accumulated = vec3(0.0);
+
+    for (int i = 0; i < lights.length(); i++) { // spotlight
+        if (lights[i].intensity == 0.0) continue;
+
+        float innerConeRads = radians(lights[i].innerConeAngle);
+        float outerConeRads = radians(lights[i].outerConeAngle);
+        float constAttenuation = lights[i].constantAttenuation;
+        float linAttenuation = lights[i].linearAttenuation;
+        float quadAttenuation = lights[i].quadraticAttenuation;
+
+        // convert light struct to vec3s to use them in calculations
+        vec3 lightPos = lights[i].pos.xyz;
+        vec3 targetVec = lights[i].targetVec.xyz;
+        vec3 lightColor = lights[i].color.xyz;
+
+        vec3 spotDirection = normalize(lightPos - targetVec);
+        vec3 fragToLightDir = normalize(lightPos - hitPos);
+        float theta = dot(spotDirection, fragToLightDir);
+
+        // spotlight cutoff
+        if (theta > cos(outerConeRads)) { // if inside the cone, calculate lighting
+            float blend = smoothstep(cos(outerConeRads), cos(innerConeRads), theta);
+
+            // attenuation calculation
+            float lightDistance = distance(lightPos, hitPos);
+            float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
+            if (attenuation < 0.01) continue;
+
+            // get the contribution
+            float contribution = lights[i].intensity * blend * attenuation;
+            if (contribution < 0.01) continue;
+
+            float min = 0.001;
+            float max = lightDistance - min;
+
+            // trace the shadow rays
+            traceRayEXT(
+                TLAS,
+                gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                0xFF,                 // cull mask
+                1,                    // sbt offset
+                0,                    // sbt stride
+                1,                    // miss index
+                hitPos,               // pos
+                min,                  // min-range
+                fragToLightDir,       // dir
+                max,                  // max-range
+                1                     // payload
+            );
+            
+            if (shadowPayload) continue;
+
+            contribution *= (shadowPayload) ? 0.0 : 1.0;
+            accumulated += albedo.rgb * contribution;
+        }
+    }
+
+    // final color calculation
+    vec3 ambient = vec3(0.005) * occlusion;
+    payload += accumulated + emissive + ambient;
 }
