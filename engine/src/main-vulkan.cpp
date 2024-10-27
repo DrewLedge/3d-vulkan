@@ -465,6 +465,9 @@ private:
 	struct TexIndexObj {
 		uint32_t albedoIndex;
 		uint32_t texBitfield;
+
+		VkDeviceAddress vertAddr;
+		VkDeviceAddress indAddr;
 	};
 
 	struct TexIndexSSBO {
@@ -806,17 +809,17 @@ private:
 		bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
 		bufferDeviceAddressFeatures.pNext = &nestedCommandBufferFeatures;
 
-		VkPhysicalDeviceAccelerationStructureFeaturesKHR accelerationStructureFeatures{};
-		VkPhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures{};
+		VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+		VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtFeatures{};
 
 		if (rtEnabled) {
-			accelerationStructureFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
-			accelerationStructureFeatures.accelerationStructure = VK_TRUE;
-			accelerationStructureFeatures.pNext = &bufferDeviceAddressFeatures;
+			asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+			asFeatures.accelerationStructure = VK_TRUE;
+			asFeatures.pNext = &bufferDeviceAddressFeatures;
 
-			rayTracingPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
-			rayTracingPipelineFeatures.rayTracingPipeline = VK_TRUE;
-			rayTracingPipelineFeatures.pNext = &accelerationStructureFeatures;
+			rtFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+			rtFeatures.rayTracingPipeline = VK_TRUE;
+			rtFeatures.pNext = &asFeatures;
 
 			rtProperties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR;
 			VkPhysicalDeviceProperties2 deviceProperties2{};
@@ -828,6 +831,7 @@ private:
 		VkPhysicalDeviceFeatures deviceFeatures{};
 		deviceFeatures.imageCubeArray = VK_TRUE;
 		deviceFeatures.sampleRateShading = VK_TRUE;
+		deviceFeatures.shaderInt64 = VK_TRUE;
 
 		VkPhysicalDeviceDescriptorIndexingFeatures descIndexing{};
 		descIndexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
@@ -837,7 +841,7 @@ private:
 		descIndexing.descriptorBindingVariableDescriptorCount = VK_TRUE;
 		descIndexing.descriptorBindingPartiallyBound = VK_TRUE;
 
-		if (rtEnabled) descIndexing.pNext = &rayTracingPipelineFeatures;
+		if (rtEnabled) descIndexing.pNext = &rtFeatures;
 		else descIndexing.pNext = &bufferDeviceAddressFeatures;
 
 		VkDeviceCreateInfo newInfo{};
@@ -1453,6 +1457,11 @@ private:
 
 				obj.texBitfield = bitfield;
 				obj.albedoIndex = meshTexStartInd[p];
+
+				size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
+
+				obj.vertAddr = vkh::bufferDeviceAddress(vertBuffer) + (bufferData[bufferInd].vertexOffset * sizeof(dvl::Vertex));
+				obj.indAddr = vkh::bufferDeviceAddress(indBuffer) + (bufferData[bufferInd].indexOffset * sizeof(uint32_t));
 				p++;
 			}
 		}
