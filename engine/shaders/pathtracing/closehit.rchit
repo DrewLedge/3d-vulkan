@@ -80,13 +80,7 @@ mat3 getTBN(vec4 tangent, vec3 normal) {
     return mat3(T, B, N);
 }
 
-vec4 albedo = vec4(0.0f);
-vec4 metallicRoughness = vec4(1.0f);
-vec3 normal = vec3(1.0f);
-vec3 emissive = vec3(0.0f);
-float occlusion = 1.0f;
-
-void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
+void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn, out vec4 albedo, out vec4 metallicRoughness, out vec3 normal, out vec3 emissive, out float occlusion) {
     bool albedoExists = (bitfield & 1) != 0;
     bool metallicRoughnessExists = (bitfield & 2) != 0;
     bool normalExists = (bitfield & 4) != 0;
@@ -116,14 +110,13 @@ void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
     }
 }
 
-void main() {
+void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out vec4 tangent) {
     uint64_t vertAddr = texIndices[gl_InstanceCustomIndexEXT].vertexAddress;
     uint64_t indexAddr = texIndices[gl_InstanceCustomIndexEXT].indexAddress;
 
     IndexBuffer indexBuffer = IndexBuffer(indexAddr);
     VertBuffer vertBuffer = VertBuffer(vertAddr);
 
-    uint index = 3 * gl_PrimitiveID;
     uint i1 = indexBuffer.indices[index + 0];
     uint i2 = indexBuffer.indices[index + 1];
     uint i3 = indexBuffer.indices[index + 2];
@@ -144,19 +137,36 @@ void main() {
     float u = hit.x;
     float v = hit.y;
 
-    vec2 uv = barycentricvec2(uvs[0], uvs[1], uvs[2], u, v);
-    vec4 c = barycentricvec4(cols[0], cols[1], cols[2], u, v);
-    vec3 n = barycentricvec3(normals[0], normals[1], normals[2], u, v);
-    vec4 t = barycentricvec4(tangents[0], tangents[1], tangents[2], u, v);
+    uv = barycentricvec2(uvs[0], uvs[1], uvs[2], u, v);
+    color = barycentricvec4(cols[0], cols[1], cols[2], u, v);
+    normal = barycentricvec3(normals[0], normals[1], normals[2], u, v);
+    tangent = barycentricvec4(tangents[0], tangents[1], tangents[2], u, v);
+}
 
-    albedo *= c;
+void main() {
+    vec4 albedo = vec4(0.0f);
+    vec4 metallicRoughness = vec4(1.0f);
+    vec3 normal = vec3(1.0f);
+    vec3 emissive = vec3(0.0f);
+    float occlusion = 1.0f;
 
-    mat3 tbn = getTBN(t, n);
+    uint index = 3 * gl_PrimitiveID;
+
+    vec2 uv;
+    vec4 color;
+    vec3 norm;
+    vec4 tangent;
+
+    getVertData(index, uv, color, norm, tangent);
+    
+    albedo *= color;
+
+    mat3 tbn = getTBN(tangent, norm);
 
     uint texindex = texIndices[gl_InstanceCustomIndexEXT].albedo;
     uint bitfield = texIndices[gl_InstanceCustomIndexEXT].bitfield;
 
-    getTextures(bitfield, texindex, uv, tbn);
+    getTextures(bitfield, texindex, uv, tbn, albedo, metallicRoughness, normal, emissive, occlusion);
 
-    payload += albedo.rgb;
+    payload += normal.rgb;
 }

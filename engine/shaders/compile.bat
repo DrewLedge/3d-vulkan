@@ -1,7 +1,9 @@
 @echo off
 
-if not exist compiled mkdir compiled
-if not exist shaderlogs mkdir shaderlogs
+if exist compiled rmdir /s /q compiled
+if exist shaderlogs rmdir /s /q shaderlogs
+mkdir compiled
+mkdir shaderlogs
 
 glslc --target-env=vulkan1.3 -O engine.vert -I ./includes/ -o compiled/vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
 glslc --target-env=vulkan1.3 -O engine.frag -I ./includes/ -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
