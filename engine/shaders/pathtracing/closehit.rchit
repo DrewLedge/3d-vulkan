@@ -1,5 +1,7 @@
 #version 460
 
+#define PI 3.141592653589793238
+
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
@@ -76,52 +78,11 @@ BARYCENTRIC(vec2)
 BARYCENTRIC(vec3)
 BARYCENTRIC(vec4)
 
-mat3 getTBN(vec4 tangent, vec3 normal) {
-    float handedness = tangent.w;
-
-    mat3 normMat = transpose(inverse(mat3(gl_ObjectToWorldEXT)));
-    vec3 N = normalize(normMat * normal);
-    vec3 T = normalize(normMat * tangent.xyz);
-    T = normalize(T - dot(T, N) * N); // re orthogonalize tangent
-    vec3 B = normalize(cross(N, T) * handedness);
-    return mat3(T, B, N);
-}
-
 vec4 albedo = vec4(0.0f);
 vec4 metallicRoughness = vec4(1.0f);
 vec3 normal = vec3(1.0f);
 vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
-
-void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
-    bool albedoExists = (bitfield & 1) != 0;
-    bool metallicRoughnessExists = (bitfield & 2) != 0;
-    bool normalExists = (bitfield & 4) != 0;
-    bool emissiveExists = (bitfield & 8) != 0;
-    bool occlusionExists = (bitfield & 16) != 0;
-
-    uint nextTexture = texIndex;
-    albedo = texture(texSamplers[nextTexture], uv);
-    nextTexture += albedoExists ? 1 : 0;
-
-    if (metallicRoughnessExists) {
-        metallicRoughness = texture(texSamplers[nextTexture], uv);
-        nextTexture += 1;
-    }
-    if (normalExists) {
-        normal = (texture(texSamplers[nextTexture], uv).rgb * 2.0 - 1.0);
-        normal.y *= -1.0;
-        normal = normalize(tbn * normal);
-        nextTexture += 1;
-    }
-    if (emissiveExists) {
-        emissive = texture(texSamplers[nextTexture], uv).rgb;
-        nextTexture += 1;
-    }
-    if (occlusionExists) {
-        occlusion = texture(texSamplers[nextTexture], uv).r;
-    }
-}
 
 void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out vec4 tangent) {
     uint64_t vertAddr = texIndices[gl_InstanceCustomIndexEXT].vertexAddress;
@@ -156,8 +117,11 @@ void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out v
     tangent = barycentricvec4(tangents[0], tangents[1], tangents[2], u, v);
 }
 
+#include "../includes/vertformulas.glsl"
+#include "../includes/fragformulas.glsl"
+
 void main() {
-    if (payload.rec >= 10) {
+    if (payload.rec >= 4) {
         payload.col = vec3(0);
         return;
     }
@@ -173,7 +137,7 @@ void main() {
     
     albedo *= color;
 
-    mat3 tbn = getTBN(tangent, norm);
+    mat3 tbn = getTBN(tangent, mat3(gl_ObjectToWorldEXT), norm);
 
     uint texindex = texIndices[gl_InstanceCustomIndexEXT].albedo;
     uint bitfield = texIndices[gl_InstanceCustomIndexEXT].bitfield;
@@ -181,8 +145,13 @@ void main() {
     getTextures(bitfield, texindex, uv, tbn);
 
     vec3 hitPos = gl_WorldRayOriginEXT + (gl_WorldRayDirectionEXT * gl_HitTEXT);
-
+    vec3 viewDir = -gl_WorldRayDirectionEXT;
     vec3 reflectDir = reflect(gl_WorldRayDirectionEXT, normal);
+
+    float roughness = metallicRoughness.g;
+    float metallic = metallicRoughness.b;
+
+    vec3 accumulated = vec3(0.0);
 
     payload.rec++;
 
@@ -202,15 +171,15 @@ void main() {
 
     payload.rec--;
 
-    float roughness = metallicRoughness.g;
-    float metallic = metallicRoughness.b;
+    // fresnel term
+    vec3 H = normalize(viewDir + reflectDir);
+    float VdotH = max(dot(viewDir, H), 0.0);
+    vec3 F = fresnelTerm(albedo.rgb, metallic, VdotH);
 
-    payload.col = mix(albedo.rgb, payload.col, metallic);
-    return;
+    float r = pow(1.0 - roughness, 4);
 
-    /////////////////////////////////////////////////////////////
-
-    vec3 accumulated = vec3(0.0);
+    // get the reflection color
+    vec3 refl = payload.col * F * r;
 
     for (int i = 0; i < lights.length(); i++) { // spotlight
         if (lights[i].intensity == 0.0) continue;
@@ -263,12 +232,15 @@ void main() {
             
             if (shadowPayload) continue;
 
-            contribution *= (shadowPayload) ? 0.0 : 1.0;
-            accumulated += albedo.rgb * contribution;
-        }
+            vec3 brdf = cookTorrance(normal, fragToLightDir, viewDir, albedo, metallic, roughness);
+            vec3 direct = lightColor * brdf;
+
+            // add the direct lighting with the reflection color
+            accumulated += (direct + refl) * contribution;
+            }
     }
 
     // final color calculation
     vec3 ambient = vec3(0.005) * occlusion;
-    payload.col += accumulated + emissive + ambient;
+    payload.col = accumulated + emissive + ambient;
 }

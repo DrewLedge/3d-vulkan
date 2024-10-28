@@ -47,6 +47,7 @@ vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 
 #include "includes/fragformulas.glsl"
+#include "includes/lighting.glsl"
 
 float getWeight(float z, float a) {
     float weight = a * exp(-z);
@@ -59,12 +60,12 @@ void main() {
         discard;
     }
 
-    getTextures();
+    getTextures(inBitfield, inTexIndex, inTexCoord, inTBN);
 
     vec4 color = calcLighting(false, true, 0.005f); // calculate lighting on the fragment
 
     // get the depth from the opaque texture
-    vec2 cords = getTexCords(depthSampler);
+    vec2 cords = getTexCords(depthSampler, gl_FragCoord.xy);
     float oDepth = texture(depthSampler, cords).r;
     oDepth = linDepth(oDepth, inNearPlane, inFarPlane);
 

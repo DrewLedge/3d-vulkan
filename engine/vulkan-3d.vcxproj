@@ -149,6 +149,7 @@
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
     <None Include="shaders\includes\fragformulas.glsl" />
+    <None Include="shaders\includes\lighting.glsl" />
     <None Include="shaders\includes\vertformulas.glsl" />
     <None Include="shaders\pathtracing\closehit.rchit" />
     <None Include="shaders\pathtracing\gen.rgen" />

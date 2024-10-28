@@ -43,13 +43,14 @@ vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 
 #include "includes/fragformulas.glsl"
+#include "includes/lighting.glsl"
 
 void main() {
     if (inRender == 1) {
         discard;
     }
 
-    getTextures();
+    getTextures(inBitfield, inTexIndex, inTexCoord, inTBN);
     outColor = calcLighting(true, false, 0.005f);
 }
 
