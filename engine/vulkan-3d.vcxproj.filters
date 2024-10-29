@@ -132,6 +132,9 @@
     <None Include="shaders\includes\fragformulas.glsl">
       <Filter>Shaders\Shader Libraries</Filter>
     </None>
+    <None Include="..\.editorconfig">
+      <Filter>Source Files\Other files</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">

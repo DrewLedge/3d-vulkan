@@ -141,6 +141,7 @@
     <ClCompile Include="src\main-vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\.editorconfig" />
     <None Include="..\.gitignore" />
     <None Include="..\README.md" />
     <None Include="shaders\compile.bat" />
