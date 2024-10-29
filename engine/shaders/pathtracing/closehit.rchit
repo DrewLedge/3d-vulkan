@@ -176,7 +176,7 @@ void main() {
     float VdotH = max(dot(viewDir, H), 0.0);
     vec3 F = fresnelTerm(albedo.rgb, metallic, VdotH);
 
-    float r = pow(1.0 - roughness, 4);
+    float r = pow(1.0 - roughness, 2);
 
     // get the reflection color
     vec3 refl = payload.col * F * r;

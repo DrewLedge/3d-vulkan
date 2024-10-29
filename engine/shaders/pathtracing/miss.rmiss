@@ -10,5 +10,5 @@ struct Payload {
 layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main() {
-    payload.col = texture(cubeMap, gl_WorldRayDirectionEXT).rgb;
+    payload.col = texture(cubeMap, gl_WorldRayDirectionEXT).rgb * 0.01;
 }
