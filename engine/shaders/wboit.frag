@@ -16,14 +16,14 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
-layout (set=1, binding = 0) readonly buffer LightBuffer {
+layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
@@ -38,7 +38,7 @@ layout(location = 9) flat in uint inBitfield;
 layout(location = 10) in float inFarPlane;
 layout(location = 11) in float inNearPlane;
 
-layout(location = 0) out vec4 outColor; 
+layout(location = 0) out vec4 outColor;
 
 vec4 albedo = vec4(0.0f);
 vec4 metallicRoughness = vec4(1.0f);

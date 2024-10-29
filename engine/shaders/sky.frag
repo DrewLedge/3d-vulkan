@@ -13,6 +13,3 @@ void main() {
     outColor = texture(cubeMap, inFragPos.xyz);
     outColor.rgb *= 0.01;
 }
-
-
-

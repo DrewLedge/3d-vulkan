@@ -2,7 +2,7 @@
 
 #include "includes/vertformulas.glsl"
 
-layout (location = 0) in vec3 inPosition;
+layout(location = 0) in vec3 inPosition;
 
 // individual rows of the instanced model matrix
 layout(location = 1) in vec4 inModel1;
@@ -18,14 +18,14 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
-layout (set = 0, binding = 0) readonly buffer LightBuffer {
+layout(set = 0, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
@@ -40,7 +40,3 @@ void main() {
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
     gl_Position = getPos(lights[index].proj, lights[index].view, model, inPosition); // transform position
 }
-
-
-
-

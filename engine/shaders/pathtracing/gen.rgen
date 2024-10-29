@@ -9,14 +9,14 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
-layout (set = 1, binding = 0) readonly buffer LightBuffer {
+layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
@@ -57,7 +57,7 @@ void main() {
     vec2 uv = (0.5 + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
     vec3 pos = CamUBO.iview[3].xyz;
     vec3 dir = getDir(uv);
-    
+
     payload.col = vec3(0.0);
     payload.rec = 0;
 

@@ -24,7 +24,7 @@ struct LightData {
     float quadraticAttenuation;
 };
 
-layout (set = 1, binding = 0) readonly buffer LightBuffer {
+layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
@@ -38,7 +38,7 @@ struct TexIndexData {
     uint64_t indexAddress;
 };
 
-layout (set = 6, binding = 0) readonly buffer TexIndexBuffer {
+layout(set = 6, binding = 0) readonly buffer TexIndexBuffer {
     TexIndexData texIndices[];
 };
 
@@ -54,7 +54,7 @@ layout(buffer_reference) readonly buffer VertBuffer {
     Vertex vertices[];
 };
 
-layout(buffer_reference) readonly buffer IndexBuffer { 
+layout(buffer_reference) readonly buffer IndexBuffer {
     uint indices[];
 };
 
@@ -98,7 +98,7 @@ void getVertData(uint index, out vec2 uv, out vec4 color, out vec3 normal, out v
     uint[3] indices = uint[3](i1, i2, i3);
     vec2[3] uvs;
     vec4[3] cols;
-    vec3[3] normals; 
+    vec3[3] normals;
     vec4[3] tangents;
 
     for (uint i = 0; i < 3; i++) {
@@ -134,7 +134,7 @@ void main() {
     vec4 tangent;
 
     getVertData(index, uv, color, norm, tangent);
-    
+
     albedo *= color;
 
     mat3 tbn = getTBN(tangent, mat3(gl_ObjectToWorldEXT), norm);
@@ -229,7 +229,7 @@ void main() {
                 max,                  // max-range
                 1                     // payload
             );
-            
+
             if (shadowPayload) continue;
 
             vec3 brdf = cookTorrance(normal, fragToLightDir, viewDir, albedo, metallic, roughness);
@@ -237,7 +237,7 @@ void main() {
 
             // add the direct lighting with the reflection color
             accumulated += (direct + refl) * contribution;
-            }
+        }
     }
 
     // final color calculation

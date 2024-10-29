@@ -15,7 +15,7 @@ layout(location = 5) in mat3 inTBN;
 layout(location = 8) flat in uint inRender;
 layout(location = 9) flat in uint inBitfield;
 
-layout(location = 0) out vec4 outColor; 
+layout(location = 0) out vec4 outColor;
 
 struct LightData {
     mat4 view;
@@ -25,14 +25,14 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
-layout (set=1, binding = 0) readonly buffer LightBuffer {
+layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
