@@ -23,10 +23,11 @@ struct LightData {
 
     vec4 pos;
     vec4 color;
-    vec4 targetVec;
+    vec4 target;
+
     float intensity;
-    float innerConeAngle; // in degrees
-    float outerConeAngle; // in degrees
+    float innerConeAngle;
+    float outerConeAngle;
     float constantAttenuation;
     float linearAttenuation;
     float quadraticAttenuation;
@@ -51,6 +52,6 @@ void main() {
     }
 
     getTextures(inBitfield, inTexIndex, inTexCoord, inTBN);
-    outColor = calcLighting(true, false, 0.005f);
+    outColor = calcLighting(true, false);
 }
 

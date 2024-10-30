@@ -92,3 +92,8 @@ vec2 getTexCords(sampler2D tex, vec2 fragCoord) {
     ivec2 texDimensions = textureSize(tex, 0);
     return fragCoord / texDimensions;
 }
+
+float calcFallofff(float outer, float inner, float theta) {
+    float f = smoothstep(cos(outer), cos(inner), theta);
+    return f * f;
+}

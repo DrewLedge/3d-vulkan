@@ -12,12 +12,14 @@ layout(set = 4, binding = 0) uniform sampler2D depthSampler;
 struct LightData {
     mat4 view;
     mat4 proj;
+
     vec4 pos;
     vec4 color;
-    vec4 targetVec;
+    vec4 target;
+
     float intensity;
-    float innerConeAngle; // in degrees
-    float outerConeAngle; // in degrees
+    float innerConeAngle;
+    float outerConeAngle;
     float constantAttenuation;
     float linearAttenuation;
     float quadraticAttenuation;
@@ -62,7 +64,7 @@ void main() {
 
     getTextures(inBitfield, inTexIndex, inTexCoord, inTBN);
 
-    vec4 color = calcLighting(false, true, 0.005f); // calculate lighting on the fragment
+    vec4 color = calcLighting(false, true);
 
     // get the depth from the opaque texture
     vec2 cords = getTexCords(depthSampler, gl_FragCoord.xy);
