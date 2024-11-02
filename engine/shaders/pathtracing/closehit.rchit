@@ -10,12 +10,12 @@
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
 struct LightData {
-    mat4 view;
-    mat4 proj;
-
     vec4 pos;
     vec4 color;
     vec4 target;
+
+    mat4 proj;
+    mat4 view;
 
     float intensity;
     float innerConeAngle;
@@ -179,8 +179,8 @@ void main() {
     for (int i = 0; i < lights.length(); i++) {
         if (lights[i].intensity < 0.01) continue;
 
-        float inner = radians(lights[i].innerConeAngle);
-        float outer = radians(lights[i].outerConeAngle);
+        float inner = lights[i].innerConeAngle;
+        float outer = lights[i].outerConeAngle;
         float constAttenuation = lights[i].constantAttenuation;
         float linAttenuation = lights[i].linearAttenuation;
         float quadAttenuation = lights[i].quadraticAttenuation;

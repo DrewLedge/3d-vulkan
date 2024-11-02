@@ -338,10 +338,10 @@ public:
             }
         }
 
-        mat4(float zero) {
+        mat4(float val) {
             for (int i = 0; i < 4; i++) {
                 for (int j = 0; j < 4; j++) {
-                    m[j][i] = 0.0f;
+                    m[j][i] = val;
                 }
             }
         }

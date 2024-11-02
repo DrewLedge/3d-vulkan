@@ -50,7 +50,46 @@ template<typename T, typename... Destroy>
 struct VkhObject;
 
 template<typename Object, typename... Destroy>
-struct VkhObj {
+class VkhObj {
+public:
+    // constructors
+    explicit VkhObj(Destroy... args) : objectP(std::make_shared<ObjWrapper>(VK_NULL_HANDLE, true, args...)) {}
+    explicit VkhObj(Object obj, Destroy... args) : objectP(std::make_shared<ObjWrapper>(obj, true, args...)) {}
+
+    // destructor
+    ~VkhObj() = default;
+
+    // copy constructor and assignment operator
+    VkhObj(const VkhObj& other) : objectP(other.objectP) {}
+    VkhObj& operator=(const VkhObj& other) {
+        if (this != &other) {
+            objectP = other.objectP;
+        }
+        return *this;
+    }
+
+    // move constructor and assignment operator
+    VkhObj(VkhObj&& other) noexcept = default;
+    VkhObj& operator=(VkhObj&& other) noexcept = default;
+
+    // equality operators
+    bool operator==(const VkhObj& other) const noexcept { return objectP->object == other.objectP->object; }
+    bool operator!=(const VkhObj& other) const noexcept { return !(*this == other); }
+
+    const Object& v() const noexcept { return objectP->object; }
+    const Object* p() const noexcept { return &objectP->object; }
+    Object& v() noexcept { return objectP->object; }
+    Object* p() noexcept { return &objectP->object; }
+
+    bool valid() const noexcept { return objectP->object != VK_NULL_HANDLE; }
+    size_t use_count() const noexcept { return objectP.use_count(); }
+    void setDestroy(bool destruction) { objectP->autoDestroy = destruction; }
+
+    void reset(Destroy... d) {
+        if (valid()) objectP->destroy();
+        objectP = std::make_shared<ObjWrapper>(VK_NULL_HANDLE, true, d...);
+    }
+private:
     struct ObjWrapper {
         Object object;
         bool autoDestroy;
@@ -63,7 +102,7 @@ struct VkhObj {
             object = VK_NULL_HANDLE;
         }
 
-        // custom destructor
+        // destructor
         ~ObjWrapper() {
             if (autoDestroy && object != VK_NULL_HANDLE) {
                 destroy();
@@ -78,53 +117,6 @@ struct VkhObj {
     };
 
     std::shared_ptr<ObjWrapper> objectP;
-
-    // constructors
-    explicit VkhObj(Destroy... args) : objectP(std::make_shared<ObjWrapper>(VK_NULL_HANDLE, true, args...)) {}
-    explicit VkhObj(Object obj, Destroy... args) : objectP(std::make_shared<ObjWrapper>(obj, true, args...)) {}
-
-    // copy constructor and assignment
-    VkhObj(const VkhObj& other) : objectP(other.objectP) {}
-    VkhObj& operator=(const VkhObj& other) {
-        if (this != &other) {
-            objectP = other.objectP;
-        }
-        return *this;
-    }
-
-    // move constructor and assignment
-    VkhObj(VkhObj&& other) noexcept = default;
-    VkhObj& operator=(VkhObj&& other) noexcept = default;
-
-    // destructor
-    ~VkhObj() = default;
-
-    // equality operators
-    bool operator==(const VkhObj& other) const noexcept {
-        return objectP->object == other.objectP->object;
-    }
-    bool operator!=(const VkhObj& other) const noexcept { return !(*this == other); }
-
-    bool valid() const noexcept { return objectP->object != VK_NULL_HANDLE; }
-
-    explicit operator Object() const noexcept { return objectP->object; }
-
-    // const
-    const Object& v() const noexcept { return objectP->object; }
-    const Object* p() const noexcept { return &objectP->object; }
-
-    // not const
-    Object& v() noexcept { return objectP->object; }
-    Object* p() noexcept { return &objectP->object; }
-
-    // get the current use count of the obj
-    size_t use_count() const noexcept { return objectP.use_count(); }
-    void setDestroy(bool destruction) { objectP->autoDestroy = destruction; }
-
-    void reset(Destroy... d) {
-        if (valid()) objectP->destroy();
-        objectP = std::make_shared<ObjWrapper>(VK_NULL_HANDLE, true, d...);
-    }
 };
 
 template<typename T>
@@ -202,10 +194,10 @@ public:
     } TextureType;
 
     struct BufData {
-        uint32_t vertexOffset;
-        uint32_t vertexCount;
-        uint32_t indexOffset;
-        uint32_t indexCount;
+        uint32_t vertexOffset = 0;
+        uint32_t vertexCount = 0;
+        uint32_t indexOffset = 0;
+        uint32_t indexCount = 0;
     };
 
     struct QueueFamilyIndices {
@@ -239,12 +231,6 @@ public:
         VkSurfaceCapabilitiesKHR capabilities;
         std::vector<VkSurfaceFormatKHR> formats;
         std::vector<VkPresentModeKHR> presentModes;
-
-        SCsupportDetails()
-            : capabilities(),
-            formats(),
-            presentModes()
-        {}
     };
 
     // ------------------ SWAP CHAIN ------------------ //

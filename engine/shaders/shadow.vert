@@ -11,15 +11,16 @@ layout(location = 3) in vec4 inModel3;
 layout(location = 4) in vec4 inModel4;
 
 struct LightData {
-    mat4 view;
-    mat4 proj;
-
     vec4 pos;
     vec4 color;
-    vec4 targetVec;
+    vec4 target;
+
+    mat4 proj;
+    mat4 view;
+
     float intensity;
-    float innerConeAngle; // in degrees
-    float outerConeAngle; // in degrees
+    float innerConeAngle;
+    float outerConeAngle;
     float constantAttenuation;
     float linearAttenuation;
     float quadraticAttenuation;

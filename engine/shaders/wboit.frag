@@ -10,12 +10,12 @@ layout(set = 2, binding = 0) uniform sampler2DShadow shadowMapSamplers[];
 layout(set = 4, binding = 0) uniform sampler2D depthSampler;
 
 struct LightData {
-    mat4 view;
-    mat4 proj;
-
     vec4 pos;
     vec4 color;
     vec4 target;
+
+    mat4 proj;
+    mat4 view;
 
     float intensity;
     float innerConeAngle;

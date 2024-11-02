@@ -40,8 +40,8 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
     for (int i = 0; i < lights.length(); i++) {
         if (lights[i].intensity < 0.01) continue;
 
-        float inner = radians(lights[i].innerConeAngle);
-        float outer = radians(lights[i].outerConeAngle);
+        float inner = lights[i].innerConeAngle;
+        float outer = lights[i].outerConeAngle;
         float constAttenuation = lights[i].constantAttenuation;
         float linAttenuation = lights[i].linearAttenuation;
         float quadAttenuation = lights[i].quadraticAttenuation;

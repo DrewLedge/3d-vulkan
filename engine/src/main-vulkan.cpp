@@ -107,8 +107,8 @@ private:
         float nearP;
         float farP;
 
-        CamData()
-            : pos(0.0f, -0.75f, -3.5f),
+        CamData() :
+            pos(0.0f, -0.75f, -3.5f),
             quat(0.0f, 0.0f, 0.0f, 1.0f),
             projectionMatrix(),
             viewMatrix(),
@@ -130,80 +130,49 @@ private:
         }
     };
 
-    struct Light { // spotlight
+    struct LightDataObject {
         dml::vec3 pos;
         dml::vec3 col;
         dml::vec3 target;
-        float baseIntensity;
+
         dml::mat4 proj;
         dml::mat4 view;
-        float innerConeAngle; // in degrees
-        float outerConeAngle; // in degrees
+
+        float intensity;
+        float innerConeAngle;
+        float outerConeAngle;
         float constantAttenuation;
         float linearAttenuation;
         float quadraticAttenuation;
-        dvl::Texture shadowMapData;
-        VkhFramebuffer frameBuffer;
-        bool followPlayer;
 
-
-        // default constructor
-        Light()
-            : pos(dml::vec3(0.0f, 0.0f, 0.0f)),
+        LightDataObject() :
+            pos(),
             col(dml::vec3(1.0f, 1.0f, 1.0f)),
-            target(dml::vec3(0.0f, 0.0f, 0.0f)),
-            baseIntensity(1.0f),
-            proj(dml::mat4(1.0f)),
-            view(dml::mat4(1.0f)),
-            innerConeAngle(6.6f),
-            outerConeAngle(10.0f),
+            target(),
+            proj(),
+            view(),
+            intensity(1.0f),
+            innerConeAngle(0.23f),
+            outerConeAngle(0.348f),
             constantAttenuation(1.0f),
             linearAttenuation(0.1f),
-            quadraticAttenuation(0.032f),
+            quadraticAttenuation(0.032f)
+        {}
+    };
+
+    struct Light { // spotlight
+        LightDataObject data;
+
+        dvl::Texture shadowMapData;
+        VkhFramebuffer frameBuffer;
+
+        bool followPlayer;
+
+        Light() :
+            data(),
             shadowMapData(),
             frameBuffer(),
             followPlayer(false) {
-        }
-
-        // copy constructor
-        Light(const Light& other)
-            : pos(other.pos),
-            col(other.col),
-            target(other.target),
-            baseIntensity(other.baseIntensity),
-            proj(other.proj),
-            view(other.view),
-            innerConeAngle(other.innerConeAngle),
-            outerConeAngle(other.outerConeAngle),
-            constantAttenuation(other.constantAttenuation),
-            linearAttenuation(other.linearAttenuation),
-            quadraticAttenuation(other.quadraticAttenuation),
-            shadowMapData(other.shadowMapData),
-            frameBuffer(other.frameBuffer),
-            followPlayer(other.followPlayer) {
-        }
-    };
-    struct LightMatrix {
-        dml::mat4 view;
-        dml::mat4 proj;
-    };
-
-    struct LightDataObject {
-        dml::mat4 view;
-        dml::mat4 proj;
-
-        dml::vec3 pos;
-        dml::vec3 col;
-        dml::vec3 target;
-        float baseIntensity;
-        float innerConeAngle; // in degrees
-        float outerConeAngle; // in degrees
-        float constantAttenuation;
-        float linearAttenuation;
-        float quadraticAttenuation;
-
-        LightDataObject() {
-            memset(this, 0, sizeof(LightDataObject)); //memset everything to 0
         }
     };
 
@@ -1572,29 +1541,20 @@ private:
 
     Light createLight(dml::vec3 pos, dml::vec3 t, dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
         Light l;
-        l.col = color;
-        l.pos = pos;
-        l.baseIntensity = intensity;
-        l.target = t;
-        l.constantAttenuation = 1.0f;
-        l.linearAttenuation = 0.1f;
-        l.quadraticAttenuation = 0.032f;
-        l.innerConeAngle = 6.6f;
-        l.outerConeAngle = 10.0f;
-        l.followPlayer = false;
+        l.data.col = color;
+        l.data.pos = pos;
+        l.data.intensity = intensity;
+        l.data.target = t;
+
         return l;
     }
 
     Light createPlayerLight(dml::vec3 color = { 1.0f, 1.0f, 1.0f }, float intensity = 2.0f) {
         Light l;
-        l.col = color;
-        l.baseIntensity = intensity;
-        l.constantAttenuation = 1.0f;
-        l.linearAttenuation = 0.1f;
-        l.quadraticAttenuation = 0.032f;
-        l.innerConeAngle = 6.6f;
-        l.outerConeAngle = 20.0f;
+        l.data.col = color;
+        l.data.intensity = intensity;
         l.followPlayer = true;
+
         return l;
     }
 
@@ -1686,36 +1646,23 @@ private:
 
     void calcShadowMats(Light& l) {
         if (l.followPlayer) {
-            l.pos = dml::getCamWorldPos(cam.viewMatrix);
-            l.target = l.pos + dml::quatToDir(cam.quat);
+            l.data.pos = dml::getCamWorldPos(cam.viewMatrix);
+            l.data.target = l.data.pos + dml::quatToDir(cam.quat);
         }
         // spotlight shadow mapping math code
         float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
         float nearPlane = 0.01f, farPlane = 100.0f;
 
         dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
-        if (l.pos == l.target) {
+        if (l.data.pos == l.data.target) {
             std::cerr << "Light position and target are the same!" << std::endl;
             return;
         }
 
-        l.view = dml::lookAt(l.pos, l.target, up);
-        l.proj = dml::projection(l.outerConeAngle + 15.0f, aspectRatio, nearPlane, farPlane);
-    }
+        l.data.view = dml::lookAt(l.data.pos, l.data.target, up);
 
-    void copyLightToLightCords(const Light& src, LightDataObject& dst) {
-        memcpy(&dst.view, &src.view, sizeof(dml::mat4));
-        memcpy(&dst.proj, &src.proj, sizeof(dml::mat4));
-
-        memcpy(&dst.pos, &src.pos, sizeof(dml::vec3));
-        memcpy(&dst.col, &src.col, sizeof(dml::vec3));
-        memcpy(&dst.target, &src.target, sizeof(dml::vec3));
-        memcpy(&dst.baseIntensity, &src.baseIntensity, sizeof(float));
-        memcpy(&dst.innerConeAngle, &src.innerConeAngle, sizeof(float));
-        memcpy(&dst.outerConeAngle, &src.outerConeAngle, sizeof(float));
-        memcpy(&dst.constantAttenuation, &src.constantAttenuation, sizeof(float));
-        memcpy(&dst.linearAttenuation, &src.linearAttenuation, sizeof(float));
-        memcpy(&dst.quadraticAttenuation, &src.quadraticAttenuation, sizeof(float));
+        float fov = dml::degrees(l.data.outerConeAngle) * 2.0f;
+        l.data.proj = dml::projection(fov, aspectRatio, nearPlane, farPlane);
     }
 
     void updateUBO() {
@@ -1723,7 +1670,7 @@ private:
         for (size_t i = 0; i < lights.size(); i++) {
             Light& l = *lights[i];
             calcShadowMats(l);
-            copyLightToLightCords(l, lightData.lightCords[i]);
+            memcpy(&lightData.lightCords[i], &l.data, sizeof(LightDataObject));
         }
 
         void* lData;

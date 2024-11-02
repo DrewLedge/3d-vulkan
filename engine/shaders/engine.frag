@@ -18,12 +18,12 @@ layout(location = 9) flat in uint inBitfield;
 layout(location = 0) out vec4 outColor;
 
 struct LightData {
-    mat4 view;
-    mat4 proj;
-
     vec4 pos;
     vec4 color;
     vec4 target;
+
+    mat4 proj;
+    mat4 view;
 
     float intensity;
     float innerConeAngle;
