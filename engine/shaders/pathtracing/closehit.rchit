@@ -79,9 +79,9 @@ BARYCENTRIC(vec2)
 BARYCENTRIC(vec3)
 BARYCENTRIC(vec4)
 
-vec4 albedo = vec4(0.0f);
-vec4 metallicRoughness = vec4(1.0f);
-vec3 normal = vec3(1.0f);
+vec4 albedo = vec4(1.0f);
+vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
+vec3 normal = vec3(0.0f);
 vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 
@@ -233,6 +233,6 @@ void main() {
     }
 
     // final color calculation
-    float o = occlusion * 0.005;
-    payload.col = accumulated + emissive + vec3(o);
+    vec3 o = albedo.rgb * occlusion * 0.005;
+    payload.col = accumulated + emissive + o;
 }

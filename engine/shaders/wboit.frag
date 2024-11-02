@@ -42,9 +42,9 @@ layout(location = 11) in float inNearPlane;
 
 layout(location = 0) out vec4 outColor;
 
-vec4 albedo = vec4(0.0f);
-vec4 metallicRoughness = vec4(1.0f);
-vec3 normal = vec3(1.0f);
+vec4 albedo = vec4(1.0f);
+vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
+vec3 normal = vec3(0.0f);
 vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 

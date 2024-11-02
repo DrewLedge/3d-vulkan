@@ -37,9 +37,9 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-vec4 albedo = vec4(0.0f);
-vec4 metallicRoughness = vec4(1.0f);
-vec3 normal = vec3(1.0f);
+vec4 albedo = vec4(1.0f);
+vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
+vec3 normal = vec3(0.0f);
 vec3 emissive = vec3(0.0f);
 float occlusion = 1.0f;
 

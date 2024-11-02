@@ -76,6 +76,6 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
     }
 
     // final color calculation
-    float o = occlusion * 0.005;
-    return vec4(accumulated + emissive + vec3(o), color.a);
+    vec3 o = albedo.rgb * occlusion * 0.005;
+    return vec4(accumulated + emissive + o, color.a);
 }

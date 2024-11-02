@@ -1,30 +1,40 @@
 #define PI 3.141592653589793238
 
-// outputs a float based on the self shadowing of microfacets
-// it accounts for the fact that some microfacets may be shadowed by others, which reduces the reflectance
-// without the geometric attenuation, rough surfaces would appear overly shiny
-float gAttenutation(float term, float alpha) {
-    return 2.0 * term / (term + sqrt(alpha + (1.0 - alpha) * (term * term)));
+
+// calc the geometry function for a given term using Schlick-GGX approximation
+// the geometry function accounts for the fact that some microfacets may be shadowed by others, which reduces the reflectance
+// without the geometry function, rough surfaces would appear overly shiny
+float gSchlickGGX(float term, float k) {
+    return term / (term * (1.0 - k) + k);
 }
 
-// outputs a float based on the statistical distribution of microfacet orientations
-// essentially, it determins how likely a microfacet is oriented in which it will reflect light
+// calc the geometry function based on the light and view dir
+// this determines which microfacets are shadowed, and thus cannot reflect light into the view dir
+float gSmith(float NdotV, float NdotL, float roughness) {
+    float r = (roughness + 1.0);
+    float k = (r * r) / 8.0;
+    return gSchlickGGX(NdotV, k) * gSchlickGGX(NdotL, k);
+}
+
+// calc the normal distribution function (ndf) using Trowbridge-Reitz model
+// the ndf determines the statistical distribution of microfacet orientations that contribute to the reflection
 // ndf is crucial for determining the intensity and shape of specular highlights
-float ndf(float NdotH, float alpha) {
-    return alpha / (PI * pow(NdotH * NdotH * (alpha - 1.0) + 1.0, 2.0));
+float ndf(float NdotH, float a) {
+    float a2 = a * a;
+    float denom = NdotH * NdotH * (a2 - 1.0) + 1.0;
+    return a2 / (PI * denom * denom);
 }
 
-// outputs a vec3 for to simulate how the reflectivity changes based on the viewing angle
+// calc the fresnel term using Schlick approximation
+// the fresnel term determines how reflective the material is based on the viewing angle and metallic value
 vec3 fresnelTerm(vec3 color, float metallic, float VdotH) {
-    // F0 represents the base reflectivity
-    // which is the amount of light the material reflects from straight on
-    // used to distinguish between metallic things and non metallic things (dielectrics)
-    vec3 F0 = mix(vec3(0.04), color, metallic);
-    return F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0); // uses schlick approximation to get the fresnel term
+    const vec3 br = vec3(0.04); // the base reflectivity constant for non metallic (dielectric) materials
+    vec3 F0 = mix(br, color, metallic); // the base reflectivity of the material based on the metallic value and the albedo
+    return F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
 }
 
 vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float roughness) {
-    float alpha = roughness * roughness;
+    float a = roughness * roughness;
 
     // compute halfway vector
     vec3 H = normalize(V + L);
@@ -36,21 +46,24 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float rou
     float NdotL = max(dot(N, L), 0.0);
 
     // normal distribution function
-    float ND = ndf(NdotH, alpha);
+    float ND = ndf(NdotH, a);
 
-    // geometric attenuation factor
-    float G = gAttenutation(NdotV, roughness) * gAttenutation(NdotL, roughness);
+    // geometry function
+    float G = gSmith(NdotV, NdotL, roughness);
 
     // fresnel term
     vec3 F = fresnelTerm(albedo.rgb, metallic, VdotH);
 
     float norm = (4.0 * max(NdotV * NdotL, 0.0001)); // used to normalize the specular term
+    vec3 spec = (ND * G * F) / norm;
 
-    // specular and diffuse components
-    vec3 specular = (ND * G * F) / norm;
-    vec3 diffuse = (1.0 - metallic) * albedo.rgb / PI;
+    // the proportion of light not reflected specularly
+    vec3 kD = vec3(1.0) - F;
+    kD *= 1.0 - metallic;
 
-    return (diffuse + specular);
+    vec3 diffuse = kD * albedo.rgb / PI;
+
+    return (diffuse + spec) * NdotL;
 }
 
 void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
@@ -70,7 +83,6 @@ void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
     }
     if (normalExists) {
         normal = (texture(texSamplers[nextTexture], uv).rgb * 2.0 - 1.0);
-        normal.y *= -1.0;
         normal = normalize(tbn * normal);
         nextTexture += 1;
     }
