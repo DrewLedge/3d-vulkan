@@ -40,21 +40,20 @@
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
-constexpr uint32_t MAX_MODELS = 1200;
-constexpr uint32_t MAX_LIGHTS = 300;
+namespace config {
+    constexpr uint32_t MAX_MODELS = 1200;
+    constexpr uint32_t MAX_LIGHTS = 300;
 
-constexpr uint32_t SCREEN_WIDTH = 3200;
-constexpr uint32_t SCREEN_HEIGHT = 1800;
+    constexpr uint32_t SCREEN_WIDTH = 3200;
+    constexpr uint32_t SCREEN_HEIGHT = 1800;
 
-const std::string ENGINE_VER = "v0.5.3";
+    const std::string ENGINE_VER = "v0.5.3";
 
-const std::string SHADER_DIR = "shaders/compiled/";
-const std::string MODEL_DIR = "assets/models/";
-const std::string SKYBOX_DIR = "assets/skyboxes/";
-const std::string FONT_DIR = "assets/fonts/";
-
-bool rtSupported = false; // a bool if raytracing is supported on the device
-bool rtEnabled = false; // a bool if raytracing has been enabled
+    const std::string SHADER_DIR = "shaders/compiled/";
+    const std::string MODEL_DIR = "assets/models/";
+    const std::string SKYBOX_DIR = "assets/skyboxes/";
+    const std::string FONT_DIR = "assets/fonts/";
+}
 
 struct MouseData {
     bool locked;
@@ -65,8 +64,8 @@ struct MouseData {
     float upAngle;
     float rightAngle;
 
-    MouseData()
-        : upAngle(0.0f),
+    MouseData() :
+        upAngle(0.0f),
         rightAngle(0.0f),
         lastX(0.0f),
         lastY(0.0f),
@@ -75,7 +74,7 @@ struct MouseData {
 };
 
 // globals
-MouseData mouse;
+MouseData mouse{};
 VkQueue graphicsQueue{};
 VkPhysicalDevice physicalDevice{};
 GLFWwindow* window = nullptr;
@@ -110,16 +109,12 @@ private:
         CamData() :
             pos(0.0f, -0.75f, -3.5f),
             quat(0.0f, 0.0f, 0.0f, 1.0f),
-            projectionMatrix(),
-            viewMatrix(),
-            buffer(),
-            bufferMem(),
             fov(60.0f),
             nearP(0.01f),
             farP(100.0f)
         {}
 
-        const dml::mat4 getViewMatrix(MouseData& m) {
+        dml::mat4 getViewMatrix(MouseData& m) const {
             return dml::viewMatrix(pos, dml::radians(m.upAngle), dml::radians(m.rightAngle));
         }
 
@@ -146,11 +141,7 @@ private:
         float quadraticAttenuation;
 
         LightDataObject() :
-            pos(),
-            col(dml::vec3(1.0f, 1.0f, 1.0f)),
-            target(),
-            proj(),
-            view(),
+            col(1.0f, 1.0f, 1.0f),
             intensity(1.0f),
             innerConeAngle(0.23f),
             outerConeAngle(0.348f),
@@ -160,7 +151,7 @@ private:
         {}
     };
 
-    struct Light { // spotlight
+    struct Light {
         LightDataObject data;
 
         dvl::Texture shadowMapData;
@@ -169,30 +160,22 @@ private:
         bool followPlayer;
 
         Light() :
-            data(),
-            shadowMapData(),
-            frameBuffer(),
             followPlayer(false) {
         }
     };
 
     struct LightDataSSBO {
         std::vector<LightDataObject> lightCords;
-        size_t memSize;
+        size_t memSize = 0;
     };
 
-    struct ModelMat {
+    struct ModelInstance {
         dml::mat4 model;
-        uint32_t render;
-
-        ModelMat()
-            : model(),
-            render(true)
-        {}
-
+        uint32_t render = 1;
     };
-    struct ModelMatInstanceData {
-        ModelMat object[MAX_MODELS];
+
+    struct ModelInstanceData {
+        ModelInstance object[config::MAX_MODELS];
     };
     struct CamUBO {
         dml::mat4 view;
@@ -204,11 +187,12 @@ private:
         uint32_t height = 2048;
     };
 
-    struct SkyboxObject { // skybox struct
+    struct SkyboxObject {
         dvl::Texture cubemap;
+
         VkhPipelineLayout pipelineLayout;
         VkhPipeline pipeline;
-        vkh::BufData bufferData; // buffer data for the skybox (vert offsets, etc)
+        vkh::BufData bufferData;
         VkhBuffer vertBuffer;
         VkhDeviceMemory vertBufferMem;
         VkhBuffer indBuffer;
@@ -216,23 +200,10 @@ private:
 
         float* imgData;
 
-        std::vector<dml::vec3> vertices;
         std::vector<uint32_t> indices;
+        std::vector<dml::vec3> vertices;
 
-        void resetPipeline() {
-            if (pipelineLayout.valid()) pipelineLayout.reset();
-            if (pipeline.valid()) pipeline.reset();
-        }
-
-        SkyboxObject()
-            : cubemap(),
-            pipelineLayout(),
-            pipeline(),
-            bufferData(),
-            vertBuffer(),
-            vertBufferMem(),
-            indBuffer(),
-            indBufferMem(),
+        SkyboxObject() :
             imgData(nullptr),
 
             indices{
@@ -254,6 +225,11 @@ private:
                 { 1.0f,  1.0f, -1.0f}
             }
         {}
+
+        void resetPipeline() {
+            if (pipelineLayout.valid()) pipelineLayout.reset();
+            if (pipeline.valid()) pipeline.reset();
+        }
     };
 
     struct DSObject {
@@ -266,15 +242,12 @@ private:
 
         DSObject() :
             binding(0),
-            type(),
-
-            pool(),
-            layout(),
             set(pool.v())
         {}
     };
 
     struct DesciptorSetsObj {
+        // global
         DSObject textures;
         DSObject lightData;
         DSObject skybox;
@@ -296,6 +269,12 @@ private:
         VkhPipelineLayout layout;
         VkhPipeline pipeline;
 
+        PipelineData() :
+            renderPass(),
+            layout(),
+            pipeline()
+        {}
+
         void reset() {
             if (renderPass.valid()) renderPass.reset();
             if (layout.valid()) layout.reset();
@@ -312,14 +291,9 @@ private:
         uint32_t imageCount;
         std::vector<VkhFramebuffer> framebuffers;
 
-        SCData()
-            : swapChain(),
-            images(),
+        SCData() :
             imageFormat(VK_FORMAT_UNDEFINED),
-            extent(),
-            imageViews(),
-            imageCount(0),
-            framebuffers()
+            imageCount(0)
         {}
     };
 
@@ -327,8 +301,13 @@ private:
         bool pressedLastFrame = false;
         int keyPress;
 
-        KeyPO() : pressedLastFrame(false), keyPress(-1) {}
-        KeyPO(const int key) : pressedLastFrame(false), keyPress(key) {}
+        KeyPO() :
+            keyPress(-1)
+        {}
+
+        KeyPO(const int key) :
+            keyPress(key)
+        {}
 
         bool isPressed() {
             bool notPressedLast = !pressedLastFrame;
@@ -341,8 +320,8 @@ private:
         dvl::Texture weightedColor;
         VkhFramebuffer frameBuffer;
 
-        WBOITData()
-            : weightedColor(),
+        WBOITData() :
+            weightedColor(),
             frameBuffer()
         {}
     };
@@ -354,7 +333,6 @@ private:
 
     struct CommandBufferCollection {
         std::vector<VkhCommandPool> pools;
-
         std::vector<VkhCommandBuffer> buffers;
         std::vector<VkCommandBuffer> rawBuffers;
 
@@ -413,6 +391,18 @@ private:
 
         VkhBuffer scratchBuffer;
         VkhDeviceMemory scratchMem;
+
+        TlasData() :
+            as(),
+            buildInfo(),
+            geometry(),
+            buffer(),
+            mem(),
+            instanceBuffer(),
+            instanceBufferMem(),
+            scratchBuffer(),
+            scratchMem()
+        {}
     };
 
     struct SBT {
@@ -423,32 +413,41 @@ private:
         VkDeviceSize entryS;
 
         // sbt regions
-        VkStridedDeviceAddressRegionKHR raygenR{};
-        VkStridedDeviceAddressRegionKHR missR{};
-        VkStridedDeviceAddressRegionKHR hitR{};
-        VkStridedDeviceAddressRegionKHR callR{};
+        VkStridedDeviceAddressRegionKHR raygenR;
+        VkStridedDeviceAddressRegionKHR missR;
+        VkStridedDeviceAddressRegionKHR hitR;
+        VkStridedDeviceAddressRegionKHR callR;
+
+        SBT() :
+            raygenR(),
+            missR(),
+            hitR(),
+            callR()
+        {}
     };
 
-
     struct TexIndexObj {
-        uint32_t albedoIndex;
-        uint32_t texBitfield;
+        uint32_t albedoIndex = 0;
+        uint32_t texBitfield = 0;
 
-        VkDeviceAddress vertAddr;
-        VkDeviceAddress indAddr;
+        VkDeviceAddress vertAddr = 0;
+        VkDeviceAddress indAddr = 0;
     };
 
     struct TexIndexSSBO {
-        TexIndexObj indices[MAX_MODELS];
+        TexIndexObj indices[config::MAX_MODELS];
     };
 
-    CamData cam;
+    bool rtSupported = false; // a bool if raytracing is supported on the device
+    bool rtEnabled = true; // a bool if raytracing has been enabled
+
+    CamData cam{};
 
     // window and rendering context
-    VkQueue presentQueue = VK_NULL_HANDLE;
-    VkQueue computeQueue = VK_NULL_HANDLE;
-    VkQueue transferQueue = VK_NULL_HANDLE;
-    vkh::QueueFamilyIndices queueFamilyIndices;
+    VkQueue presentQueue{};
+    VkQueue computeQueue{};
+    VkQueue transferQueue{};
+    vkh::QueueFamilyIndices queueFamilyIndices{};
 
     // key press objects
     KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
@@ -456,81 +455,81 @@ private:
     KeyPO rKey = KeyPO(GLFW_KEY_R);
 
     // swap chain and framebuffers
-    SCData swap = {};
+    SCData swap{};
     size_t currentFrame = 0;
 
     // viewport config
     VkViewport swapVP{};
 
     // rendering pipeline data
-    PipelineData opaquePassPipeline;
-    PipelineData shadowMapPipeline;
-    PipelineData compPipelineData;
-    PipelineData wboitPipeline;
+    PipelineData opaquePassPipeline{};
+    PipelineData shadowMapPipeline{};
+    PipelineData compPipelineData{};
+    PipelineData wboitPipeline{};
 
-    VkhFramebuffer opaquePassFB;
-    OpaquePassTex opaquePassTextures = {};
+    VkhFramebuffer opaquePassFB{};
+    OpaquePassTex opaquePassTextures{};
 
     // command buffers and command pool
-    VkhCommandPool commandPool;
-    CommandBufferSet opaquePassCommandBuffers;
-    CommandBufferSet shadowMapCommandBuffers;
-    CommandBufferSet wboitCommandBuffers;
-    CommandBufferSet compCommandBuffers;
-    CommandBufferSet rtCommandBuffers;
+    VkhCommandPool commandPool{};
+    CommandBufferSet opaquePassCommandBuffers{};
+    CommandBufferSet shadowMapCommandBuffers{};
+    CommandBufferSet wboitCommandBuffers{};
+    CommandBufferSet compCommandBuffers{};
+    CommandBufferSet rtCommandBuffers{};
 
     // buffers
-    VkhBuffer vertBuffer;
-    VkhBuffer indBuffer;
-    VkhBuffer objInstanceBuffer;
-    VkhBuffer lightBuffer;
-    VkhBuffer sceneIndexBuffer;
+    VkhBuffer vertBuffer{};
+    VkhBuffer indBuffer{};
+    VkhBuffer objInstanceBuffer{};
+    VkhBuffer lightBuffer{};
+    VkhBuffer sceneIndexBuffer{};
 
     // buffer memory
-    VkhDeviceMemory vertBufferMem;
-    VkhDeviceMemory indBufferMem;
-    VkhDeviceMemory objInstanceBufferMem;
-    VkhDeviceMemory lightBufferMem;
-    VkhDeviceMemory sceneIndexBufferMem;
+    VkhDeviceMemory vertBufferMem{};
+    VkhDeviceMemory indBufferMem{};
+    VkhDeviceMemory objInstanceBufferMem{};
+    VkhDeviceMemory lightBufferMem{};
+    VkhDeviceMemory sceneIndexBufferMem{};
 
     // synchronization primitives
     std::vector<VkhFence> inFlightFences;
-    VkhSemaphore imageAvailableSemaphore;
-    VkhSemaphore renderFinishedSemaphore;
-    VkhSemaphore shadowSemaphore;
-    VkhSemaphore wboitSemaphore;
-    VkhSemaphore compSemaphore;
-    VkhSemaphore rtSemaphore;
+    VkhSemaphore imageAvailableSemaphore{};
+    VkhSemaphore renderFinishedSemaphore{};
+    VkhSemaphore shadowSemaphore{};
+    VkhSemaphore wboitSemaphore{};
+    VkhSemaphore compSemaphore{};
+    VkhSemaphore rtSemaphore{};
 
     // descriptor sets and pools
-    DesciptorSetsObj descs;
-    VkhDescriptorPool imguiDescriptorPool;
-    VkhDescriptorSetLayout imguiDescriptorSetLayout;
+    DesciptorSetsObj descs{};
+    VkhDescriptorPool imguiDescriptorPool{};
+    VkhDescriptorSetLayout imguiDescriptorSetLayout{};
 
     // scene data and objects
     std::vector<vkh::BufData> bufferData;
     std::vector<std::unique_ptr<dvl::Mesh>> objects;
     std::vector<std::unique_ptr<dvl::Mesh>> originalObjects;
     std::vector<uint32_t> playerModels;
-    ModelMatInstanceData objInstanceData = {};
-    CamUBO camMatData = {};
-    LightDataSSBO lightData = {};
+    ModelInstanceData objInstanceData{};
+    CamUBO camMatData{};
+    LightDataSSBO lightData{};
     std::vector<std::unique_ptr<Light>> lights;
 
     // path tracing
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties{};
     std::vector<BlasData> BLAS;
-    TlasData tlas;
-    PipelineData rtPipeline;
+    TlasData tlas{};
+    PipelineData rtPipeline{};
     dvl::Texture rtTex{};
-    SBT sbt;
-    TexIndexSSBO texIndices;
-    VkhBuffer texIndicesBuffer;
-    VkhDeviceMemory texIndicesBufferMem;
+    SBT sbt{};
+    TexIndexSSBO texIndices{};
+    VkhBuffer texIndicesBuffer{};
+    VkhDeviceMemory texIndicesBufferMem{};
 
     std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
-    ShadowMapDim shadowProps = {};
+    ShadowMapDim shadowProps{};
     uint32_t modelIndex = 0; // index of where vertecies are loaded to
 
     std::unordered_map<size_t, size_t> uniqueModelIndex;
@@ -543,10 +542,10 @@ private:
     uint32_t totalTextureCount = 0;
     dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
-    WBOITData wboit = {};
+    WBOITData wboit{};
 
     // skybox data
-    SkyboxObject skybox = {};
+    SkyboxObject skybox{};
 
     // font data
     ImFont* smallFont = nullptr;
@@ -557,7 +556,7 @@ private:
     double lastFrame = 0.0;
 
     // multithreading
-    std::mutex modelMtx;
+    std::mutex modelMtx{};
 
     std::vector<std::future<void>> objTasks;
     std::vector<std::future<void>> textureTasks;
@@ -574,16 +573,16 @@ private:
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
 
-        std::string engineName = "3d-vulkan " + ENGINE_VER;
+        std::string engineName = "3d-vulkan " + config::ENGINE_VER;
 
-        window = glfwCreateWindow(SCREEN_WIDTH, SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
+        window = glfwCreateWindow(config::SCREEN_WIDTH, config::SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
 
         // imgui initialization
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui_ImplGlfw_InitForVulkan(window, true);
 
-        largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
+        largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((config::FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
     }
 
     void validateFiles() {
@@ -593,7 +592,7 @@ private:
         if (!std::filesystem::exists(models)) {
             if (std::filesystem::create_directory(models)) {
 #ifdef ENABLE_DEBUG
-                std::cout << "Created directory: " << models << std::endl;
+                std::cout << "Created directory: " << models << "\n";
 #endif
             }
             else {
@@ -714,33 +713,14 @@ private:
         physicalDevice = bestDevice;
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
-#ifdef ENABLE_DEBUG
-        printCapabilities(deviceProperties);
-#else
+
         utils::sep();
-#endif
+
 
         // check if ray tracing is supported
         rtSupported = isRTSupported(physicalDevice);
         rtEnabled = rtEnabled && rtSupported;
-        std::cout << "Raytacing is " << (rtEnabled ? "enabled" : "not enabled") << "!" << std::endl;
-        utils::sep();
-    }
-
-    void printCapabilities(VkPhysicalDeviceProperties deviceProperties) {
-        utils::sep();
-        std::cout << "Device Name: " << deviceProperties.deviceName << std::endl;
-        std::cout << "Max Descriptor Sets: " << deviceProperties.limits.maxBoundDescriptorSets << std::endl;
-        std::cout << "Max Uniform Buffers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetUniformBuffers << std::endl;
-        std::cout << "Max Combined Image Samplers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetSamplers << std::endl;
-        std::cout << "Max Storage Buffers Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetStorageBuffers << std::endl;
-        std::cout << "Max Storage Images Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetStorageImages << std::endl;
-        std::cout << "Max Input Attachments Descriptors per Set: " << deviceProperties.limits.maxDescriptorSetInputAttachments << std::endl;
-        std::cout << "Max Vertex Input Attributes: " << deviceProperties.limits.maxVertexInputAttributes << std::endl;
-        std::cout << "Max Vertex Input Bindings: " << deviceProperties.limits.maxVertexInputBindings << std::endl;
-        std::cout << "Max Vertex Input Attribute Offset: " << deviceProperties.limits.maxVertexInputAttributeOffset << std::endl;
-        std::cout << "Max Vertex Input Binding Stride: " << deviceProperties.limits.maxVertexInputBindingStride << std::endl;
-        std::cout << "Max Vertex Output Components: " << deviceProperties.limits.maxVertexOutputComponents << std::endl;
+        std::cout << "Raytacing is " << (rtEnabled ? "enabled" : "not enabled") << "!" << "\n";
         utils::sep();
     }
 
@@ -772,7 +752,7 @@ private:
         nestedCommandBufferFeatures.nestedCommandBuffer = VK_TRUE;
         nestedCommandBufferFeatures.nestedCommandBufferRendering = VK_TRUE;
 
-        VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures = {};
+        VkPhysicalDeviceBufferDeviceAddressFeatures bufferDeviceAddressFeatures{};
         bufferDeviceAddressFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
         bufferDeviceAddressFeatures.bufferDeviceAddress = VK_TRUE;
         bufferDeviceAddressFeatures.pNext = &nestedCommandBufferFeatures;
@@ -839,10 +819,10 @@ private:
 
         for (auto& e : deviceExtensions) {
             if (checkExtensionSupport(e)) {
-                std::cout << "---- " << e << " is supported!" << " ----" << std::endl;
+                std::cout << "---- " << e << " is supported!" << " ----" << "\n";
             }
             else {
-                std::cerr << "---- " << e << " is NOT supported!" << " ----" << std::endl;
+                std::cerr << "---- " << e << " is NOT supported!" << " ----" << "\n";
                 deviceExtensions.erase(std::remove(deviceExtensions.begin(), deviceExtensions.end(), e), deviceExtensions.end());
             }
         }
@@ -907,7 +887,7 @@ private:
         // choose the best surface format, present mode, and swap extent for the swap chain
         VkSurfaceFormatKHR surfaceFormat = vkh::chooseSwapSurfaceFormat(swapChainSupport.formats);
         VkPresentModeKHR present = vkh::chooseSwapPresentMode(swapChainSupport.presentModes);
-        VkExtent2D extent = vkh::chooseSwapExtent(swapChainSupport.capabilities, SCREEN_WIDTH, SCREEN_HEIGHT);
+        VkExtent2D extent = vkh::chooseSwapExtent(swapChainSupport.capabilities, config::SCREEN_WIDTH, config::SCREEN_HEIGHT);
 
         // get the number of images for the sc. this is the minumum + 1
         swap.imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -1096,10 +1076,10 @@ private:
             double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
 
             utils::sep();
-            std::cout << "Vertex count: " << vertCount << std::endl;
-            std::cout << "Object count: " << objects.size() << std::endl;
-            std::cout << "Light count: " << lights.size() << " / " << MAX_LIGHTS << std::endl;
-            std::cout << "Score: " << score << std::endl;
+            std::cout << "Vertex count: " << vertCount << "\n";
+            std::cout << "Object count: " << objects.size() << "\n";
+            std::cout << "Light count: " << lights.size() << " / " << config::MAX_LIGHTS << "\n";
+            std::cout << "Score: " << score << "\n";
         }
 
         // lock / unlock mouse
@@ -1398,7 +1378,7 @@ private:
     }
 
     void loadSkybox(std::string path) {
-        skybox.cubemap.path = SKYBOX_DIR + path;
+        skybox.cubemap.path = config::SKYBOX_DIR + path;
         createTexturedCubemap(skybox.cubemap, skybox.imgData);
 
         vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
@@ -1480,7 +1460,7 @@ private:
             getTexIndices();
         }
 
-        std::cout << "Finished loading " << totalTextureCount << " textures!" << std::endl;
+        std::cout << "Finished loading " << totalTextureCount << " textures!" << "\n";
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1498,11 +1478,11 @@ private:
         LOG_WARNING_IF(warn, !warn.empty());
 
         if (!err.empty()) {
-            std::cerr << err << std::endl;
+            std::cerr << err << "\n";
             return;
         }
         if (!ret) {
-            std::cerr << "Failed to load GLTF model" << std::endl;
+            std::cerr << "Failed to load GLTF model" << "\n";
             return;
         }
 
@@ -1535,7 +1515,7 @@ private:
     }
 
     void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
-        std::string path = std::string(MODEL_DIR) + name;
+        std::string path = std::string(config::MODEL_DIR) + name;
         objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
     }
 
@@ -1624,7 +1604,7 @@ private:
     }
 
     void setupBuffers() {
-        vkh::createBuffer(objInstanceBuffer, objInstanceBufferMem, &objInstanceData, sizeof(ModelMatInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+        vkh::createBuffer(objInstanceBuffer, objInstanceBufferMem, &objInstanceData, sizeof(ModelInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
         vkh::createBuffer(cam.buffer, cam.bufferMem, &camMatData, sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
 
         createLightBuffer();
@@ -1655,7 +1635,7 @@ private:
 
         dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
         if (l.data.pos == l.data.target) {
-            std::cerr << "Light position and target are the same!" << std::endl;
+            std::cerr << "Light position and target are the same!" << "\n";
             return;
         }
 
@@ -1777,7 +1757,7 @@ private:
         VkDescriptorImageInfo opaquePassDepthInfo{};
 
         // raytracing
-        VkWriteDescriptorSetAccelerationStructureKHR tlasInfo = {};
+        VkWriteDescriptorSetAccelerationStructureKHR tlasInfo{};
         VkDescriptorImageInfo rtPresentTexture{};
 
         if (rtEnabled) {
@@ -1833,7 +1813,7 @@ private:
 
         // rasterization specific descriptorsets
         else {
-            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config::MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
             createDescriptorSet(descs.composition, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT);
             createDescriptorSet(descs.opaqueDepth, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
 
@@ -1920,7 +1900,7 @@ private:
     }
 
     VkhShaderModule createShaderMod(std::string name) {
-        std::vector<char> shaderCode = readFile(SHADER_DIR + name + std::string("_shader.spv"));
+        std::vector<char> shaderCode = readFile(config::SHADER_DIR + name + std::string("_shader.spv"));
         return vkh::createShaderModule(shaderCode);
     }
 
@@ -1940,7 +1920,7 @@ private:
 
         VkVertexInputBindingDescription instanceBindDesc{};
         instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelMat);// number of bytes from one model matrix (entry) to the next
+        instanceBindDesc.stride = sizeof(ModelInstance);// number of bytes from one model matrix (entry) to the next
         instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE; // data is per instance
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -1985,14 +1965,14 @@ private:
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
+            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
         }
 
         // render flag
         attrDesc[9].binding = 1;
         attrDesc[9].location = 9;
         attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[9].offset = offsetof(ModelMat, render);
+        attrDesc[9].offset = offsetof(ModelInstance, render);
 
         // vertex input state: defines the structure of vertex data for the pipeline
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -2191,7 +2171,7 @@ private:
 
         VkVertexInputBindingDescription instanceBindDesc{};
         instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelMat);
+        instanceBindDesc.stride = sizeof(ModelInstance);
         instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -2212,7 +2192,7 @@ private:
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
+            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
         }
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -2480,7 +2460,7 @@ private:
 
         VkVertexInputBindingDescription instanceBindDesc{};
         instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelMat);
+        instanceBindDesc.stride = sizeof(ModelInstance);
         instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
@@ -2524,13 +2504,13 @@ private:
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelMat, model) + sizeof(float) * 4 * i;
+            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
         }
 
         attrDesc[9].binding = 1;
         attrDesc[9].location = 9;
         attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[9].offset = offsetof(ModelMat, render);
+        attrDesc[9].offset = offsetof(ModelInstance, render);
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2774,7 +2754,7 @@ private:
         colorAttachmentRef.attachment = 0;
         colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentDescription colorResolve = {};
+        VkAttachmentDescription colorResolve{};
         colorResolve.format = swap.imageFormat;
         colorResolve.samples = VK_SAMPLE_COUNT_1_BIT;
         colorResolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -2953,7 +2933,7 @@ private:
     static void check_vk_result(VkResult err) { // used to debug imgui errors that have to do with vulkan 
         if (err == 0)
             return;
-        std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << std::endl;
+        std::cerr << "VkResult is " << err << " in " << __FILE__ << " at line " << __LINE__ << "\n";
         assert(err == 0); // if true, continue, if false, throw error
     }
 
@@ -2998,7 +2978,7 @@ private:
 
         // imgui setup:
         uint32_t graphicsQueueFamily = queueFamilyIndices.graphicsFamily.value();
-        ImGui_ImplVulkan_InitInfo initInfo = {};
+        ImGui_ImplVulkan_InitInfo initInfo{};
         initInfo.Instance = instance;
         initInfo.PhysicalDevice = physicalDevice;
         initInfo.Device = device;
@@ -3152,7 +3132,7 @@ private:
         VkDeviceAddress indexAddress = vkh::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
 
         // acceleration structure geometry - specifies the device addresses and data inside of the vertex and index buffers
-        VkAccelerationStructureGeometryKHR geometry = {};
+        VkAccelerationStructureGeometryKHR geometry{};
         geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         geometry.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
         geometry.flags = 0; // no geometry flags are set
@@ -3169,7 +3149,7 @@ private:
         accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR; // optimizes the blas for faster path tracing
 
         // BLAS build info - specifies the acceleration structure type, the flags, and the geometry
-        VkAccelerationStructureBuildGeometryInfoKHR buildInfo = {};
+        VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
         buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
         buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
@@ -3178,7 +3158,7 @@ private:
         buildInfo.pGeometries = &geometry;
 
         // size requirements for the BLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
-        VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
+        VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
         vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
@@ -3189,7 +3169,7 @@ private:
         vkh::createBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the BLAS
-        VkAccelerationStructureCreateInfoKHR createInfo = {};
+        VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         createInfo.buffer = blasBuffer.v();
@@ -3203,7 +3183,7 @@ private:
         vkh::createBuffer(blasScratchBuffer, blasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // build range info - specifies the primitive count and offsets for the blas
-        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
+        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
         buildRangeInfo.primitiveCount = primitiveCount;
         buildRangeInfo.primitiveOffset = 0;
         buildRangeInfo.transformOffset = 0;
@@ -3221,7 +3201,7 @@ private:
 
         // create a query pool used to store the size of the compacted BLAS
         VkhQueryPool queryPool;
-        VkQueryPoolCreateInfo queryPoolInfo = {};
+        VkQueryPoolCreateInfo queryPoolInfo{};
         queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
         queryPoolInfo.queryType = VK_QUERY_TYPE_ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR;
         queryPoolInfo.queryCount = 1;
@@ -3243,7 +3223,7 @@ private:
         vkh::createBuffer(BLAS[index].compBuffer, BLAS[index].compMem, compactedSize, compUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the compacted BLAS
-        VkAccelerationStructureCreateInfoKHR compactedCreateInfo = {};
+        VkAccelerationStructureCreateInfoKHR compactedCreateInfo{};
         compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
         compactedCreateInfo.buffer = BLAS[index].compBuffer.v();
@@ -3251,7 +3231,7 @@ private:
         vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].blas.p());
 
         // the info for the copying of the original blas to the compacted blas
-        VkCopyAccelerationStructureInfoKHR copyInfo = {};
+        VkCopyAccelerationStructureInfoKHR copyInfo{};
         copyInfo.sType = VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR;
         copyInfo.mode = VK_COPY_ACCELERATION_STRUCTURE_MODE_COMPACT_KHR;
         copyInfo.src = blas.v();
@@ -3267,13 +3247,13 @@ private:
         if (tlas.as.valid()) tlas.as.reset();
 
         // create a buffer to hold all of the instances
-        VkDeviceSize iSize = MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
+        VkDeviceSize iSize = config::MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
         VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
         vkh::createBuffer(tlas.instanceBuffer, tlas.instanceBufferMem, meshInstances.data(), iSize, iUsage, commandPool, graphicsQueue, iMemFlags, false);
 
         uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
-        uint32_t primitiveCountMax = MAX_MODELS;
+        uint32_t primitiveCountMax = config::MAX_MODELS;
 
         // acceleration structure geometry
         VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
@@ -3296,7 +3276,7 @@ private:
         tlas.buildInfo.pGeometries = &tlas.geometry;
 
         // size requirements for the TLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
-        VkAccelerationStructureBuildSizesInfoKHR sizeInfo = {};
+        VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
         vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas.buildInfo, &primitiveCountMax, &sizeInfo);
 
@@ -3307,7 +3287,7 @@ private:
         vkh::createBuffer(tlas.buffer, tlas.mem, asSize, tlasUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the TLAS
-        VkAccelerationStructureCreateInfoKHR createInfo = {};
+        VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
         createInfo.buffer = tlas.buffer.v();
@@ -3319,7 +3299,7 @@ private:
         vkh::createBuffer(tlas.scratchBuffer, tlas.scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // build range info - specifies the primitive count and offsets for the tlas
-        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
+        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
         buildRangeInfo.primitiveCount = primitiveCount;
         buildRangeInfo.primitiveOffset = 0;
         buildRangeInfo.transformOffset = 0;
@@ -3394,7 +3374,7 @@ private:
         tlas.buildInfo.dstAccelerationStructure = tlas.as.v();
 
         // update the buildRangeInfo
-        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo = {};
+        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
         buildRangeInfo.primitiveCount = static_cast<uint32_t>(meshInstances.size());
         buildRangeInfo.primitiveOffset = 0;
         buildRangeInfo.transformOffset = 0;
@@ -3565,7 +3545,7 @@ private:
 
     void summonModel() {
         vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
-        if (objects.size() + 2 >= MAX_MODELS) return;
+        if (objects.size() + 2 >= config::MAX_MODELS) return;
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
         cloneObject(pos, "Soi_SimpleArmor.001_Armour_Cloth_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
@@ -3581,7 +3561,7 @@ private:
     }
 
     void summonLight() {
-        if (lights.size() + 1 > MAX_LIGHTS) return;
+        if (lights.size() + 1 > config::MAX_LIGHTS) return;
         vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
@@ -4114,7 +4094,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     void recreateSwap() {
-        std::cout << "Recreating swap chain..." << std::endl;
+        std::cout << "Recreating swap chain..." << "\n";
         int width = 0, height = 0;
         while (width == 0 || height == 0) {
             glfwGetFramebufferSize(window, &width, &height);
@@ -4286,7 +4266,7 @@ private:
         auto duration = utils::duration<milliseconds>(now);
         utils::printDuration(duration);
 
-        std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << std::endl;
+        std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << "\n";
     }
 };
 
@@ -4297,7 +4277,7 @@ int main() {
             app.run();
         }
         catch (const std::exception& e) {
-            std::cerr << e.what() << std::endl;
+            std::cerr << e.what() << "\n";
             return EXIT_FAILURE;
         }
     }
@@ -4308,7 +4288,7 @@ int main() {
 
     utils::sep();
     utils::sep();
-    std::cout << "CLOSING ENGINE" << std::endl;
+    std::cout << "CLOSING ENGINE" << "\n";
     utils::sep();
     utils::sep();
 

@@ -410,7 +410,7 @@ public:
             std::cout << "     ";
         }
         // print the current node's name or index if the name is empty
-        std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << std::endl;
+        std::cout << "Node: " << (model.nodes[nodeIndex].name.empty() ? std::to_string(nodeIndex) : model.nodes[nodeIndex].name) << "\n";
 
         for (const int& childIndex : model.nodes[nodeIndex].children) {
             printNodeHierarchy(model, childIndex, depth + 1);
@@ -528,7 +528,7 @@ public:
 
                 if (tangentFound) {
                     vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
-                    //std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << std::endl;
+                    //std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << "\n";
                 }
                 else {
                     vertex.tangent = tangents[index];

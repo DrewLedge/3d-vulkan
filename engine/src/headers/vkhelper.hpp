@@ -35,7 +35,7 @@ namespace vkhfp {
         template<typename T>
     void loadFunc(VkInstance instance, T& ptr, const char* name) {
         ptr = reinterpret_cast<T>(vkGetInstanceProcAddr(instance, name));
-        if (!ptr) std::cerr << name << " isnt supported!" << std::endl;
+        if (!ptr) std::cerr << name << " isnt supported!" << "\n";
     }
 
     inline void loadFuncPointers(VkInstance instance) {
@@ -815,7 +815,7 @@ public:
 
     static VkhCommandBuffer allocateCommandBuffers(VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
         VkhCommandBuffer commandBuffer(commandPool.v());
-        VkCommandBufferAllocateInfo allocInfo = {};
+        VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
         allocInfo.commandPool = commandPool.v();
         allocInfo.level = level;

@@ -19,12 +19,12 @@ inline const char* getFileName(const char* path) {
 }
 
 void logwarning(const std::string& message, const char* file, int line) {
-    std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << std::endl;
+    std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << "\n";
 }
 
 void logwarning(const std::string& message, bool execute, const char* file, int line) {
     if (execute) {
-        std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << std::endl;
+        std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << "\n";
     }
 }
 
@@ -44,7 +44,7 @@ using highResClock = std::chrono::high_resolution_clock;
 class utils {
 public:
     static void sep() {
-        std::cout << "---------------------------------" << std::endl;
+        std::cout << "---------------------------------" << "\n";
     }
 
     static auto now() {
@@ -72,7 +72,7 @@ public:
 
     template<typename DurType>
     static void printDuration(const DurType& duration) {
-        std::cout << "Time: " << durationString(duration) << std::endl;;
+        std::cout << "Time: " << durationString(duration) << "\n";;
     }
 
     static int random(int min, int max) {
