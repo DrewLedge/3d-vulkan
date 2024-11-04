@@ -41,13 +41,13 @@ using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
 namespace config {
-    constexpr uint32_t MAX_MODELS = 1200;
-    constexpr uint32_t MAX_LIGHTS = 300;
+    constexpr uint32_t MAX_MODELS = 1600;
+    constexpr uint32_t MAX_LIGHTS = 200;
 
-    constexpr uint32_t SCREEN_WIDTH = 3200;
-    constexpr uint32_t SCREEN_HEIGHT = 1800;
+    constexpr uint32_t SCREEN_WIDTH = 2560;
+    constexpr uint32_t SCREEN_HEIGHT = 1600;
 
-    const std::string ENGINE_VER = "v0.5.3";
+    const std::string ENGINE_VER = "v0.1.0";
 
     const std::string SHADER_DIR = "shaders/compiled/";
     const std::string MODEL_DIR = "assets/models/";
@@ -242,6 +242,7 @@ private:
 
         DSObject() :
             binding(0),
+            type(),
             set(pool.v())
         {}
     };
@@ -439,7 +440,7 @@ private:
     };
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = true; // a bool if raytracing has been enabled
+    bool rtEnabled = false; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -453,6 +454,7 @@ private:
     KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
     KeyPO eKey = KeyPO(GLFW_KEY_E);
     KeyPO rKey = KeyPO(GLFW_KEY_R);
+    KeyPO mKey = KeyPO(GLFW_KEY_M);
 
     // swap chain and framebuffers
     SCData swap{};
@@ -720,7 +722,7 @@ private:
         // check if ray tracing is supported
         rtSupported = isRTSupported(physicalDevice);
         rtEnabled = rtEnabled && rtSupported;
-        std::cout << "Raytacing is " << (rtEnabled ? "enabled" : "not enabled") << "!" << "\n";
+        std::cout << "Raytacing is " << (rtEnabled ? "enabled" : "not enabled") << "!\n";
         utils::sep();
     }
 
@@ -819,10 +821,10 @@ private:
 
         for (auto& e : deviceExtensions) {
             if (checkExtensionSupport(e)) {
-                std::cout << "---- " << e << " is supported!" << " ----" << "\n";
+                std::cout << "---- " << e << " is supported!" << " ----\n";
             }
             else {
-                std::cerr << "---- " << e << " is NOT supported!" << " ----" << "\n";
+                std::cerr << "---- " << e << " is NOT supported!" << " ----\n";
                 deviceExtensions.erase(std::remove(deviceExtensions.begin(), deviceExtensions.end(), e), deviceExtensions.end());
             }
         }
@@ -980,7 +982,6 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
     void initializeMouseInput(bool initial) {
         // set the lastX and lastY to the center of the screen
         if (initial) {
@@ -1022,39 +1023,41 @@ private:
     }
 
     void handleKeyboardInput() {
-        double currentFrame = glfwGetTime();
-        float deltaTime = static_cast<float>(currentFrame - lastFrame);
-        lastFrame = currentFrame;
+        if (mouse.locked) {
+            double currentFrame = glfwGetTime();
+            float deltaTime = static_cast<float>(currentFrame - lastFrame);
+            lastFrame = currentFrame;
 
-        float cameraSpeed = 2.0f * deltaTime;
+            float cameraSpeed = 2.0f * deltaTime;
 
-        mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
-        mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
+            mouse.upAngle = fmod(mouse.upAngle + 360.0f, 360.0f);
+            mouse.rightAngle = fmod(mouse.rightAngle + 360.0f, 360.0f);
 
-        cam.updateQuaternion(mouse);
-        dml::vec3 forward = dml::quatToDir(cam.quat);
-        dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
+            cam.updateQuaternion(mouse);
+            dml::vec3 forward = dml::quatToDir(cam.quat);
+            dml::vec3 right = dml::normalize(dml::cross(forward, dml::vec3(0, 1, 0)));
 
-        // camera movement
-        if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-            cam.pos -= forward * cameraSpeed;
-        }
-        if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-            cam.pos += forward * cameraSpeed;
-        }
-        if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-            cam.pos += right * cameraSpeed;
-        }
-        if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-            cam.pos -= right * cameraSpeed;
-        }
+            // camera movement
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
+                cam.pos -= forward * cameraSpeed;
+            }
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
+                cam.pos += forward * cameraSpeed;
+            }
+            if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
+                cam.pos += right * cameraSpeed;
+            }
+            if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
+                cam.pos -= right * cameraSpeed;
+            }
 
-        // up and down movement
-        if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
-            cam.pos.y -= 1 * cameraSpeed;
-        }
-        if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
-            cam.pos.y += 1 * cameraSpeed;
+            // up and down movement
+            if (glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS) {
+                cam.pos.y -= 1 * cameraSpeed;
+            }
+            if (glfwGetKey(window, GLFW_KEY_LEFT_SHIFT) == GLFW_PRESS) {
+                cam.pos.y += 1 * cameraSpeed;
+            }
         }
 
         // realtime object loading
@@ -1075,11 +1078,15 @@ private:
 
             double score = fps * (((vertCount) / 50000.0) + std::pow(lights.size(), 1.3) + (objects.size() / 10.0));
 
-            utils::sep();
             std::cout << "Vertex count: " << vertCount << "\n";
             std::cout << "Object count: " << objects.size() << "\n";
             std::cout << "Light count: " << lights.size() << " / " << config::MAX_LIGHTS << "\n";
             std::cout << "Score: " << score << "\n";
+            utils::sep();
+        }
+
+        if (mKey.isPressed()) {
+            resetScene();
         }
 
         // lock / unlock mouse
@@ -1434,23 +1441,23 @@ private:
             if (uniqueModelIndex[obj->meshHash] == i) {
                 meshTexStartInd.push_back(static_cast<int>(currentIndex));
                 if (obj->material.baseColor.found) {
-                    allTextures.emplace_back(obj->material.baseColor);
+                    allTextures.push_back(obj->material.baseColor);
                     currentIndex++;
                 }
                 if (obj->material.metallicRoughness.found) {
-                    allTextures.emplace_back(obj->material.metallicRoughness);
+                    allTextures.push_back(obj->material.metallicRoughness);
                     currentIndex++;
                 }
                 if (obj->material.normalMap.found) {
-                    allTextures.emplace_back(obj->material.normalMap);
+                    allTextures.push_back(obj->material.normalMap);
                     currentIndex++;
                 }
                 if (obj->material.emissiveMap.found) {
-                    allTextures.emplace_back(obj->material.emissiveMap);
+                    allTextures.push_back(obj->material.emissiveMap);
                     currentIndex++;
                 }
                 if (obj->material.occlusionMap.found) {
-                    allTextures.emplace_back(obj->material.occlusionMap);
+                    allTextures.push_back(obj->material.occlusionMap);
                     currentIndex++;
                 }
             }
@@ -1460,7 +1467,7 @@ private:
             getTexIndices();
         }
 
-        std::cout << "Finished loading " << totalTextureCount << " textures!" << "\n";
+        std::cout << "Finished loading " << totalTextureCount << " textures!\n";
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1482,7 +1489,7 @@ private:
             return;
         }
         if (!ret) {
-            std::cerr << "Failed to load GLTF model" << "\n";
+            std::cerr << "Failed to load GLTF model\n";
             return;
         }
 
@@ -1505,6 +1512,7 @@ private:
             LOG_WARNING("The" + path + " relies on: " + extension);
         }
 
+        objects.reserve(gltfModel.meshes.size());
         for (const auto& mesh : gltfModel.meshes) {
             dvl::Mesh m = dvl::loadMesh(mesh, gltfModel, parentInd, meshInd++, scale, pos, rot);
             modelMtx.lock();
@@ -1565,6 +1573,10 @@ private:
             throw std::runtime_error("Failed to load models!");
         }
 
+        utils::sep();
+
+        textureTasks.reserve(objects.size() * 5);
+
         // load the raw image data of each image
         for (const auto& m : objects) {
             loadTexImageData(m->material.baseColor);
@@ -1586,6 +1598,7 @@ private:
         // create all lights
         lights.push_back(std::make_unique<Light>(createPlayerLight()));
 
+        originalObjects.reserve(objects.size());
         for (auto& obj : objects) {
             originalObjects.push_back(std::make_unique<dvl::Mesh>(*obj));
         }
@@ -1600,7 +1613,7 @@ private:
         lightData.lightCords.resize(lights.size());
         lightData.memSize = lights.size() * sizeof(LightDataObject);
 
-        vkh::createBuffer(lightBuffer, lightBufferMem, lightData.lightCords.data(), lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, commandPool, graphicsQueue, 0, false);
+        vkh::createBuffer(lightBuffer, lightBufferMem, lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, 0);
     }
 
     void setupBuffers() {
@@ -1635,7 +1648,7 @@ private:
 
         dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
         if (l.data.pos == l.data.target) {
-            std::cerr << "Light position and target are the same!" << "\n";
+            std::cerr << "Light position and target are the same!\n";
             return;
         }
 
@@ -1650,13 +1663,10 @@ private:
         for (size_t i = 0; i < lights.size(); i++) {
             Light& l = *lights[i];
             calcShadowMats(l);
-            memcpy(&lightData.lightCords[i], &l.data, sizeof(LightDataObject));
+            std::memcpy(&lightData.lightCords[i], &l.data, sizeof(LightDataObject));
         }
 
-        void* lData;
-        vkMapMemory(device, lightBufferMem.v(), 0, lightData.memSize, 0, &lData);
-        memcpy(lData, lightData.lightCords.data(), lightData.memSize);
-        vkUnmapMemory(device, lightBufferMem.v());
+        vkh::writeBuffer(lightBufferMem, lightData.lightCords.data(), lightData.memSize);
 
         // calc matricies for camera
         calcCameraMats();
@@ -1666,13 +1676,10 @@ private:
             view = dml::inverseMatrix(cam.viewMatrix);
             proj = dml::inverseMatrix(cam.projectionMatrix);
         }
-        memcpy(&camMatData.view, &view, sizeof(cam.viewMatrix));
-        memcpy(&camMatData.proj, &proj, sizeof(cam.projectionMatrix));
+        std::memcpy(&camMatData.view, &view, sizeof(cam.viewMatrix));
+        std::memcpy(&camMatData.proj, &proj, sizeof(cam.projectionMatrix));
 
-        void* cData;
-        vkMapMemory(device, cam.bufferMem.v(), 0, sizeof(camMatData), 0, &cData);
-        memcpy(cData, &camMatData, sizeof(camMatData));
-        vkUnmapMemory(device, cam.bufferMem.v());
+        vkh::writeBuffer(cam.bufferMem, &camMatData, sizeof(camMatData));
 
         // calc matricies for objects
         for (size_t i = 0; i < objects.size(); i++) {
@@ -1683,8 +1690,8 @@ private:
                 dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 
                 int render = 1;
-                memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
-                memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
+                std::memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+                std::memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
             }
             else {
                 /*dml::mat4 t;
@@ -1693,21 +1700,19 @@ private:
                 dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 
                 if (i % 2 == 0) {
-                    memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
+                    std::memcpy(&objInstanceData.object[i].model, &model, sizeof(model));
                 }
                 else {
-                    memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+                    std::memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
                 }*/
 
                 int render = 0;
-                memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
-                memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
+                std::memcpy(&objInstanceData.object[i].model, &objects[i]->modelMatrix, sizeof(objects[i]->modelMatrix));
+                std::memcpy(&objInstanceData.object[i].render, &render, sizeof(render));
             }
         }
-        void* matrixData;
-        vkMapMemory(device, objInstanceBufferMem.v(), 0, sizeof(objInstanceData), 0, &matrixData);
-        memcpy(matrixData, &objInstanceData, sizeof(objInstanceData));
-        vkUnmapMemory(device, objInstanceBufferMem.v());
+
+        vkh::writeBuffer(objInstanceBufferMem, &objInstanceData, sizeof(objInstanceData));
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1831,20 +1836,20 @@ private:
 
         // create the descriptor writes
         std::vector<VkWriteDescriptorSet> descriptorWrites{};
-        descriptorWrites.push_back(vkh::createDSWrite(descs.textures.set, descs.textures.binding, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
-        descriptorWrites.push_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo));
-        descriptorWrites.push_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.binding, 0, descs.skybox.type, skyboxInfo));
-        descriptorWrites.push_back(vkh::createDSWrite(descs.cam.set, descs.cam.binding, 0, descs.cam.type, camBufferInfo));
+        descriptorWrites.emplace_back(vkh::createDSWrite(descs.textures.set, descs.textures.binding, 0, descs.textures.type, imageInfos.data(), imageInfos.size()));
+        descriptorWrites.emplace_back(vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, lightBufferInfo));
+        descriptorWrites.emplace_back(vkh::createDSWrite(descs.skybox.set, descs.skybox.binding, 0, descs.skybox.type, skyboxInfo));
+        descriptorWrites.emplace_back(vkh::createDSWrite(descs.cam.set, descs.cam.binding, 0, descs.cam.type, camBufferInfo));
 
         if (rtEnabled) {
-            descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
-            descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, descs.rt.binding, 0, descs.rt.type, rtPresentTexture));
-            descriptorWrites.push_back(vkh::createDSWrite(descs.texIndex.set, descs.texIndex.binding, 0, descs.texIndex.type, texIndexInfo));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.tlas.set, descs.tlas.binding, 0, descs.tlas.type, tlasInfo));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.rt.set, descs.rt.binding, 0, descs.rt.type, rtPresentTexture));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.texIndex.set, descs.texIndex.binding, 0, descs.texIndex.type, texIndexInfo));
         }
         else {
-            descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
-            descriptorWrites.push_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), 2));
-            descriptorWrites.push_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), 2));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.opaqueDepth.set, descs.opaqueDepth.binding, 0, descs.opaqueDepth.type, opaquePassDepthInfo));
         }
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -2825,18 +2830,18 @@ private:
         const size_t numShaders = 5;
 
         std::vector<std::string> shaderNames;
-        shaderNames.emplace_back("gen");
-        shaderNames.emplace_back("miss");
-        shaderNames.emplace_back("shadowmiss");
-        shaderNames.emplace_back("closehit");
-        shaderNames.emplace_back("shadowhit");
+        shaderNames.push_back("gen");
+        shaderNames.push_back("miss");
+        shaderNames.push_back("shadowmiss");
+        shaderNames.push_back("closehit");
+        shaderNames.push_back("shadowhit");
 
         std::vector<VkShaderStageFlagBits> shaderStageFlagBits;;
-        shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
-        shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_MISS_BIT_KHR);
-        shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_MISS_BIT_KHR);
-        shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-        shaderStageFlagBits.emplace_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+        shaderStageFlagBits.push_back(VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+        shaderStageFlagBits.push_back(VK_SHADER_STAGE_MISS_BIT_KHR);
+        shaderStageFlagBits.push_back(VK_SHADER_STAGE_MISS_BIT_KHR);
+        shaderStageFlagBits.push_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+        shaderStageFlagBits.push_back(VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
 
         // populate the shader module and shader stages data
         std::vector<VkhShaderModule> shaderModules;
@@ -3035,6 +3040,7 @@ private:
         text.push_back("FPS: " + std::to_string(fps));
         text.push_back("Objects: " + std::to_string(objects.size()));
         text.push_back("Lights: " + std::to_string(lights.size()));
+        text.push_back("Raytracing: " + std::string(rtEnabled ? "ON" : "OFF"));
 
         // render the frame
         if (ImGui::Begin("Info", nullptr, flags)) {
@@ -3092,7 +3098,7 @@ private:
         uint32_t handleOffset = 0;
         // copy the data of each shader group handle into the sbt buffer
         for (uint32_t i = 0; i < shaderGroupCount; i++) {
-            memcpy(d + dataOffset, shaderHandles.data() + handleOffset, handleSize);
+            std::memcpy(d + dataOffset, shaderHandles.data() + handleOffset, handleSize);
             dataOffset += static_cast<uint32_t>(sbt.entryS);
             handleOffset += handleSize;
         }
@@ -3320,7 +3326,7 @@ private:
         dml::mat4 t = m.transpose();
 
         VkTransformMatrixKHR result{};
-        memcpy(&result.matrix, &t.flat, 12 * sizeof(float));
+        std::memcpy(&result.matrix, &t.flat, 12 * sizeof(float));
         return result;
     }
 
@@ -3343,7 +3349,7 @@ private:
 
         meshInstance.instanceShaderBindingTableRecordOffset = 0;
         meshInstance.mask = 0xFF;
-        meshInstances.emplace_back(meshInstance);
+        meshInstances.push_back(meshInstance);
     }
 
     void updateTLAS(bool changed = false) {
@@ -3359,10 +3365,7 @@ private:
         }
 
         // copy the new data into the instance buffer
-        void* data;
-        vkMapMemory(device, tlas.instanceBufferMem.v(), 0, meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR), 0, &data);
-        memcpy(data, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
-        vkUnmapMemory(device, tlas.instanceBufferMem.v());
+        vkh::writeBuffer(tlas.instanceBufferMem, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
 
         // update the instance buffer device address
         tlas.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
@@ -3490,14 +3493,14 @@ private:
             // vertex data
             bufferData[bufferInd].vertexOffset = static_cast<uint32_t>(currentVertexOffset);
             bufferData[bufferInd].vertexCount = static_cast<uint32_t>(objects[modelInd]->vertices.size());
-            memcpy(vertexData, objects[modelInd]->vertices.data(), bufferData[bufferInd].vertexCount * sizeof(dvl::Vertex));
+            std::memcpy(vertexData, objects[modelInd]->vertices.data(), bufferData[bufferInd].vertexCount * sizeof(dvl::Vertex));
             vertexData += bufferData[bufferInd].vertexCount * sizeof(dvl::Vertex);
             currentVertexOffset += bufferData[bufferInd].vertexCount;
 
             // index data
             bufferData[bufferInd].indexOffset = static_cast<uint32_t>(currentIndexOffset);
             bufferData[bufferInd].indexCount = static_cast<uint32_t>(objects[modelInd]->indices.size());
-            memcpy(indexData, objects[modelInd]->indices.data(), bufferData[bufferInd].indexCount * sizeof(uint32_t));
+            std::memcpy(indexData, objects[modelInd]->indices.data(), bufferData[bufferInd].indexCount * sizeof(uint32_t));
             indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
             currentIndexOffset += bufferData[bufferInd].indexCount;
         }
@@ -3601,6 +3604,40 @@ private:
 
         createLightBuffer();
         updateLightDS();
+        recordSecondaryCommandBuffers();
+    }
+
+    void resetScene() {
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+
+        // remove all non player following lights
+        lights.erase(std::remove_if(lights.begin(), lights.end(), [](const std::unique_ptr<Light>& l) { return l && !l->followPlayer; }), lights.end());
+
+        allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
+
+        shadowInfos.clear();
+        VkDescriptorImageInfo shadowInfo{};
+        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
+        shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
+        shadowInfos.push_back(shadowInfo);
+
+        createLightBuffer();
+        updateLightDS();
+
+        objects.clear();
+        objects.reserve(originalObjects.size());
+        for (const std::unique_ptr<dvl::Mesh>& m : originalObjects) {
+            objects.emplace_back(std::make_unique<dvl::Mesh>(*m));
+        }
+
+        createModelBuffers(true);
+
+        if (rtEnabled) {
+            updateTLAS(true);
+            getTexIndices();
+        }
+
         recordSecondaryCommandBuffers();
     }
 
@@ -4094,7 +4131,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     void recreateSwap() {
-        std::cout << "Recreating swap chain..." << "\n";
+        std::cout << "Recreating swap chain...\n";
         int width = 0, height = 0;
         while (width == 0 || height == 0) {
             glfwGetFramebufferSize(window, &width, &height);
@@ -4144,17 +4181,16 @@ private:
 
         if (!rtEnabled) {
             for (VkhCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
-                VkSubmitInfo sub = vkh::createSubmitInfo(&shadow, 1);
-                submitInfos.push_back(sub);
+                submitInfos.emplace_back(vkh::createSubmitInfo(&shadow, 1));
             }
 
-            submitInfos.push_back(vkh::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
-            submitInfos.push_back(vkh::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
-            submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
         }
         else {
-            submitInfos.push_back(vkh::createSubmitInfo(&rtCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, rtSemaphore));
-            submitInfos.push_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, rtSemaphore, renderFinishedSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(&rtCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, rtSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, rtSemaphore, renderFinishedSemaphore));
         }
 
         // submit all command buffers in a single call
@@ -4267,6 +4303,7 @@ private:
         utils::printDuration(duration);
 
         std::cout << "Vulkan initialized successfully! Unique models: " << getUniqueModels() << "\n";
+        utils::sep();
     }
 };
 
@@ -4288,7 +4325,7 @@ int main() {
 
     utils::sep();
     utils::sep();
-    std::cout << "CLOSING ENGINE" << "\n";
+    std::cout << "CLOSING ENGINE\n";
     utils::sep();
     utils::sep();
 

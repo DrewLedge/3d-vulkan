@@ -745,7 +745,7 @@ public:
 
         // if the determinant is 0, its not invertible
         if (std::abs(d) < EPSILON) {
-            std::cerr << "Matrix is not invertible!" << "\n";
+            std::cerr << "Matrix is not invertible!\n";
             return m;
         }
 

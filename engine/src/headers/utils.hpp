@@ -19,12 +19,12 @@ inline const char* getFileName(const char* path) {
 }
 
 void logwarning(const std::string& message, const char* file, int line) {
-    std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << "\n";
+    std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")\n";
 }
 
 void logwarning(const std::string& message, bool execute, const char* file, int line) {
     if (execute) {
-        std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")" << "\n";
+        std::cerr << "WARNING: " << message << "! (File: " << getFileName(file) << ", Line: " << line << ")\n";
     }
 }
 
@@ -44,7 +44,7 @@ using highResClock = std::chrono::high_resolution_clock;
 class utils {
 public:
     static void sep() {
-        std::cout << "---------------------------------" << "\n";
+        std::cout << "---------------------------------\n";
     }
 
     static auto now() {

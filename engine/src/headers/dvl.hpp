@@ -536,7 +536,7 @@ public:
 
                 if (uniqueVertices.count(vertex) == 0) {
                     uniqueVertices[vertex] = static_cast<uint32_t>(tempVertices.size());
-                    tempVertices.push_back(std::move(vertex));
+                    tempVertices.push_back(vertex);
                 }
                 tempIndices.push_back(uniqueVertices[vertex]);
             }

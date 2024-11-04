@@ -35,7 +35,7 @@ namespace vkhfp {
         template<typename T>
     void loadFunc(VkInstance instance, T& ptr, const char* name) {
         ptr = reinterpret_cast<T>(vkGetInstanceProcAddr(instance, name));
-        if (!ptr) std::cerr << name << " isnt supported!" << "\n";
+        if (!ptr) std::cerr << name << " isnt supported!\n";
     }
 
     inline void loadFuncPointers(VkInstance instance) {
@@ -409,18 +409,29 @@ public:
     }
 
     template<typename ObjectT>
-    static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjectT* object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
-        VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
+    static void writeBuffer(const VkhDeviceMemory& bufferMem, const ObjectT* object, const VkDeviceSize size) {
+        if (object == nullptr) throw std::invalid_argument("Object is null!");
+        if (size == 0) throw std::invalid_argument("Buffer size is 0!");
 
-        // once memory is bound, map and fill it
-        void* data;
-        if (vkMapMemory(device, stagingBufferMem.v(), 0, size, 0, &data) != VK_SUCCESS) {
+        void* data = nullptr;
+        if (vkMapMemory(device, bufferMem.v(), 0, size, 0, &data) != VK_SUCCESS) {
             throw std::runtime_error("Failed to map memory for buffer!");
         }
 
-        memcpy(data, object, size);
-        vkUnmapMemory(device, stagingBufferMem.v());
+        if (data == nullptr) {
+            throw std::runtime_error("Mapped memory is null!");
+        }
+
+        std::memcpy(data, object, static_cast<size_t>(size));
+        vkUnmapMemory(device, bufferMem.v());
+    }
+
+    template<typename ObjectT>
+    static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjectT* object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+        VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+        createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
+        writeBuffer(stagingBufferMem, object, size);
     }
 
     template<typename ObjectT>
@@ -441,13 +452,7 @@ public:
             endSingleTimeCommands(commandBuffer, commandPool, queue);
         }
         else {
-            void* data;
-            if (vkMapMemory(device, bufferMem.v(), 0, size, 0, &data) != VK_SUCCESS) {
-                throw std::runtime_error("Failed to map memory for buffer!");
-            }
-
-            memcpy(data, object, size);
-            vkUnmapMemory(device, bufferMem.v());
+            writeBuffer(bufferMem, object, static_cast<size_t>(size));
         }
     }
 
