@@ -11,8 +11,7 @@ namespace mathc {
     constexpr float EPSILON = 0.0000001f;
 }
 
-class dml {
-public:
+namespace dml {
     struct vec2;
     struct vec3;
     struct vec4;
@@ -446,8 +445,29 @@ public:
         }
     };
 
+    // ------------------ FORWARD DECLARATIONS ------------------ //
+    mat4 lookAt(const vec3& eye, const vec3& f, const vec3& r, const vec3& u);
+    mat4 lookAt(const vec3& eye, const vec3& target, vec3& upVec);
+    mat4 rotateQuat(const vec4 q);
+
     // ------------------ VECTOR3 FORMULAS ------------------ //
-    static vec3 eulerToDir(const vec3& rotation) { // converts euler angle to direction vector
+    vec3 radians(const vec3& v) {
+        return v * mathc::DEG_TO_RAD;
+    }
+
+    float radians(const float degree) {
+        return degree * mathc::DEG_TO_RAD;
+    }
+
+    vec3 degrees(const vec3& v) {
+        return v * mathc::RAD_TO_DEG;
+    }
+
+    float degrees(const float radian) {
+        return radian * mathc::RAD_TO_DEG;
+    }
+
+    vec3 eulerToDir(const vec3& rotation) { // converts euler angle to direction vector
         // convert pitch and yaw from degrees to radians
         float pitch = radians(rotation.x);
         float yaw = radians(rotation.y);
@@ -459,7 +479,7 @@ public:
         return direction;
     }
 
-    static vec3 getForward(const vec3& rot) {
+    vec3 getForward(const vec3& rot) {
         float pitch = rot.x;
         float yaw = rot.y;
 
@@ -471,31 +491,7 @@ public:
         return forward;
     }
 
-    static vec3 getRight(const vec3& rot) {
-        vec3 forward = getForward(rot);
-        vec3 up(0.0f, -1.0f, 0.0f);
-        return cross(forward, up);
-    }
-
-    static vec3 getUp(const vec3& rot) {
-        vec3 forward = getForward(rot);
-        vec3 right = getRight(rot);
-        return cross(right, forward);
-    }
-
-    static vec3 radians(const vec3& v) {
-        return v * mathc::DEG_TO_RAD;
-    }
-
-    static float radians(const float degree) {
-        return degree * mathc::DEG_TO_RAD;
-    }
-
-    static float degrees(const float radian) {
-        return radian * mathc::RAD_TO_DEG;
-    }
-
-    static vec3 cross(const vec3& a, const vec3& b) {
+    vec3 cross(const vec3& a, const vec3& b) {
         vec3 res;
         res.x = a.y * b.z - a.z * b.y;
         res.y = a.z * b.x - a.x * b.z;
@@ -504,15 +500,27 @@ public:
         return res;
     }
 
-    static float dot(const vec3& a, const vec3& b) {
+    vec3 getRight(const vec3& rot) {
+        vec3 forward = getForward(rot);
+        vec3 up(0.0f, -1.0f, 0.0f);
+        return cross(forward, up);
+    }
+
+    vec3 getUp(const vec3& rot) {
+        vec3 forward = getForward(rot);
+        vec3 right = getRight(rot);
+        return cross(right, forward);
+    }
+
+    float dot(const vec3& a, const vec3& b) {
         return a.x * b.x + a.y * b.y + a.z * b.z;
     }
 
-    static float dot(const vec4& a, const vec4& b) {
+    float dot(const vec4& a, const vec4& b) {
         return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
     }
 
-    static vec3 normalize(const vec3& v) {
+    vec3 normalize(const vec3& v) {
         float length = v.length();
 
         if (length < mathc::EPSILON) {
@@ -522,15 +530,24 @@ public:
         return vec3(v.x / length, v.y / length, v.z / length);
     }
 
-    static vec3 quatToDir(const vec4& quat) {
+    vec3 quatToDir(const vec4& quat) {
         mat4 o = rotateQuat(quat).transpose();
         return o * vec3(0.0f, 0.0f, -1.0f);
     }
 
     // ------------------ VECTOR4 FORMULAS ------------------ //
 
+    vec4 normalize(const vec4& v) {
+        float length = v.length();
+        if (length < mathc::EPSILON) {
+            return vec4(0.0f, 0.0f, 0.0f, 1.0f);
+        }
+
+        return vec4(v.x / length, v.y / length, v.z / length, v.w / length);
+    }
+
     // function to turn a lookat matrix into a quaternion
-    static vec4 quatCast(const mat4& mat) {
+    vec4 quatCast(const mat4& mat) {
         // calc the trace of the matrix, which is the sum of the diagonal elements
         // when the trace is positive, it has more numerical stability, and is more straightforward to calc
         float trace = mat.m[0][0] + mat.m[1][1] + mat.m[2][2];
@@ -571,13 +588,13 @@ public:
         return quaternion;
     }
 
-    static vec4 targetToQuat(const vec3& position, const vec3& target) {
+    vec4 targetToQuat(const vec3& position, const vec3& target) {
         vec3 up = { 0.0f, 1.0f, 0.0f };
         mat4 l = lookAt(target, position, up);
         return quatCast(l);
     }
 
-    static vec4 inverseQuat(const vec4& q) {
+    vec4 inverseQuat(const vec4& q) {
         float length = q.length();
         if (length < mathc::EPSILON) {
             return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
@@ -586,7 +603,7 @@ public:
         return vec4(-q.x / length, -q.y / length, -q.z / length, q.w / length);
     }
 
-    static vec4 angleAxis(float angle, const vec3& axis) {
+    vec4 angleAxis(float angle, const vec3& axis) {
         vec3 normAxis = normalize(axis);
 
         // compute the sin and cos of half the angle
@@ -598,17 +615,8 @@ public:
         return vec4(normAxis.x * sinHalf, normAxis.y * sinHalf, normAxis.z * sinHalf, cosHalf);
     }
 
-    static vec4 normalize(const vec4& v) {
-        float length = v.length();
-        if (length < mathc::EPSILON) {
-            return vec4(0.0f, 0.0f, 0.0f, 1.0f);
-        }
-
-        return vec4(v.x / length, v.y / length, v.z / length, v.w / length);
-    }
-
     // ------------------ MATRIX4 FORMULAS ------------------ // 
-    static mat4 translate(const vec3 t) {
+    mat4 translate(const vec3 t) {
         mat4 result;
         result.m[3][0] = t.x;
         result.m[3][1] = t.y;
@@ -616,7 +624,7 @@ public:
         return result;
     }
 
-    static mat4 scale(const vec3 s) {
+    mat4 scale(const vec3 s) {
         mat4 result;
         result.m[0][0] = s.x;
         result.m[1][1] = s.y;
@@ -625,7 +633,7 @@ public:
         return result;
     }
 
-    static mat4 rotate(const vec3 s) {
+    mat4 rotate(const vec3 s) {
         mat4 result;
         float radX = radians(s.x);
         float radY = radians(s.y);
@@ -653,7 +661,7 @@ public:
         return result;
     }
 
-    static mat4 rotateQuat(const vec4 q) { // quaternian rotation
+    mat4 rotateQuat(const vec4 q) { // quaternian rotation
         mat4 result;
 
         float w = q.w;
@@ -684,7 +692,7 @@ public:
         return result;
     }
 
-    static mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
+    mat4 viewMatrix(const vec3& position, const float& right, const float& up) {
         vec4 yRot = angleAxis(right, vec3(1.0f, 0.0f, 0.0f));
         vec4 xRot = angleAxis(up, vec3(0.0f, 1.0f, 0.0f));
         vec4 orientation = yRot * xRot;
@@ -695,7 +703,7 @@ public:
         return rotation * translation;
     }
 
-    static mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
+    mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
         mat4 result(0);
         float fovRad = radians(fov);
         float tanHalf = tan(fovRad * 0.5f);
@@ -709,7 +717,7 @@ public:
         return result;
     }
 
-    static mat3 mat4ToMat3(const mat4& m, int excludeCol, int excludeRow) {
+    mat3 mat4ToMat3(const mat4& m, int excludeCol, int excludeRow) {
         mat3 res;
         int x = 0, y = 0;
         for (int i = 0; i < 4; i++) {
@@ -725,14 +733,14 @@ public:
         return res;
     }
 
-    static float det3(const mat3& m) { // func to calc the determinant of a 3x3 matrix
+    float det3(const mat3& m) { // func to calc the determinant of a 3x3 matrix
         float d1 = m.m[0][0] * (m.m[1][1] * m.m[2][2] - m.m[2][1] * m.m[1][2]);
         float d2 = m.m[0][1] * (m.m[1][0] * m.m[2][2] - m.m[2][0] * m.m[1][2]);
         float d3 = m.m[0][2] * (m.m[1][0] * m.m[2][1] - m.m[2][0] * m.m[1][1]);
         return d1 - d2 + d3;
     }
 
-    static float det4(const mat4& m) { // func to calc the determinant of a 4x4 matrix
+    float det4(const mat4& m) { // func to calc the determinant of a 4x4 matrix
         float res = 0.0f;
         for (int i = 0; i < 4; i++) {
             mat3 sub = mat4ToMat3(m, 0, i);
@@ -742,7 +750,7 @@ public:
         return res;
     }
 
-    static mat4 inverseMatrix(const mat4& m) {
+    mat4 inverseMatrix(const mat4& m) {
         float d = det4(m); // get the determinant of the matrix
 
         // if the determinant is 0, its not invertible
@@ -769,13 +777,13 @@ public:
         return adjugate * invDet;
     }
 
-    static vec3 getCamWorldPos(const mat4& viewMat) {
+    vec3 getCamWorldPos(const mat4& viewMat) {
         mat4 invView = inverseMatrix(viewMat);
         vec3 cameraWorldPosition(invView.m[3][0], invView.m[3][1], invView.m[3][2]);
         return cameraWorldPosition;
     }
 
-    static mat4 lookAt(const vec3& eye, const vec3& f, const vec3& r, const vec3& u) {
+    mat4 lookAt(const vec3& eye, const vec3& f, const vec3& r, const vec3& u) {
         mat4 result;
 
         result.m[0][0] = r.x;
@@ -798,14 +806,14 @@ public:
         return result;
     }
 
-    static mat4 lookAt(const vec3& eye, const vec3& target, vec3& upVec) {
+    mat4 lookAt(const vec3& eye, const vec3& target, vec3& upVec) {
         vec3 f = normalize((target - eye)); // forward vector
         vec3 r = normalize(cross(f, upVec)); // right vector
         vec3 u = normalize(cross(r, f)); // up vector
         return lookAt(eye, f, r, u);
     }
 
-    static mat4 gltfToMat4(const std::vector<double>& vec) {
+    mat4 gltfToMat4(const std::vector<double>& vec) {
         mat4 result;
         int index = 0;
 

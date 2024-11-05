@@ -180,8 +180,7 @@ MAKE_RAII(VkhAccelerationStructure, VkAccelerationStructureKHR, vkhfp::vkDestroy
 
 #undef MAKE_RAII
 
-class vkh {
-public:
+namespace vkh {
     typedef enum {
         BASE,
         DEPTH,
@@ -234,7 +233,7 @@ public:
     };
 
     // ------------------ SWAP CHAIN ------------------ //
-    static VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height) {
+    VkExtent2D chooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities, uint32_t width, uint32_t height) {
         VkExtent2D actualExtent = { width, height };
 
         // clamp the width and height to the min and max image extent
@@ -244,7 +243,7 @@ public:
         return actualExtent; //return the actual extent
     }
 
-    static VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
+    VkSurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats) {
         for (const VkSurfaceFormatKHR& format : availableFormats) {
             if (format.format == VK_FORMAT_B8G8R8A8_SRGB && format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
                 return format;
@@ -254,7 +253,7 @@ public:
         return availableFormats[0];
 
     }
-    static VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+    VkPresentModeKHR chooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
         for (const VkPresentModeKHR& present : availablePresentModes) {
             if (present == VK_PRESENT_MODE_MAILBOX_KHR) {
                 return present;
@@ -265,7 +264,7 @@ public:
     }
 
     // gets the indices of each queue family (graphics, present, etc)
-    static QueueFamilyIndices findQueueFamilyIndices(const VkSurfaceKHR& surface, const VkPhysicalDevice& device) {
+    QueueFamilyIndices findQueueFamilyIndices(const VkSurfaceKHR& surface, const VkPhysicalDevice& device) {
         QueueFamilyIndices indices;
 
         // get the number of queue families and their properties
@@ -298,7 +297,7 @@ public:
     }
 
     // outputs details about what the swap chain supports
-    static SCsupportDetails querySCsupport(const VkSurfaceKHR& surface) {
+    SCsupportDetails querySCsupport(const VkSurfaceKHR& surface) {
         SCsupportDetails details;
 
         // get the surface capabilities of the physical device
@@ -329,8 +328,124 @@ public:
         return details;
     }
 
+    // ------------------ COMMAND BUFFERS ------------------ //
+    VkhCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlags& createFlags) {
+        VkhCommandPool commandPool;
+        VkCommandPoolCreateInfo poolInf{};
+        poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        poolInf.queueFamilyIndex = queueFamilyIndex; // the queue family that will be using this command pool
+        poolInf.flags = createFlags;
+        VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, commandPool.p());
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("failed to create command pool!");
+        }
+        return commandPool;
+    }
+
+    VkhCommandBuffer allocateCommandBuffers(const VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+        VkhCommandBuffer commandBuffer(commandPool.v());
+        VkCommandBufferAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        allocInfo.commandPool = commandPool.v();
+        allocInfo.level = level;
+        allocInfo.commandBufferCount = 1;
+
+        VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffer.p());
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("failed to allocate command buffer!!");
+        }
+        return commandBuffer;
+    }
+
+    VkhCommandBuffer beginSingleTimeCommands(const VkhCommandPool& commandPool) {
+        VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
+        commandBuffer.setDestroy(false); // command buffer wont be autodestroyed
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
+        vkBeginCommandBuffer(commandBuffer.v(), &beginInfo);
+        return commandBuffer;
+    }
+
+    void endSingleTimeCommands(VkhCommandBuffer& commandBuffer, const VkhCommandPool& commandPool, const VkQueue& queue) {
+        vkEndCommandBuffer(commandBuffer.v());
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = commandBuffer.p();
+        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
+        vkQueueWaitIdle(queue); //wait for the queue to be idle
+        vkFreeCommandBuffers(device, commandPool.v(), 1, commandBuffer.p());
+    }
+
+    void createFB(const VkhRenderPass& renderPass, VkhFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
+        if (frameBuf.valid()) frameBuf.reset();
+        VkFramebufferCreateInfo frameBufferInfo{};
+        frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        frameBufferInfo.renderPass = renderPass.v();
+        frameBufferInfo.attachmentCount = static_cast<uint32_t>(attatchmentCount);
+        frameBufferInfo.pAttachments = attachments;
+        frameBufferInfo.width = width;
+        frameBufferInfo.height = height;
+        frameBufferInfo.layers = 1;
+
+        if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, frameBuf.p()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to create framebuffer!");
+        }
+    }
+
+    void createSemaphore(VkhSemaphore& semaphore) {
+        VkSemaphoreCreateInfo semaphoreInfo{};
+        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+        VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, semaphore.p());
+        if (resultRenderFinished != VK_SUCCESS) {
+            throw std::runtime_error("failed to create semaphore!");
+        }
+    }
+
+    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount) {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.waitSemaphoreCount = 0;
+        submitInfo.pWaitSemaphores = nullptr;
+        submitInfo.pWaitDstStageMask = nullptr;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+        submitInfo.pCommandBuffers = commandBuffers->p();
+        submitInfo.signalSemaphoreCount = 0;
+        submitInfo.pSignalSemaphores = nullptr;
+        return submitInfo;
+    }
+
+    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkhSemaphore& wait, const VkhSemaphore& signal) {
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = wait.p();
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+        submitInfo.pCommandBuffers = commandBuffers->p();
+        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pSignalSemaphores = signal.p();
+        return submitInfo;
+    }
+
+    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkhSemaphore* wait, const VkhSemaphore* signal, const size_t commandBufferCount, const size_t waitSemaphoreCount, const size_t signalSemaphoreCount) {
+
+        VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphoreCount);
+        submitInfo.pWaitSemaphores = wait->p();
+        submitInfo.pWaitDstStageMask = waitStages;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
+        submitInfo.pCommandBuffers = commandBuffers->p();
+        submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
+        submitInfo.pSignalSemaphores = signal->p();
+        return submitInfo;
+    }
+
     // ------------------ MEMORY ------------------ //
-    static uint32_t findMemoryType(const uint32_t tFilter, const VkMemoryPropertyFlags& prop) { //find the memory type based on the type filter and properties
+    uint32_t findMemoryType(const uint32_t tFilter, const VkMemoryPropertyFlags& prop) { //find the memory type based on the type filter and properties
         VkPhysicalDeviceMemoryProperties memP; //struct to hold memory properties
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memP); //get the memory properties for the physical device
         for (uint32_t i = 0; i < memP.memoryTypeCount; i++) { //loop through the memory types
@@ -341,7 +456,7 @@ public:
         throw std::runtime_error("failed to find suitable memory type!");
     }
 
-    static VkDeviceAddress bufferDeviceAddress(const VkhBuffer& buffer) {
+    VkDeviceAddress bufferDeviceAddress(const VkhBuffer& buffer) {
         VkBufferDeviceAddressInfo addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
         addrInfo.buffer = buffer.v();
@@ -349,7 +464,7 @@ public:
         return vkGetBufferDeviceAddress(device, &addrInfo);
     }
 
-    static VkDeviceAddress asDeviceAddress(const VkhAccelerationStructure& accelerationStructure) {
+    VkDeviceAddress asDeviceAddress(const VkhAccelerationStructure& accelerationStructure) {
         VkAccelerationStructureDeviceAddressInfoKHR addrInfo{};
         addrInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
         addrInfo.accelerationStructure = accelerationStructure.v();
@@ -357,7 +472,33 @@ public:
         return vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
     }
 
-    static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+    template<typename ObjectT>
+    void writeBuffer(const VkhDeviceMemory& bufferMem, const ObjectT* object, const VkDeviceSize size) {
+        if (object == nullptr) throw std::invalid_argument("Object is null!");
+        if (size == 0) throw std::invalid_argument("Buffer size is 0!");
+
+        void* data = nullptr;
+        if (vkMapMemory(device, bufferMem.v(), 0, size, 0, &data) != VK_SUCCESS) {
+            throw std::runtime_error("Failed to map memory for buffer!");
+        }
+
+        if (data == nullptr) {
+            throw std::runtime_error("Mapped memory is null!");
+        }
+
+        std::memcpy(data, object, static_cast<size_t>(size));
+        vkUnmapMemory(device, bufferMem.v());
+    }
+
+    void copyBuffer(VkhBuffer& src, VkhBuffer& dst, const VkhCommandPool& commandPool, const VkQueue& queue, const VkDeviceSize size) {
+        VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer.v(), src.v(), dst.v(), 1, &copyRegion);
+        endSingleTimeCommands(commandBuffer, commandPool, queue);
+    }
+
+    void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         if (buffer.valid()) buffer.reset();
         if (bufferMem.valid()) bufferMem.reset();
 
@@ -402,18 +543,18 @@ public:
         }
     }
 
-    static void createHostVisibleBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+    void createHostVisibleBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
     }
 
-    static void createDeviceLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+    void createDeviceLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
         createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
     }
 
     template<typename ObjectT>
-    static void createAndWriteLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkhCommandPool& commandPool, const VkQueue& queue, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+    void createAndWriteLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkhCommandPool& commandPool, const VkQueue& queue, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         createDeviceLocalBuffer(buffer, bufferMem, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memAllocFlags);
 
         VkhBuffer stagingBuffer;
@@ -428,39 +569,13 @@ public:
     }
 
     template<typename ObjectT>
-    static void createAndWriteHostBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+    void createAndWriteHostBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         createHostVisibleBuffer(buffer, bufferMem, size, usage, memAllocFlags);
         writeBuffer(bufferMem, data, size);
     }
 
-    template<typename ObjectT>
-    static void writeBuffer(const VkhDeviceMemory& bufferMem, const ObjectT* object, const VkDeviceSize size) {
-        if (object == nullptr) throw std::invalid_argument("Object is null!");
-        if (size == 0) throw std::invalid_argument("Buffer size is 0!");
-
-        void* data = nullptr;
-        if (vkMapMemory(device, bufferMem.v(), 0, size, 0, &data) != VK_SUCCESS) {
-            throw std::runtime_error("Failed to map memory for buffer!");
-        }
-
-        if (data == nullptr) {
-            throw std::runtime_error("Mapped memory is null!");
-        }
-
-        std::memcpy(data, object, static_cast<size_t>(size));
-        vkUnmapMemory(device, bufferMem.v());
-    }
-
-    static void copyBuffer(VkhBuffer& src, VkhBuffer& dst, const VkhCommandPool& commandPool, const VkQueue& queue, const VkDeviceSize size) {
-        VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
-        VkBufferCopy copyRegion{};
-        copyRegion.size = size;
-        vkCmdCopyBuffer(commandBuffer.v(), src.v(), dst.v(), 1, &copyRegion);
-        endSingleTimeCommands(commandBuffer, commandPool, queue);
-    }
-
     // ------------------ IMAGES ------------------ //
-    static VkFormat findDepthFormat() {
+    VkFormat findDepthFormat() {
         //the formats that are supported
         std::vector<VkFormat> allowed = {
             VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT
@@ -478,7 +593,7 @@ public:
         throw std::runtime_error("failed to find suitable depth format!");
     }
 
-    static void transitionImageLayout(const VkhCommandBuffer& commandBuffer, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout,
+    void transitionImageLayout(const VkhCommandBuffer& commandBuffer, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout,
         const VkImageLayout newLayout, const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
 
         VkImageMemoryBarrier barrier{};
@@ -565,14 +680,14 @@ public:
         vkCmdPipelineBarrier(commandBuffer.v(), sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier); // insert the barrier into the command buffer
     }
 
-    static void transitionImageLayout(VkhCommandPool& commandPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
+    void transitionImageLayout(VkhCommandPool& commandPool, const VkhImage& image, const VkFormat format, const VkImageLayout oldLayout, const VkImageLayout newLayout,
         const uint32_t layerCount, const uint32_t levelCount, const uint32_t baseMip) {
         VkhCommandBuffer tempCommandBuffer = beginSingleTimeCommands(commandPool);
         transitionImageLayout(tempCommandBuffer, image, format, oldLayout, newLayout, layerCount, levelCount, baseMip);
         endSingleTimeCommands(tempCommandBuffer, commandPool, graphicsQueue);
     }
 
-    static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+    void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
         const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkSampleCountFlagBits& sample) {
 
         if (image.valid()) image.reset();
@@ -618,13 +733,13 @@ public:
         vkBindImageMemory(device, image.v(), imageMemory.v(), 0);
     }
 
-    static void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
+    void createImage(VkhImage& image, VkhDeviceMemory& imageMemory, const uint32_t width, const uint32_t height, const VkFormat format, const uint32_t mipLevels,
         const uint32_t arrayLayers, const bool cubeMap, const VkImageUsageFlags& usage, const VkImageLayout& imageLayout, VkhCommandPool& commandPool, const VkSampleCountFlagBits& sample) {
         createImage(image, imageMemory, width, height, format, mipLevels, arrayLayers, cubeMap, usage, sample);
         transitionImageLayout(commandPool, image, format, VK_IMAGE_LAYOUT_UNDEFINED, imageLayout, arrayLayers, mipLevels, 0);
     }
 
-    static void createSampler(VkhSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
+    void createSampler(VkhSampler& sampler, const uint32_t mipLevels, const TextureType type = BASE) {
         if (sampler.valid()) sampler.reset();
         VkSamplerCreateInfo samplerInf{};
         samplerInf.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -664,7 +779,7 @@ public:
     }
 
     template<typename Texture>
-    static void createImageView(Texture& tex, const TextureType type = BASE) {
+    void createImageView(Texture& tex, const TextureType type = BASE) {
         if (tex.imageView.valid()) tex.imageView.reset();
 
         VkImageViewCreateInfo viewInf{};
@@ -722,7 +837,7 @@ public:
     }
 
     template<typename Texture>
-    static void createImageView(Texture& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
+    void createImageView(Texture& tex, const VkFormat& swapFormat) { // imageview creation for swapchain image types
         if (tex.imageView.valid()) tex.imageView.reset();
 
         VkImageViewCreateInfo viewInf{};
@@ -743,7 +858,7 @@ public:
     }
 
     // copy an image from one image to another
-    static void copyImage(VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout& srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkhCommandBuffer& commandBuffer, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+    void copyImage(VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout& srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkhCommandBuffer& commandBuffer, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
         transitionImageLayout(commandBuffer, srcImage, format, srcStart, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, 1, 1, 0);
         transitionImageLayout(commandBuffer, dstImage, format, dstStart, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, 1, 0);
 
@@ -764,132 +879,14 @@ public:
         transitionImageLayout(commandBuffer, srcImage, format, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
     }
 
-    static void copyImage(VkhCommandPool& commandPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
+    void copyImage(VkhCommandPool& commandPool, VkhImage& srcImage, VkhImage& dstImage, const VkImageLayout srcStart, const VkImageLayout dstStart, const VkImageLayout dstAfter, const VkFormat format, const uint32_t width, const uint32_t height, const bool color) {
         VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
         copyImage(srcImage, dstImage, srcStart, dstStart, dstAfter, commandBuffer, format, width, height, color);
         endSingleTimeCommands(commandBuffer, commandPool, graphicsQueue);
     }
 
-
-    // ------------------ COMMAND BUFFERS ------------------ //
-    static VkhCommandPool createCommandPool(const uint32_t queueFamilyIndex, const VkCommandPoolCreateFlags& createFlags) {
-        VkhCommandPool commandPool;
-        VkCommandPoolCreateInfo poolInf{};
-        poolInf.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        poolInf.queueFamilyIndex = queueFamilyIndex; // the queue family that will be using this command pool
-        poolInf.flags = createFlags;
-        VkResult result = vkCreateCommandPool(device, &poolInf, nullptr, commandPool.p());
-        if (result != VK_SUCCESS) {
-            throw std::runtime_error("failed to create command pool!");
-        }
-        return commandPool;
-    }
-
-    static VkhCommandBuffer beginSingleTimeCommands(const VkhCommandPool& commandPool) {
-        VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
-        commandBuffer.setDestroy(false); // command buffer wont be autodestroyed
-        VkCommandBufferBeginInfo beginInfo{};
-        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT; //one time command buffer
-        vkBeginCommandBuffer(commandBuffer.v(), &beginInfo);
-        return commandBuffer;
-    }
-
-    static void endSingleTimeCommands(VkhCommandBuffer& commandBuffer, const VkhCommandPool& commandPool, const VkQueue& queue) {
-        vkEndCommandBuffer(commandBuffer.v());
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.commandBufferCount = 1;
-        submitInfo.pCommandBuffers = commandBuffer.p();
-        vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE); //submit the command buffer to the queue
-        vkQueueWaitIdle(queue); //wait for the queue to be idle
-        vkFreeCommandBuffers(device, commandPool.v(), 1, commandBuffer.p());
-    }
-
-    static void createFB(const VkhRenderPass& renderPass, VkhFramebuffer& frameBuf, const VkImageView* attachments, const size_t attatchmentCount, const uint32_t width, const uint32_t height) {
-        if (frameBuf.valid()) frameBuf.reset();
-        VkFramebufferCreateInfo frameBufferInfo{};
-        frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-        frameBufferInfo.renderPass = renderPass.v();
-        frameBufferInfo.attachmentCount = static_cast<uint32_t>(attatchmentCount);
-        frameBufferInfo.pAttachments = attachments;
-        frameBufferInfo.width = width;
-        frameBufferInfo.height = height;
-        frameBufferInfo.layers = 1;
-
-        if (vkCreateFramebuffer(device, &frameBufferInfo, nullptr, frameBuf.p()) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create framebuffer!");
-        }
-    }
-
-    static VkhCommandBuffer allocateCommandBuffers(const VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
-        VkhCommandBuffer commandBuffer(commandPool.v());
-        VkCommandBufferAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocInfo.commandPool = commandPool.v();
-        allocInfo.level = level;
-        allocInfo.commandBufferCount = 1;
-
-        VkResult result = vkAllocateCommandBuffers(device, &allocInfo, commandBuffer.p());
-        if (result != VK_SUCCESS) {
-            throw std::runtime_error("failed to allocate command buffer!!");
-        }
-        return commandBuffer;
-    }
-
-    static void createSemaphore(VkhSemaphore& semaphore) {
-        VkSemaphoreCreateInfo semaphoreInfo{};
-        semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-
-        VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, semaphore.p());
-        if (resultRenderFinished != VK_SUCCESS) {
-            throw std::runtime_error("failed to create semaphore!");
-        }
-    }
-
-    static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount) {
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.waitSemaphoreCount = 0;
-        submitInfo.pWaitSemaphores = nullptr;
-        submitInfo.pWaitDstStageMask = nullptr;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
-        submitInfo.signalSemaphoreCount = 0;
-        submitInfo.pSignalSemaphores = nullptr;
-        return submitInfo;
-    }
-
-    static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkhSemaphore& wait, const VkhSemaphore& signal) {
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.waitSemaphoreCount = 1;
-        submitInfo.pWaitSemaphores = wait.p();
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
-        submitInfo.signalSemaphoreCount = 1;
-        submitInfo.pSignalSemaphores = signal.p();
-        return submitInfo;
-    }
-
-    static VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkhSemaphore* wait, const VkhSemaphore* signal,
-        const size_t commandBufferCount, const size_t waitSemaphoreCount, const size_t signalSemaphoreCount) {
-
-        VkSubmitInfo submitInfo{};
-        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphoreCount);
-        submitInfo.pWaitSemaphores = wait->p();
-        submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
-        submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
-        submitInfo.pSignalSemaphores = signal->p();
-        return submitInfo;
-    }
-
     // ------------------ DESCRIPTOR SETS ------------------ //
-    static void createDSLayout(VkhDescriptorSetLayout& layout, const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
+    void createDSLayout(VkhDescriptorSetLayout& layout, const uint32_t bindingIndex, const VkDescriptorType& type, const uint32_t descriptorCount, const VkShaderStageFlags& stageFlags, const bool pushDescriptors = false) {
         if (layout.valid()) layout.reset();
 
         VkDescriptorSetLayoutBinding binding{};
@@ -922,7 +919,7 @@ public:
         }
     }
 
-    static void createDSPool(VkhDescriptorPool& pool, const VkDescriptorType& type, const uint32_t descriptorCount) {
+    void createDSPool(VkhDescriptorPool& pool, const VkDescriptorType& type, const uint32_t descriptorCount) {
         if (pool.valid()) pool.reset();
 
         VkDescriptorPoolSize poolSize{};
@@ -942,7 +939,7 @@ public:
     }
 
     template<typename InfoType>
-    static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
+    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType* infos, const size_t count) {
         // static assert if an invalid type is passed in
         static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
             || std::is_same_v<InfoType, VkDescriptorBufferInfo>
@@ -971,7 +968,7 @@ public:
     }
 
     template<typename InfoType>
-    static VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
+    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, const uint32_t binding, const uint32_t arrayElem, const VkDescriptorType& type, const InfoType& info) {
         // static assert if an invalid type is passed in
         static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
             || std::is_same_v<InfoType, VkDescriptorBufferInfo>
@@ -999,7 +996,7 @@ public:
         return d;
     }
 
-    static VkhDescriptorSet allocDS(uint32_t* descriptorCounts, VkhDescriptorPool& pool, VkhDescriptorSetLayout& layout) {
+    VkhDescriptorSet allocDS(uint32_t* descriptorCounts, VkhDescriptorPool& pool, VkhDescriptorSetLayout& layout) {
         VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
         varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
         varCountInfo.descriptorSetCount = 1;
@@ -1023,7 +1020,7 @@ public:
     }
 
     // ------------------ PIPELINES ------------------ //
-    static VkhShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
+    VkhShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
         VkShaderModuleCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
         createInfo.codeSize = code.size();
@@ -1038,7 +1035,7 @@ public:
     }
 
 
-    static VkPipelineShaderStageCreateInfo createShaderStage(const VkShaderStageFlagBits& stage, const VkhShaderModule& shaderModule) {
+    VkPipelineShaderStageCreateInfo createShaderStage(const VkShaderStageFlagBits& stage, const VkhShaderModule& shaderModule) {
         VkPipelineShaderStageCreateInfo s{};
         s.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         s.stage = stage;

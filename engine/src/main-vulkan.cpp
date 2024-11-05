@@ -440,7 +440,7 @@ private:
     };
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = false; // a bool if raytracing has been enabled
+    bool rtEnabled = true; // a bool if raytracing has been enabled
 
     CamData cam{};
 

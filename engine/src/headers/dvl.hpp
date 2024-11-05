@@ -12,8 +12,7 @@
 
 #include <unordered_set>
 
-class dvl {
-public:
+namespace dvl {
     struct Vertex {
         dml::vec3 pos; // position coordinates x, y, z
         dml::vec2 tex; // texture coordinates u, v
@@ -207,7 +206,7 @@ public:
     };
 
     template <typename IndexType>
-    static void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents,
+    void calculateTangents(const float* positionData, const float* texCoordData, std::vector<dml::vec4>& tangents,
         const void* rawIndices, size_t size) {
 
         for (size_t i = 0; i < size; i += 3) {
@@ -249,7 +248,7 @@ public:
         }
     }
 
-    static void normalizeTangents(std::vector<dml::vec4>& tangents) {
+    void normalizeTangents(std::vector<dml::vec4>& tangents) {
         for (dml::vec4& tangent : tangents) {
             dml::vec3 normalizedTangent = dml::normalize(tangent.xyz());
             tangent.x = normalizedTangent.x;
@@ -259,7 +258,7 @@ public:
     }
 
     // returns an iterator to the attribute from a given name (TEXCOORD_0, NORMAL, etc)
-    static auto getAttributeIt(const std::string& name, const std::map < std::string, int>& attributes) {
+    auto getAttributeIt(const std::string& name, const std::map < std::string, int>& attributes) {
         auto it = attributes.find(name);
 
         // if the attribute isnt found, log a warning (if debug is enabled)
@@ -268,7 +267,7 @@ public:
     }
 
     // returns a pointer to the beggining of the attribute data
-    static const float* getAccessorData(const tinygltf::Model& model, const std::map<std::string, int>& attributes, const std::string& attributeName) {
+    const float* getAccessorData(const tinygltf::Model& model, const std::map<std::string, int>& attributes, const std::string& attributeName) {
         auto it = getAttributeIt(attributeName, attributes); // get the attribute iterator from the attribute name
         if (it == attributes.end()) return nullptr; // if the attribute isnt found, return nullptr
 
@@ -299,7 +298,7 @@ public:
     }
 
     // returns a pointer to the start of the index data (indices of the mesh)
-    static const void* getIndexData(const tinygltf::Model& model, const tinygltf::Accessor& accessor) {
+    const void* getIndexData(const tinygltf::Model& model, const tinygltf::Accessor& accessor) {
         // get the buffer view and buffer
         const tinygltf::BufferView& bufferView = model.bufferViews[accessor.bufferView];
         const tinygltf::Buffer& buffer = model.buffers[bufferView.buffer];
@@ -324,7 +323,7 @@ public:
         }
     }
 
-    static dml::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
+    dml::mat4 calcNodeLM(const tinygltf::Node& node) { // get the local matrix of the node
         if (node.matrix.size() == 16) { // if the node already has a matrix just return it
             return dml::gltfToMat4(node.matrix);
         }
@@ -364,7 +363,7 @@ public:
         return translationMatrix * rotationMatrix * scaleMatrix;
     }
 
-    static int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
+    int getNodeIndex(const tinygltf::Model& model, int meshIndex) {
         for (size_t i = 0; i < model.nodes.size(); i++) {
             if (model.nodes[i].mesh == meshIndex) {
                 return static_cast<int>(i);
@@ -373,7 +372,7 @@ public:
         return -1; // not found
     }
 
-    static dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, Mesh& m) {
+    dml::mat4 calcMeshWM(const tinygltf::Model& gltfMod, int meshIndex, std::unordered_map<int, int>& parentIndex, Mesh& m) {
         int currentNodeIndex = getNodeIndex(gltfMod, meshIndex);
         dml::mat4 modelMatrix;
 
@@ -405,7 +404,7 @@ public:
         return modelMatrix;
     }
 
-    static void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
+    void printNodeHierarchy(const tinygltf::Model& model, int nodeIndex, int depth = 0) {
         for (int i = 0; i < depth; i++) { // indent based on depth
             std::cout << "     ";
         }
@@ -417,7 +416,7 @@ public:
         }
     }
 
-    static void printFullHierarchy(const tinygltf::Model& model) {
+    void printFullHierarchy(const tinygltf::Model& model) {
         std::unordered_set<int> childNodes;
         for (const tinygltf::Node& node : model.nodes) {
             for (const int& childIndex : node.children) {
@@ -433,7 +432,7 @@ public:
         }
     }
 
-    static Mesh loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
+    Mesh loadMesh(const tinygltf::Mesh& mesh, tinygltf::Model& model, std::unordered_map<int, int>& parentInd,
         const uint32_t meshInd, const dml::vec3 scale, const dml::vec3 pos, const dml::vec4 rot) {
 
         Mesh newObject;
