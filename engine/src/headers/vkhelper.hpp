@@ -357,7 +357,7 @@ public:
         return vkhfp::vkGetAccelerationStructureDeviceAddressKHR(device, &addrInfo);
     }
 
-    static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags) {
+    static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryPropertyFlags& memFlags, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         if (buffer.valid()) buffer.reset();
         if (bufferMem.valid()) bufferMem.reset();
 
@@ -397,15 +397,40 @@ public:
             throw std::runtime_error("Failed to allocate memory for the buffer!");
         }
 
-        // bind the memory to the buffer
         if (vkBindBufferMemory(device, buffer.v(), bufferMem.v(), 0) != VK_SUCCESS) {
             throw std::runtime_error("Failed to bind memory to buffer!");
         }
     }
 
-    static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
+    static void createHostVisibleBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
+        createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
+    }
+
+    static void createDeviceLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+        VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
+    }
+
+    template<typename ObjectT>
+    static void createAndWriteLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkhCommandPool& commandPool, const VkQueue& queue, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+        createDeviceLocalBuffer(buffer, bufferMem, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memAllocFlags);
+
+        VkhBuffer stagingBuffer;
+        VkhDeviceMemory stagingBufferMem;
+        createHostVisibleBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memAllocFlags);
+
+        // write the data to the staging buffer
+        writeBuffer(stagingBufferMem, data, size);
+
+        // copy the staging buffer to the device local buffer
+        copyBuffer(stagingBuffer, buffer, commandPool, queue, size);
+    }
+
+    template<typename ObjectT>
+    static void createAndWriteHostBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, const VkDeviceSize& size, const VkBufferUsageFlags& usage, const VkMemoryAllocateFlags& memAllocFlags = 0) {
+        createHostVisibleBuffer(buffer, bufferMem, size, usage, memAllocFlags);
+        writeBuffer(bufferMem, data, size);
     }
 
     template<typename ObjectT>
@@ -426,34 +451,12 @@ public:
         vkUnmapMemory(device, bufferMem.v());
     }
 
-    template<typename ObjectT>
-    static void createStagingBuffer(VkhBuffer& stagingBuffer, VkhDeviceMemory& stagingBufferMem, const ObjectT* object, const VkDeviceSize& size, const VkMemoryAllocateFlags& memAllocFlags) {
-        VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-
-        createBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memFlags, memAllocFlags);
-        writeBuffer(stagingBufferMem, object, size);
-    }
-
-    template<typename ObjectT>
-    static void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* object, const VkDeviceSize& size, const VkBufferUsageFlags& usage,
-        VkhCommandPool& commandPool, const VkQueue& queue, const VkMemoryAllocateFlags& memAllocFlags, bool staging = true) {
-        createBuffer(buffer, bufferMem, size, usage, staging ? VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT : VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memAllocFlags);
-
-        if (staging) {
-            VkhBuffer stagingBuffer;
-            VkhDeviceMemory stagingBufferMem;
-            createStagingBuffer(stagingBuffer, stagingBufferMem, object, size, memAllocFlags);
-
-            // copy the data from the staging buffer to the dst buffer
-            VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
-            VkBufferCopy copyRegion{};
-            copyRegion.size = size;
-            vkCmdCopyBuffer(commandBuffer.v(), stagingBuffer.v(), buffer.v(), 1, &copyRegion);
-            endSingleTimeCommands(commandBuffer, commandPool, queue);
-        }
-        else {
-            writeBuffer(bufferMem, object, static_cast<size_t>(size));
-        }
+    static void copyBuffer(VkhBuffer& src, VkhBuffer& dst, const VkhCommandPool& commandPool, const VkQueue& queue, const VkDeviceSize size) {
+        VkhCommandBuffer commandBuffer = beginSingleTimeCommands(commandPool);
+        VkBufferCopy copyRegion{};
+        copyRegion.size = size;
+        vkCmdCopyBuffer(commandBuffer.v(), src.v(), dst.v(), 1, &copyRegion);
+        endSingleTimeCommands(commandBuffer, commandPool, queue);
     }
 
     // ------------------ IMAGES ------------------ //
@@ -631,6 +634,7 @@ public:
         // when the texture cords go out of bounds, repeat the texture
         samplerInf.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
         samplerInf.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+
         samplerInf.anisotropyEnable = VK_FALSE;
         samplerInf.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
         samplerInf.unnormalizedCoordinates = VK_FALSE;
@@ -781,7 +785,7 @@ public:
         return commandPool;
     }
 
-    static VkhCommandBuffer beginSingleTimeCommands(VkhCommandPool& commandPool) {
+    static VkhCommandBuffer beginSingleTimeCommands(const VkhCommandPool& commandPool) {
         VkhCommandBuffer commandBuffer = allocateCommandBuffers(commandPool);
         commandBuffer.setDestroy(false); // command buffer wont be autodestroyed
         VkCommandBufferBeginInfo beginInfo{};
@@ -818,7 +822,7 @@ public:
         }
     }
 
-    static VkhCommandBuffer allocateCommandBuffers(VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+    static VkhCommandBuffer allocateCommandBuffers(const VkhCommandPool& commandPool, const VkCommandBufferLevel level = VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
         VkhCommandBuffer commandBuffer(commandPool.v());
         VkCommandBufferAllocateInfo allocInfo{};
         allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;

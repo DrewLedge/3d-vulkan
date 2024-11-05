@@ -4,10 +4,12 @@
 #include <iostream>
 #include <vector>
 
-constexpr float PI = 3.14159265359f;
-constexpr float DEG_TO_RAD = 0.01745329251f;
-constexpr float RAD_TO_DEG = 57.2957795131f;
-constexpr float EPSILON = 0.0000001f;
+namespace mathc {
+    constexpr float PI = 3.14159265359f;
+    constexpr float DEG_TO_RAD = 0.01745329251f;
+    constexpr float RAD_TO_DEG = 57.2957795131f;
+    constexpr float EPSILON = 0.0000001f;
+}
 
 class dml {
 public:
@@ -26,8 +28,8 @@ public:
         }
 
         bool operator==(const vec2& other) const {
-            return std::abs(x - other.x) < EPSILON &&
-                std::abs(y - other.y) < EPSILON;
+            return std::abs(x - other.x) < mathc::EPSILON &&
+                std::abs(y - other.y) < mathc::EPSILON;
         }
 
         vec2 operator+(const vec2& other) const {
@@ -146,9 +148,9 @@ public:
         }
 
         bool operator==(const vec3& other) const {
-            return std::abs(x - other.x) < EPSILON &&
-                std::abs(y - other.y) < EPSILON &&
-                std::abs(z - other.z) < EPSILON;
+            return std::abs(x - other.x) < mathc::EPSILON &&
+                std::abs(y - other.y) < mathc::EPSILON &&
+                std::abs(z - other.z) < mathc::EPSILON;
         }
 
         friend std::ostream& operator<<(std::ostream& os, const vec3& v) {
@@ -176,10 +178,10 @@ public:
         }
 
         bool operator==(const vec4& other) const {
-            return std::abs(x - other.x) < EPSILON &&
-                std::abs(y - other.y) < EPSILON &&
-                std::abs(z - other.z) < EPSILON &&
-                std::abs(w - other.w) < EPSILON;
+            return std::abs(x - other.x) < mathc::EPSILON &&
+                std::abs(y - other.y) < mathc::EPSILON &&
+                std::abs(z - other.z) < mathc::EPSILON &&
+                std::abs(w - other.w) < mathc::EPSILON;
         }
 
         bool operator!=(const vec4& other) const {
@@ -350,7 +352,7 @@ public:
             bool equal = true;
             for (int i = 0; i < 4; i++) {
                 for (int j = 0; j < 4; j++) {
-                    equal = equal && std::abs(m[j][i] - other.m[j][i]) < EPSILON;
+                    equal = equal && std::abs(m[j][i] - other.m[j][i]) < mathc::EPSILON;
                 }
             }
             return equal;
@@ -482,15 +484,15 @@ public:
     }
 
     static vec3 radians(const vec3& v) {
-        return v * DEG_TO_RAD;
+        return v * mathc::DEG_TO_RAD;
     }
 
     static float radians(const float degree) {
-        return degree * DEG_TO_RAD;
+        return degree * mathc::DEG_TO_RAD;
     }
 
     static float degrees(const float radian) {
-        return radian * RAD_TO_DEG;
+        return radian * mathc::RAD_TO_DEG;
     }
 
     static vec3 cross(const vec3& a, const vec3& b) {
@@ -513,7 +515,7 @@ public:
     static vec3 normalize(const vec3& v) {
         float length = v.length();
 
-        if (length < EPSILON) {
+        if (length < mathc::EPSILON) {
             return vec3(0.0f, 0.0f, 0.0f);
         }
 
@@ -577,7 +579,7 @@ public:
 
     static vec4 inverseQuat(const vec4& q) {
         float length = q.length();
-        if (length < EPSILON) {
+        if (length < mathc::EPSILON) {
             return vec4(0.0f, 0.0f, 0.0f, 1.0f); // return identity quaternion
         }
 
@@ -598,7 +600,7 @@ public:
 
     static vec4 normalize(const vec4& v) {
         float length = v.length();
-        if (length < EPSILON) {
+        if (length < mathc::EPSILON) {
             return vec4(0.0f, 0.0f, 0.0f, 1.0f);
         }
 
@@ -744,7 +746,7 @@ public:
         float d = det4(m); // get the determinant of the matrix
 
         // if the determinant is 0, its not invertible
-        if (std::abs(d) < EPSILON) {
+        if (std::abs(d) < mathc::EPSILON) {
             std::cerr << "Matrix is not invertible!\n";
             return m;
         }
