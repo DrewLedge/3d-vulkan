@@ -454,7 +454,7 @@ private:
     KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
     KeyPO eKey = KeyPO(GLFW_KEY_E);
     KeyPO rKey = KeyPO(GLFW_KEY_R);
-    KeyPO mKey = KeyPO(GLFW_KEY_M);
+    KeyPO tabKey = KeyPO(GLFW_KEY_TAB);
 
     // swap chain and framebuffers
     SCData swap{};
@@ -1085,7 +1085,7 @@ private:
             utils::sep();
         }
 
-        if (mKey.isPressed()) {
+        if (tabKey.isPressed()) {
             resetScene();
         }
 
