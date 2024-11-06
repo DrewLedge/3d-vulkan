@@ -1,16 +1,18 @@
-![Vulkan Engine Screenshot](images/v0.5.3.png)
+# Vulkan Graphics Engine
+![Vulkan Engine Screenshot](images/engine.png)
 
-## Vulkan Rendering Engine
+## About
+
 This project is a personal learning experience to deepen my understanding of the low-level intricacies of GPUs and graphics programming. 
 It utilizes the Vulkan Graphics API and is written in C++.
 
 ## Notable features
-- Fully realtime lighting and object manipulation
+- Realtime raytracing (Opaque objects only)
+- Realtime lighting and object manipulation
 - Cook-Torrance BRDF lighting model
 - Efficient GPU utilization
 - Skyboxes
 - WBOIT
-- glTF 2.0 support
 
 ## Custom libraries
 During the engine's development, I decided to create my own libraries for more control and to learn about various topics:

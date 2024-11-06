@@ -9,23 +9,71 @@ struct LightData {
     vec4 color;
     vec4 targetVec;
     float intensity;
-	float innerConeAngle; // in degrees
-	float outerConeAngle; // in degrees
-	float constantAttenuation;
-	float linearAttenuation;
-	float quadraticAttenuation;
+    float innerConeAngle; // in degrees
+    float outerConeAngle; // in degrees
+    float constantAttenuation;
+    float linearAttenuation;
+    float quadraticAttenuation;
 };
 
-layout (set = 0, binding = 1) readonly buffer LightBuffer {
+layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-layout(set = 1, binding = 4) uniform CamBufferObject {
-    mat4 view;
-    mat4 proj;
+layout(set = 3, binding = 0) uniform CamBufferObject {
+    mat4 iview;
+    mat4 iproj;
 } CamUBO;
 
-layout(set = 2, binding = 7) uniform accelerationStructureEXT TLAS;
+layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
+
+layout(set = 5, binding = 0, rgba16f) uniform image2D rtTexture;
+
+struct Payload {
+    vec3 col;
+    uint rec;
+};
+
+layout(location = 0) rayPayloadEXT Payload payload;
+
+vec3 getDir(vec2 uv) {
+    // convert the uv to a -1 to 1 range (ndc)
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    // reconstruct the clip space pos from the ndc cords
+    vec4 clip = vec4(ndc, 1.0, 1.0);
+
+    // transform to view space by multiplying by the inv proj
+    vec4 view = CamUBO.iproj * clip;
+
+    // get the view dir by perspective dividing and normalizing it
+    vec3 viewDir = normalize(view.xyz / view.w);
+
+    // multiply the dir by the inverse view matrix to get dir in world space
+    return (CamUBO.iview * vec4(viewDir, 0.0)).xyz;
+}
 
 void main() {
+    vec2 uv = (0.5 + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
+    vec3 pos = CamUBO.iview[3].xyz;
+    vec3 dir = getDir(uv);
+
+    payload.col = vec3(0.0);
+    payload.rec = 0;
+
+    traceRayEXT(
+        TLAS,
+        gl_RayFlagsOpaqueEXT, // flags
+        0xFF,                 // cull mask
+        0,                    // sbt offset
+        0,                    // sbt stride
+        0,                    // miss index
+        pos,                  // pos
+        0.0,                  // min-range
+        dir,                  // dir
+        100.0,                // max-range
+        0                     // payload
+    );
+
+    imageStore(rtTexture, ivec2(gl_LaunchIDEXT.xy), vec4(payload.col, 1.0));
 }

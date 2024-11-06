@@ -141,6 +141,7 @@
     <ClCompile Include="src\main-vulkan.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\.editorconfig" />
     <None Include="..\.gitignore" />
     <None Include="..\README.md" />
     <None Include="shaders\compile.bat" />
@@ -149,10 +150,15 @@
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
     <None Include="shaders\includes\fragformulas.glsl" />
+    <None Include="shaders\includes\lighting.glsl" />
     <None Include="shaders\includes\vertformulas.glsl" />
     <None Include="shaders\pathtracing\closehit.rchit" />
     <None Include="shaders\pathtracing\gen.rgen" />
     <None Include="shaders\pathtracing\miss.rmiss" />
+    <None Include="shaders\pathtracing\present.frag" />
+    <None Include="shaders\pathtracing\present.vert" />
+    <None Include="shaders\pathtracing\shadowhit.rchit" />
+    <None Include="shaders\pathtracing\shadowmiss.rmiss" />
     <None Include="shaders\shadow.frag" />
     <None Include="shaders\shadow.vert" />
     <None Include="shaders\sky.frag" />

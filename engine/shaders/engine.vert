@@ -4,29 +4,27 @@
 
 #include "includes/vertformulas.glsl"
 
-layout(location = 0) in vec3 inPosition; 
-layout(location = 1) in vec4 inColor; 
-layout(location = 2) in vec2 inTexCoord;
-layout(location = 3) in vec3 inNormal;
-layout(location = 4) in vec4 inTangent;
+layout(location = 0) in vec3 inPosition;
+layout(location = 1) in vec2 inTexCoord;
+layout(location = 2) in vec3 inNormal;
+layout(location = 3) in vec4 inTangent;
 
 // per-instance data
-layout(location = 5) in vec4 inModel1;
-layout(location = 6) in vec4 inModel2;
-layout(location = 7) in vec4 inModel3;
-layout(location = 8) in vec4 inModel4;
-layout(location = 9) in uint inToRender;
+layout(location = 4) in vec4 inModel1;
+layout(location = 5) in vec4 inModel2;
+layout(location = 6) in vec4 inModel3;
+layout(location = 7) in vec4 inModel4;
+layout(location = 8) in uint inToRender;
 
-layout(location = 0) out vec4 outFragColor;
-layout(location = 1) out vec2 outTexCoord;
-layout(location = 2) flat out uint outTexIndex;
-layout(location = 3) out vec3 outFragPos;
-layout(location = 4) out vec3 outViewDirection;
-layout(location = 5) out mat3 outTBN;
-layout(location = 8) flat out uint outRender;
-layout(location = 9) flat out uint outBitfield; // number of textures per model
+layout(location = 0) out vec2 outTexCoord;
+layout(location = 1) flat out uint outTexIndex;
+layout(location = 2) out vec3 outFragPos;
+layout(location = 3) out vec3 outViewDir;
+layout(location = 4) out mat3 outTBN; // uses locations 4, 5 and 6
+layout(location = 7) flat out uint outRender;
+layout(location = 8) flat out uint outBitfield;
 
-layout(set = 3, binding = 4) uniform CamBufferObject {
+layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;
@@ -49,9 +47,8 @@ void main() {
     gl_Position = getPos(proj, view, model, inPosition);
     outTBN = getTBN(inTangent, model, inNormal);
 
-    outFragColor = inColor;
     outTexCoord = inTexCoord;
-    outTexIndex = texIndex; // pass the texture index to the fragment shader
-    outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
-    outViewDirection = viewDir;
+    outTexIndex = texIndex;
+    outFragPos = vec3(model * vec4(inPosition, 1.0));
+    outViewDir = viewDir;
 }

@@ -1,7 +1,9 @@
 @echo off
 
-if not exist compiled mkdir compiled
-if not exist shaderlogs mkdir shaderlogs
+if exist compiled rmdir /s /q compiled
+if exist shaderlogs rmdir /s /q shaderlogs
+mkdir compiled
+mkdir shaderlogs
 
 glslc --target-env=vulkan1.3 -O engine.vert -I ./includes/ -o compiled/vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
 glslc --target-env=vulkan1.3 -O engine.frag -I ./includes/ -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
@@ -19,10 +21,14 @@ glslc --target-env=vulkan1.3 -O composition.vert -o compiled/composition_vert_sh
 glslc --target-env=vulkan1.3 -O composition.frag -o compiled/composition_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
 
-glslc --target-env=vulkan1.3 -O pathtracing/anyhit.rahit -o compiled/anyhit_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 glslc --target-env=vulkan1.3 -O pathtracing/closehit.rchit -o compiled/closehit_shader.spv >> shaderlogs/ShaderError.txt 2>&1
-glslc --target-env=vulkan1.3 -O pathtracing/gen.rgen -o compiled/gen_shader.spv >> shaderlogs/ShaderError.txt 2>&1
-glslc --target-env=vulkan1.3 -O pathtracing/intersection.rint -o compiled/intersection_shader.spv >> shaderlogs/ShaderError.txt 2>&1
-glslc --target-env=vulkan1.3 -O pathtracing/miss.rmiss -o compiled/miss_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O pathtracing/shadowhit.rchit -o compiled/shadowhit_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
+glslc --target-env=vulkan1.3 -O pathtracing/gen.rgen -o compiled/gen_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+
+glslc --target-env=vulkan1.3 -O pathtracing/miss.rmiss -o compiled/miss_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O pathtracing/shadowmiss.rmiss -o compiled/shadowmiss_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+
+glslc --target-env=vulkan1.3 -O pathtracing/present.vert -o compiled/rt_present_vert_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O pathtracing/present.frag -o compiled/rt_present_frag_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 

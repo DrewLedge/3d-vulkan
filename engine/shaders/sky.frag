@@ -7,12 +7,9 @@
 layout(location = 0) in vec4 inFragPos; // the direction to sample from the cubemap
 layout(location = 0) out vec4 outColor; // output color of the fragment
 
-layout(set = 0, binding = 3) uniform samplerCube cubeMap;
+layout(set = 0, binding = 0) uniform samplerCube cubeMap;
 
 void main() {
     outColor = texture(cubeMap, inFragPos.xyz);
     outColor.rgb *= 0.01;
 }
-
-
-

@@ -66,7 +66,7 @@
     <None Include="shaders\compile.bat">
       <Filter>Source Files\Other files</Filter>
     </None>
-    <None Include="shaders\includes\fragformulas.glsl">
+    <None Include="shaders\includes\lighting.glsl">
       <Filter>Shaders\Shader Libraries</Filter>
     </None>
     <None Include="shaders\includes\vertformulas.glsl">
@@ -116,6 +116,24 @@
     </None>
     <None Include="shaders\wboit.vert">
       <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\pathtracing\present.frag">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\present.vert">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\shadowhit.rchit">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\pathtracing\shadowmiss.rmiss">
+      <Filter>Shaders\pathtracing</Filter>
+    </None>
+    <None Include="shaders\includes\fragformulas.glsl">
+      <Filter>Shaders\Shader Libraries</Filter>
+    </None>
+    <None Include="..\.editorconfig">
+      <Filter>Source Files\Other files</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>
