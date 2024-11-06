@@ -92,27 +92,19 @@ public:
     }
 private:
     struct CamData {
-        dml::vec3 pos; //x, y, z
-        dml::vec4 quat;
+        dml::vec3 pos{ 0.0f, -0.75f, -3.5f };
+        dml::vec4 quat{};
 
-        dml::mat4 projectionMatrix;
-        dml::mat4 viewMatrix;
+        dml::mat4 projectionMatrix{};
+        dml::mat4 viewMatrix{};
 
         // buffers for the camera matrix ubo
-        VkhBuffer buffer;
-        VkhDeviceMemory bufferMem;
+        VkhBuffer buffer{};
+        VkhDeviceMemory bufferMem{};
 
-        float fov;
-        float nearP;
-        float farP;
-
-        CamData() :
-            pos(0.0f, -0.75f, -3.5f),
-            quat(0.0f, 0.0f, 0.0f, 1.0f),
-            fov(60.0f),
-            nearP(0.01f),
-            farP(100.0f)
-        {}
+        float fov = 60.0f;
+        float nearP = 0.01f;
+        float farP = 100.0f;
 
         dml::mat4 getViewMatrix(MouseData& m) const {
             return dml::viewMatrix(pos, dml::radians(m.upAngle), dml::radians(m.rightAngle));
@@ -126,42 +118,28 @@ private:
     };
 
     struct LightDataObject {
-        dml::vec3 pos;
-        dml::vec3 col;
-        dml::vec3 target;
+        dml::vec3 pos{};
+        dml::vec3 col{ 1.0f, 1.0f, 1.0f };
+        dml::vec3 target{};
 
-        dml::mat4 proj;
-        dml::mat4 view;
+        dml::mat4 proj{};
+        dml::mat4 view{};
 
-        float intensity;
-        float innerConeAngle;
-        float outerConeAngle;
-        float constantAttenuation;
-        float linearAttenuation;
-        float quadraticAttenuation;
-
-        LightDataObject() :
-            col(1.0f, 1.0f, 1.0f),
-            intensity(1.0f),
-            innerConeAngle(0.23f),
-            outerConeAngle(0.348f),
-            constantAttenuation(1.0f),
-            linearAttenuation(0.1f),
-            quadraticAttenuation(0.032f)
-        {}
+        float intensity = 1.0f;
+        float innerConeAngle = 0.23f;
+        float outerConeAngle = 0.348f;
+        float constantAttenuation = 1.0f;
+        float linearAttenuation = 0.1f;
+        float quadraticAttenuation = 0.032f;
     };
 
     struct Light {
-        LightDataObject data;
+        LightDataObject data{};
 
-        dvl::Texture shadowMapData;
-        VkhFramebuffer frameBuffer;
+        dvl::Texture shadowMapData{};
+        VkhFramebuffer frameBuffer{};
 
-        bool followPlayer;
-
-        Light() :
-            followPlayer(false) {
-        }
+        bool followPlayer = false;
     };
 
     struct LightDataSSBO {
@@ -170,7 +148,7 @@ private:
     };
 
     struct ModelInstance {
-        dml::mat4 model;
+        dml::mat4 model{};
         uint32_t render = 1;
     };
 
@@ -178,8 +156,8 @@ private:
         ModelInstance object[config::MAX_MODELS];
     };
     struct CamUBO {
-        dml::mat4 view;
-        dml::mat4 proj;
+        dml::mat4 view{};
+        dml::mat4 proj{};
     };
 
     struct ShadowMapDim {
@@ -188,33 +166,29 @@ private:
     };
 
     struct SkyboxObject {
-        dvl::Texture cubemap;
+        dvl::Texture cubemap{};
 
-        VkhPipelineLayout pipelineLayout;
-        VkhPipeline pipeline;
-        vkh::BufData bufferData;
-        VkhBuffer vertBuffer;
-        VkhDeviceMemory vertBufferMem;
-        VkhBuffer indBuffer;
-        VkhDeviceMemory indBufferMem;
+        VkhPipelineLayout pipelineLayout{};
+        VkhPipeline pipeline{};
 
-        float* imgData;
+        vkh::BufData bufferData{};
+        VkhBuffer vertBuffer{};
+        VkhDeviceMemory vertBufferMem{};
+        VkhBuffer indBuffer{};
+        VkhDeviceMemory indBufferMem{};
 
-        std::vector<uint32_t> indices;
-        std::vector<dml::vec3> vertices;
+        float* imgData{ nullptr };
 
-        SkyboxObject() :
-            imgData(nullptr),
-
-            indices{
+        std::vector<uint32_t> indices{
                 0, 1, 2, 2, 3, 0,
                 7, 6, 5, 5, 4, 7,
                 4, 5, 1, 1, 0, 4,
                 3, 2, 6, 6, 7, 3,
                 4, 0, 3, 3, 7, 4,
                 1, 5, 6, 6, 2, 1
-            },
-            vertices{
+        };
+
+        std::vector<dml::vec3> vertices{
                 {-1.0f,  1.0f,  1.0f},
                 {-1.0f, -1.0f,  1.0f},
                 { 1.0f, -1.0f,  1.0f},
@@ -223,8 +197,7 @@ private:
                 {-1.0f, -1.0f, -1.0f},
                 { 1.0f, -1.0f, -1.0f},
                 { 1.0f,  1.0f, -1.0f}
-            }
-        {}
+        };
 
         void resetPipeline() {
             if (pipelineLayout.valid()) pipelineLayout.reset();
@@ -233,48 +206,42 @@ private:
     };
 
     struct DSObject {
-        uint32_t binding;
-        VkDescriptorType type;
+        uint32_t binding = 0;
+        VkDescriptorType type{};
 
         VkhDescriptorPool pool;
         VkhDescriptorSetLayout layout;
         VkhDescriptorSet set;
 
         DSObject() :
-            binding(0),
-            type(),
+            pool(),
+            layout(),
             set(pool.v())
         {}
     };
 
     struct DesciptorSetsObj {
         // global
-        DSObject textures;
-        DSObject lightData;
-        DSObject skybox;
-        DSObject cam;
+        DSObject textures{};
+        DSObject lightData{};
+        DSObject skybox{};
+        DSObject cam{};
 
         // raytracing
-        DSObject tlas;
-        DSObject rt;
-        DSObject texIndex;
+        DSObject tlas{};
+        DSObject rt{};
+        DSObject texIndex{};
 
         // rasterzation
-        DSObject composition;
-        DSObject shadowmaps;
-        DSObject opaqueDepth;
+        DSObject composition{};
+        DSObject shadowmaps{};
+        DSObject opaqueDepth{};
     };
 
     struct PipelineData {
-        VkhRenderPass renderPass;
-        VkhPipelineLayout layout;
-        VkhPipeline pipeline;
-
-        PipelineData() :
-            renderPass(),
-            layout(),
-            pipeline()
-        {}
+        VkhRenderPass renderPass{};
+        VkhPipelineLayout layout{};
+        VkhPipeline pipeline{};
 
         void reset() {
             if (renderPass.valid()) renderPass.reset();
@@ -284,29 +251,26 @@ private:
     };
 
     struct SCData {
-        VkhSwapchainKHR swapChain;
+        VkhSwapchainKHR swapChain{};
         std::vector<VkhImage> images;
-        VkFormat imageFormat;
-        VkExtent2D extent;
+
+        VkFormat imageFormat = VK_FORMAT_UNDEFINED;
+        VkViewport viewport{};
+        VkExtent2D extent{};
+
         std::vector<VkhImageView> imageViews;
-        uint32_t imageCount;
         std::vector<VkhFramebuffer> framebuffers;
 
-        SCData() :
-            imageFormat(VK_FORMAT_UNDEFINED),
-            imageCount(0)
-        {}
+        size_t index = 0;
+        uint32_t imageCount = 0;
     };
 
     struct KeyPO {
-        bool pressedLastFrame = false;
+        bool pressedLastFrame;
         int keyPress;
 
-        KeyPO() :
-            keyPress(-1)
-        {}
-
-        KeyPO(const int key) :
+        explicit KeyPO(int key) :
+            pressedLastFrame(false),
             keyPress(key)
         {}
 
@@ -318,18 +282,14 @@ private:
     };
 
     struct WBOITData { // weighted blended order independent transparency
-        dvl::Texture weightedColor;
-        VkhFramebuffer frameBuffer;
-
-        WBOITData() :
-            weightedColor(),
-            frameBuffer()
-        {}
+        dvl::Texture weightedColor{};
+        VkhFramebuffer frameBuffer{};
     };
 
-    struct OpaquePassTex {
-        dvl::Texture depth;
-        dvl::Texture color;
+    struct OpaqueData {
+        dvl::Texture color{};
+        dvl::Texture depth{};
+        VkhFramebuffer frameBuffer{};
     };
 
     struct CommandBufferCollection {
@@ -369,62 +329,43 @@ private:
     };
 
     struct CommandBufferSet {
-        CommandBufferCollection primary;
-        CommandBufferCollection secondary;
+        CommandBufferCollection primary{};
+        CommandBufferCollection secondary{};
     };
 
     struct BlasData {
-        VkhAccelerationStructure blas;
-        VkhBuffer compBuffer;
-        VkhDeviceMemory compMem;
+        VkhAccelerationStructure blas{};
+        VkhBuffer compBuffer{};
+        VkhDeviceMemory compMem{};
     };
 
     struct TlasData {
-        VkhAccelerationStructure as;
+        VkhAccelerationStructure as{};
         VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
         VkAccelerationStructureGeometryKHR geometry{};
 
-        VkhBuffer buffer;
-        VkhDeviceMemory mem;
+        VkhBuffer buffer{};
+        VkhDeviceMemory mem{};
 
-        VkhBuffer instanceBuffer;
-        VkhDeviceMemory instanceBufferMem;
+        VkhBuffer instanceBuffer{};
+        VkhDeviceMemory instanceBufferMem{};
 
-        VkhBuffer scratchBuffer;
-        VkhDeviceMemory scratchMem;
-
-        TlasData() :
-            as(),
-            buildInfo(),
-            geometry(),
-            buffer(),
-            mem(),
-            instanceBuffer(),
-            instanceBufferMem(),
-            scratchBuffer(),
-            scratchMem()
-        {}
+        VkhBuffer scratchBuffer{};
+        VkhDeviceMemory scratchMem{};
     };
 
     struct SBT {
-        VkhBuffer buffer;
-        VkhDeviceMemory mem;
+        VkhBuffer buffer{};
+        VkhDeviceMemory mem{};
 
-        VkDeviceSize size;
-        VkDeviceSize entryS;
+        VkDeviceSize size{};
+        VkDeviceSize entryS{};
 
         // sbt regions
-        VkStridedDeviceAddressRegionKHR raygenR;
-        VkStridedDeviceAddressRegionKHR missR;
-        VkStridedDeviceAddressRegionKHR hitR;
-        VkStridedDeviceAddressRegionKHR callR;
-
-        SBT() :
-            raygenR(),
-            missR(),
-            hitR(),
-            callR()
-        {}
+        VkStridedDeviceAddressRegionKHR raygenR{};
+        VkStridedDeviceAddressRegionKHR missR{};
+        VkStridedDeviceAddressRegionKHR hitR{};
+        VkStridedDeviceAddressRegionKHR callR{};
     };
 
     struct TexIndexObj {
@@ -439,6 +380,9 @@ private:
         TexIndexObj indices[config::MAX_MODELS];
     };
 
+private:
+    const ShadowMapDim shadowProps{};
+
     bool rtSupported = false; // a bool if raytracing is supported on the device
     bool rtEnabled = true; // a bool if raytracing has been enabled
 
@@ -451,26 +395,22 @@ private:
     vkh::QueueFamilyIndices queueFamilyIndices{};
 
     // key press objects
-    KeyPO escapeKey = KeyPO(GLFW_KEY_ESCAPE);
-    KeyPO eKey = KeyPO(GLFW_KEY_E);
-    KeyPO rKey = KeyPO(GLFW_KEY_R);
-    KeyPO tabKey = KeyPO(GLFW_KEY_TAB);
+    KeyPO escapeKey{ GLFW_KEY_ESCAPE };
+    KeyPO eKey{ GLFW_KEY_E };
+    KeyPO rKey{ GLFW_KEY_R };
+    KeyPO tabKey{ GLFW_KEY_TAB };
 
-    // swap chain and framebuffers
+    // swap chain
     SCData swap{};
-    size_t currentFrame = 0;
 
-    // viewport config
-    VkViewport swapVP{};
-
-    // rendering pipeline data
-    PipelineData opaquePassPipeline{};
-    PipelineData shadowMapPipeline{};
-    PipelineData compPipelineData{};
+    // pipeline data
+    PipelineData opaquePipeline{};
+    PipelineData shadowPipeline{};
+    PipelineData compPipeline{};
     PipelineData wboitPipeline{};
 
-    VkhFramebuffer opaquePassFB{};
-    OpaquePassTex opaquePassTextures{};
+    OpaqueData opaqueData{};
+    WBOITData wboit{};
 
     // command buffers and command pool
     VkhCommandPool commandPool{};
@@ -531,7 +471,6 @@ private:
 
     std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
-    ShadowMapDim shadowProps{};
     uint32_t modelIndex = 0; // index of where vertecies are loaded to
 
     std::unordered_map<size_t, size_t> uniqueModelIndex;
@@ -544,7 +483,6 @@ private:
     uint32_t totalTextureCount = 0;
     dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
-    WBOITData wboit{};
 
     // skybox data
     SkyboxObject skybox{};
@@ -944,12 +882,12 @@ private:
         createSCImageViews();
 
         // create the viewport for the swap chain
-        swapVP.x = 0.0f;
-        swapVP.y = 0.0f;
-        swapVP.width = static_cast<float>(swap.extent.width);
-        swapVP.height = static_cast<float>(swap.extent.height);
-        swapVP.minDepth = 0.0f;
-        swapVP.maxDepth = 1.0f;
+        swap.viewport.x = 0.0f;
+        swap.viewport.y = 0.0f;
+        swap.viewport.width = static_cast<float>(swap.extent.width);
+        swap.viewport.height = static_cast<float>(swap.extent.height);
+        swap.viewport.minDepth = 0.0f;
+        swap.viewport.maxDepth = 1.0f;
     }
 
     void setupFences() {
@@ -1355,16 +1293,16 @@ private:
         }
         else {
             // opaque pass color image
-            vkh::createImage(opaquePassTextures.color.image, opaquePassTextures.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                commandPool, opaquePassTextures.color.sampleCount);
-            vkh::createImageView(opaquePassTextures.color, swap.imageFormat);
-            vkh::createSampler(opaquePassTextures.color.sampler, opaquePassTextures.color.mipLevels);
+            vkh::createImage(opaqueData.color.image, opaqueData.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                commandPool, opaqueData.color.sampleCount);
+            vkh::createImageView(opaqueData.color, swap.imageFormat);
+            vkh::createSampler(opaqueData.color.sampler, opaqueData.color.mipLevels);
 
             // opaque pass depth image
-            vkh::createImage(opaquePassTextures.depth.image, opaquePassTextures.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                opaquePassTextures.depth.sampleCount);
-            vkh::createImageView(opaquePassTextures.depth, vkh::DEPTH);
-            vkh::createSampler(opaquePassTextures.depth.sampler, opaquePassTextures.depth.mipLevels, vkh::DEPTH);
+            vkh::createImage(opaqueData.depth.image, opaqueData.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                opaqueData.depth.sampleCount);
+            vkh::createImageView(opaqueData.depth, vkh::DEPTH);
+            vkh::createSampler(opaqueData.depth.sampler, opaqueData.depth.mipLevels, vkh::DEPTH);
 
             // weighted color image
             vkh::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
@@ -1775,8 +1713,8 @@ private:
         else {
             for (size_t i = 0; i < 2; i++) {
                 compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                compositionPassImageInfo[i].imageView = (i == 0) ? opaquePassTextures.color.imageView.v() : wboit.weightedColor.imageView.v();
-                compositionPassImageInfo[i].sampler = (i == 0) ? opaquePassTextures.color.sampler.v() : wboit.weightedColor.sampler.v();
+                compositionPassImageInfo[i].imageView = (i == 0) ? opaqueData.color.imageView.v() : wboit.weightedColor.imageView.v();
+                compositionPassImageInfo[i].sampler = (i == 0) ? opaqueData.color.sampler.v() : wboit.weightedColor.sampler.v();
             }
 
             for (size_t i = 0; i < lightSize; i++) {
@@ -1786,8 +1724,8 @@ private:
             }
 
             opaquePassDepthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            opaquePassDepthInfo.imageView = opaquePassTextures.depth.imageView.v();
-            opaquePassDepthInfo.sampler = opaquePassTextures.depth.sampler.v();
+            opaquePassDepthInfo.imageView = opaqueData.depth.imageView.v();
+            opaquePassDepthInfo.sampler = opaqueData.depth.sampler.v();
         }
 
         // shader stages
@@ -1997,7 +1935,7 @@ private:
         VkPipelineViewportStateCreateInfo vpState{};
         vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         vpState.viewportCount = 1;
-        vpState.pViewports = &swapVP;
+        vpState.pViewports = &swap.viewport;
         vpState.scissorCount = 1;
         vpState.pScissors = &scissor;
 
@@ -2071,7 +2009,7 @@ private:
         pipelineLayoutInf.pSetLayouts = layouts;
         pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
         pipelineLayoutInf.pushConstantRangeCount = 1;
-        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, opaquePassPipeline.layout.p());
+        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, opaquePipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!!");
         }
@@ -2121,7 +2059,7 @@ private:
         renderPassInf.pAttachments = attachments.data();
         renderPassInf.subpassCount = 1;
         renderPassInf.pSubpasses = &subpass;
-        VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, opaquePassPipeline.renderPass.p());
+        VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, opaquePipeline.renderPass.p());
         if (renderPassResult != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass!");
         }
@@ -2138,12 +2076,12 @@ private:
         pipelineInf.pMultisampleState = &multiSamp;
         pipelineInf.pDepthStencilState = &dStencil;
         pipelineInf.pColorBlendState = &colorBS;
-        pipelineInf.layout = opaquePassPipeline.layout.v();
-        pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
+        pipelineInf.layout = opaquePipeline.layout.v();
+        pipelineInf.renderPass = opaquePipeline.renderPass.v();
         pipelineInf.subpass = 0;
         pipelineInf.basePipelineHandle = VK_NULL_HANDLE; // no base pipeline for now
         pipelineInf.basePipelineIndex = -1;
-        VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, opaquePassPipeline.pipeline.p());
+        VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, opaquePipeline.pipeline.p());
         if (pipelineResult != VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics pipeline!");
         }
@@ -2278,7 +2216,7 @@ private:
         renderPassInfo.pAttachments = &depthAttachment;
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
-        if (vkCreateRenderPass(device, &renderPassInfo, nullptr, shadowMapPipeline.renderPass.p()) != VK_SUCCESS) {
+        if (vkCreateRenderPass(device, &renderPassInfo, nullptr, shadowPipeline.renderPass.p()) != VK_SUCCESS) {
             throw std::runtime_error("failed to create shadow map render pass!");
         }
 
@@ -2297,7 +2235,7 @@ private:
         pipelineLayoutInf.pSetLayouts = descs.lightData.layout.p();
         pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
         pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowMapPipeline.layout.p());
+        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!!");
         }
@@ -2314,12 +2252,12 @@ private:
         pipelineInf.pMultisampleState = &multiSamp;
         pipelineInf.pDepthStencilState = &dStencil;
         pipelineInf.pColorBlendState = &colorBS;
-        pipelineInf.layout = shadowMapPipeline.layout.v();
-        pipelineInf.renderPass = shadowMapPipeline.renderPass.v();
+        pipelineInf.layout = shadowPipeline.layout.v();
+        pipelineInf.renderPass = shadowPipeline.renderPass.v();
         pipelineInf.subpass = 0;
         pipelineInf.basePipelineHandle = VK_NULL_HANDLE;
 
-        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, shadowMapPipeline.pipeline.p()) != VK_SUCCESS) {
+        if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, shadowPipeline.pipeline.p()) != VK_SUCCESS) {
             throw std::runtime_error("failed to create shadow map pipeline!");
         }
     }
@@ -2362,7 +2300,7 @@ private:
         VkPipelineViewportStateCreateInfo vpState{};
         vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         vpState.viewportCount = 1;
-        vpState.pViewports = &swapVP;
+        vpState.pViewports = &swap.viewport;
         vpState.scissorCount = 1;
         vpState.pScissors = &scissor;
 
@@ -2430,7 +2368,7 @@ private:
         pipelineInf.pDepthStencilState = &dStencil;
         pipelineInf.pColorBlendState = &colorBS;
         pipelineInf.layout = skybox.pipelineLayout.v();
-        pipelineInf.renderPass = opaquePassPipeline.renderPass.v();
+        pipelineInf.renderPass = opaquePipeline.renderPass.v();
         pipelineInf.subpass = 0;
         VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, skybox.pipeline.p());
         if (pipelineResult != VK_SUCCESS) {
@@ -2517,7 +2455,7 @@ private:
         VkPipelineViewportStateCreateInfo vpState{};
         vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         vpState.viewportCount = 1;
-        vpState.pViewports = &swapVP;
+        vpState.pViewports = &swap.viewport;
         vpState.scissorCount = 1;
         vpState.pScissors = &scissor;
 
@@ -2676,7 +2614,7 @@ private:
         VkPipelineViewportStateCreateInfo vpState{};
         vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         vpState.viewportCount = 1;
-        vpState.pViewports = &swapVP;
+        vpState.pViewports = &swap.viewport;
         vpState.scissorCount = 1;
         vpState.pScissors = &scissor;
 
@@ -2768,7 +2706,7 @@ private:
         renderPassInf.pAttachments = attachments.data();
         renderPassInf.subpassCount = 1;
         renderPassInf.pSubpasses = &subpass;
-        VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, compPipelineData.renderPass.p());
+        VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, compPipeline.renderPass.p());
         if (renderPassResult != VK_SUCCESS) {
             throw std::runtime_error("failed to create render pass!");
         }
@@ -2783,7 +2721,7 @@ private:
             pipelineLayoutInf.pSetLayouts = descs.composition.layout.p();
         }
 
-        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipelineData.layout.p());
+        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout for composition!!");
         }
@@ -2799,10 +2737,10 @@ private:
         pipelineInf.pMultisampleState = &multiSamp;
         pipelineInf.pDepthStencilState = &dStencil;
         pipelineInf.pColorBlendState = &colorBS;
-        pipelineInf.layout = compPipelineData.layout.v();
-        pipelineInf.renderPass = compPipelineData.renderPass.v();
+        pipelineInf.layout = compPipeline.layout.v();
+        pipelineInf.renderPass = compPipeline.renderPass.v();
         pipelineInf.subpass = 0;
-        VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, compPipelineData.pipeline.p());
+        VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, compPipeline.pipeline.p());
         if (pipelineResult != VK_SUCCESS) {
             throw std::runtime_error("failed to create graphics pipeline for the composition pass!");
         }
@@ -2897,20 +2835,20 @@ private:
             createRayTracingPipeline();
         }
         else {
-            opaquePassPipeline.reset();
+            opaquePipeline.reset();
             skybox.resetPipeline();
             wboitPipeline.reset();
 
             createGraphicsPipeline();
             createSkyboxPipeline();
             if (shadow) {
-                shadowMapPipeline.reset();
+                shadowPipeline.reset();
                 createShadowPipeline();
             }
             createWBOITPipeline();
         }
 
-        compPipelineData.reset();
+        compPipeline.reset();
         createCompositionPipeline();
     }
 
@@ -2979,7 +2917,7 @@ private:
         initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
         initInfo.MSAASamples = compTex.sampleCount;
 
-        ImGui_ImplVulkan_Init(&initInfo, compPipelineData.renderPass.v());
+        ImGui_ImplVulkan_Init(&initInfo, compPipeline.renderPass.v());
 
         // upload fonts, etc:
         VkhCommandPool guiCommandPool = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
@@ -3522,7 +3460,7 @@ private:
     }
 
     void summonModel() {
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
         if (objects.size() + 2 >= config::MAX_MODELS) return;
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
@@ -3540,7 +3478,7 @@ private:
 
     void summonLight() {
         if (lights.size() + 1 > config::MAX_LIGHTS) return;
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
 
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
         dml::vec3 target = pos + dml::quatToDir(cam.quat);
@@ -3551,7 +3489,7 @@ private:
                 l.shadowMapData.sampleCount);
             vkh::createImageView(l.shadowMapData, vkh::DEPTH);
             vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
-            vkh::createFB(shadowMapPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+            vkh::createFB(shadowPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
 
             VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
             VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
@@ -3583,7 +3521,7 @@ private:
     }
 
     void resetScene() {
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
 
         // remove all non player following lights
         lights.erase(std::remove_if(lights.begin(), lights.end(), [](const std::unique_ptr<Light>& l) { return l && !l->followPlayer; }), lights.end());
@@ -3662,13 +3600,13 @@ private:
             if (initial) {
                 // create the shadowmap framebuffers
                 for (size_t i = 0; i < lights.size(); i++) {
-                    vkh::createFB(shadowMapPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+                    vkh::createFB(shadowPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
                 }
             }
 
             // create the opaque pass framebuffer
-            std::vector<VkImageView> attachmentsM = { opaquePassTextures.color.imageView.v(), opaquePassTextures.depth.imageView.v() };
-            vkh::createFB(opaquePassPipeline.renderPass, opaquePassFB, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
+            std::vector<VkImageView> attachmentsM = { opaqueData.color.imageView.v(), opaqueData.depth.imageView.v() };
+            vkh::createFB(opaquePipeline.renderPass, opaqueData.frameBuffer, attachmentsM.data(), attachmentsM.size(), swap.extent.width, swap.extent.height);
 
             // create the wboit framebuffer
             vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.p(), 1, swap.extent.width, swap.extent.height);
@@ -3679,7 +3617,7 @@ private:
         if (initial) swap.framebuffers.resize(swapSize);
         for (size_t i = 0; i < swapSize; i++) {
             std::vector<VkImageView> attachments = { compTex.imageView.v(), swap.imageViews[i].v() };
-            vkh::createFB(compPipelineData.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
+            vkh::createFB(compPipeline.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
         }
     }
 
@@ -3756,7 +3694,7 @@ private:
             vkCmdBindDescriptorSets(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
             int lightIndex = static_cast<int>(i);
-            vkCmdPushConstants(secondaries[i].v(), shadowMapPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
+            vkCmdPushConstants(secondaries[i].v(), shadowPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(lightIndex), &lightIndex);
 
             vkCmdBindVertexBuffers(secondaries[i].v(), 0, 2, vertexBuffersArray.data(), offsets.data());
             vkCmdBindIndexBuffer(secondaries[i].v(), indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
@@ -3793,8 +3731,8 @@ private:
             }
         }
 
-        vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.pipeline.v());
-        vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipelineData.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
+        vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.pipeline.v());
+        vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
 
         vkCmdDraw(secondary.v(), 6, 1, 0, 0);
 
@@ -3815,7 +3753,7 @@ private:
         // FOR THE SHADOW PASS
         VkCommandBufferInheritanceInfo shadowInheritInfo{};
         shadowInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        shadowInheritInfo.renderPass = shadowMapPipeline.renderPass.v();
+        shadowInheritInfo.renderPass = shadowPipeline.renderPass.v();
         shadowInheritInfo.framebuffer = VK_NULL_HANDLE;
         shadowInheritInfo.subpass = 0;
 
@@ -3824,12 +3762,12 @@ private:
         shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-        recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowMapPipeline, shadowBeginInfo, descs.lightData.set.p(), 1, true, true);
+        recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowPipeline, shadowBeginInfo, descs.lightData.set.p(), 1, true, true);
 
         // FOR THE OPAQUE & SKYBOX PASS
         VkCommandBufferInheritanceInfo opaqueInheritInfo{};
         opaqueInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        opaqueInheritInfo.renderPass = opaquePassPipeline.renderPass.v();
+        opaqueInheritInfo.renderPass = opaquePipeline.renderPass.v();
         opaqueInheritInfo.framebuffer = VK_NULL_HANDLE;
         opaqueInheritInfo.subpass = 0;
 
@@ -3850,7 +3788,7 @@ private:
         vkCmdBindIndexBuffer(secondary.v(), skybox.indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(secondary.v(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
-        recordOpaqueSecondaryCommandBuffers(secondary, opaquePassPipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
+        recordOpaqueSecondaryCommandBuffers(secondary, opaquePipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
 
         // FOR THE WBOIT PASS
         VkCommandBufferInheritanceInfo wboitInheritInfo{};
@@ -3895,7 +3833,7 @@ private:
                 // render pass
                 VkRenderPassBeginInfo renderPassInfo{};
                 renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = shadowMapPipeline.renderPass.v();
+                renderPassInfo.renderPass = shadowPipeline.renderPass.v();
                 renderPassInfo.framebuffer = lights[i]->frameBuffer.v();
                 renderPassInfo.renderArea.offset = { 0, 0 };
                 renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
@@ -3934,8 +3872,8 @@ private:
 
                 VkRenderPassBeginInfo renderPassInfo{};
                 renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = opaquePassPipeline.renderPass.v();
-                renderPassInfo.framebuffer = opaquePassFB.v();
+                renderPassInfo.renderPass = opaquePipeline.renderPass.v();
+                renderPassInfo.framebuffer = opaqueData.frameBuffer.v();
                 renderPassInfo.renderArea.offset = { 0, 0 };
                 renderPassInfo.renderArea.extent = swap.extent;
                 renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3978,7 +3916,7 @@ private:
                 renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
                 renderPassInfo.pClearValues = clearValues.data();
 
-                vkh::transitionImageLayout(wboitCommandBuffer, opaquePassTextures.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+                vkh::transitionImageLayout(wboitCommandBuffer, opaqueData.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
                 vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
                 vkCmdExecuteCommands(wboitCommandBuffer.v(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
@@ -4005,7 +3943,7 @@ private:
 
         VkCommandBufferInheritanceInfo inheritInfo{};
         inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        inheritInfo.renderPass = compPipelineData.renderPass.v();
+        inheritInfo.renderPass = compPipeline.renderPass.v();
         inheritInfo.framebuffer = VK_NULL_HANDLE;
         inheritInfo.subpass = 0;
 
@@ -4026,7 +3964,7 @@ private:
 
                 VkRenderPassBeginInfo renderPassInfo{};
                 renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = compPipelineData.renderPass.v();
+                renderPassInfo.renderPass = compPipeline.renderPass.v();
                 renderPassInfo.framebuffer = swap.framebuffers[i].v();
                 renderPassInfo.renderArea.offset = { 0, 0 };
                 renderPassInfo.renderArea.extent = swap.extent;
@@ -4084,7 +4022,7 @@ private:
     }
 
     void recordAllCommandBuffers() { // record every command buffer
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
 
         cmdTasks.clear();
         cmdIteration = 0;
@@ -4112,7 +4050,7 @@ private:
             glfwGetFramebufferSize(window, &width, &height);
             glfwWaitEvents();
         }
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
         vkDeviceWaitIdle(device); // wait for thr device to be idle
 
         swap.swapChain.reset(); // reset the SC
@@ -4137,7 +4075,7 @@ private:
 
     void drawFrame() {
         uint32_t imageIndex;
-        vkResetFences(device, 1, inFlightFences[currentFrame].p());
+        vkResetFences(device, 1, inFlightFences[swap.index].p());
 
         // acquire the next image from the swapchain
         VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
@@ -4169,7 +4107,7 @@ private:
         }
 
         // submit all command buffers in a single call
-        if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame].v()) != VK_SUCCESS) {
+        if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[swap.index].v()) != VK_SUCCESS) {
             throw std::runtime_error("failed to submit command buffers!");
         }
 
@@ -4214,7 +4152,7 @@ private:
         auto previousTime = startTime;
 
         while (!glfwWindowShouldClose(window)) {
-            currentFrame = (currentFrame + 1) % swapSize;
+            swap.index = (swap.index + 1) % swapSize;
             glfwPollEvents();
             drawFrame();
             handleKeyboardInput();
