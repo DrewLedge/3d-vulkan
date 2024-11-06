@@ -29,16 +29,15 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-layout(location = 0) in vec4 inFragColor;
-layout(location = 1) in vec2 inTexCoord;
-layout(location = 2) flat in uint inTexIndex;
-layout(location = 3) in vec3 inFragPos;
-layout(location = 4) in vec3 inViewDir;
-layout(location = 5) in mat3 inTBN;
-layout(location = 8) flat in uint inRender;
-layout(location = 9) flat in uint inBitfield;
-layout(location = 10) in float inFarPlane;
-layout(location = 11) in float inNearPlane;
+layout(location = 0) in vec2 inTexCoord;
+layout(location = 1) flat in uint inTexIndex;
+layout(location = 2) in vec3 inFragPos;
+layout(location = 3) in vec3 inViewDir;
+layout(location = 4) in mat3 inTBN; // uses locations 4, 5 and 6
+layout(location = 7) flat in uint inRender;
+layout(location = 8) flat in uint inBitfield;
+layout(location = 9) in float inFarPlane;
+layout(location = 10) in float inNearPlane;
 
 layout(location = 0) out vec4 outColor;
 

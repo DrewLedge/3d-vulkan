@@ -6,14 +6,13 @@
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 layout(set = 2, binding = 0) uniform sampler2DShadow shadowMapSamplers[];
 
-layout(location = 0) in vec4 inFragColor;
-layout(location = 1) in vec2 inTexCoord;
-layout(location = 2) flat in uint inTexIndex;
-layout(location = 3) in vec3 inFragPos;
-layout(location = 4) in vec3 inViewDir;
-layout(location = 5) in mat3 inTBN;
-layout(location = 8) flat in uint inRender;
-layout(location = 9) flat in uint inBitfield;
+layout(location = 0) in vec2 inTexCoord;
+layout(location = 1) flat in uint inTexIndex;
+layout(location = 2) in vec3 inFragPos;
+layout(location = 3) in vec3 inViewDir;
+layout(location = 4) in mat3 inTBN; // uses locations 4, 5 and 6
+layout(location = 7) flat in uint inRender;
+layout(location = 8) flat in uint inBitfield;
 
 layout(location = 0) out vec4 outColor;
 

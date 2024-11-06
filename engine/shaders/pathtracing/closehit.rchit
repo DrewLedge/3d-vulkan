@@ -46,7 +46,6 @@ layout(set = 6, binding = 0) readonly buffer TexIndexBuffer {
 struct Vertex {
     vec3 pos;
     vec2 tex;
-    vec4 col;
     vec3 normal;
     vec4 tangent;
 };

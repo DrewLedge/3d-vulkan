@@ -27,10 +27,8 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 
 
 vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
-    vec4 color = albedo * inFragColor;
-
-    if (discardTranslucent && color.a < 0.95) discard;
-    if (discardOpaque && color.a >= 0.95) discard;
+    if (discardTranslucent && albedo.a < 0.95) discard;
+    if (discardOpaque && albedo.a >= 0.95) discard;
 
     vec3 accumulated = vec3(0.0);
 
@@ -71,11 +69,11 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
         float contribution = lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
         if (contribution < 0.01) continue;
 
-        vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, color, metallic, roughness);
+        vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, albedo, metallic, roughness);
         accumulated += (brdf * lightColor * contribution * shadowFactor);
     }
 
     // final color calculation
     vec3 o = albedo.rgb * occlusion * 0.005;
-    return vec4(accumulated + emissive + o, color.a);
+    return vec4(accumulated + emissive + o, albedo.a);
 }

@@ -13,42 +13,16 @@
 #include <unordered_set>
 
 namespace dvl {
+    constexpr size_t hashConst = 0x9e3779b9;
+
     struct Vertex {
-        dml::vec3 pos; // position coordinates x, y, z
-        dml::vec2 tex; // texture coordinates u, v
-        dml::vec4 col; // color r, g, b, a
-        dml::vec3 normal; // normal vector x, y, z
-        dml::vec4 tangent;
-
-        // default constructor:
-        Vertex()
-            : pos(dml::vec3(0.0f, 0.0f, 0.0f)),
-            tex(dml::vec2(0.0f, 0.0f)),
-            col(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f)),
-            normal(dml::vec3(0.0f, 0.0f, 0.0f)),
-            tangent(dml::vec4(0.0f, 0.0f, 0.0f, 0.0f))
-        {}
-
-        // constructor:
-        Vertex(const dml::vec3& position,
-            const dml::vec2& texture,
-            const dml::vec4& color,
-            const dml::vec3& normalVector,
-            float alphaValue,
-            const dml::vec4& tang)
-            : pos(position),
-            tex(texture),
-            col(color),
-            normal(normalVector),
-            tangent(tang)
-        {}
+        dml::vec3 pos{}; // position coordinates x, y, z
+        dml::vec2 tex{}; // texture coordinates u, v
+        dml::vec3 normal{}; // normal vector x, y, z
+        dml::vec4 tangent{};
 
         bool operator==(const Vertex& other) const {
-            return pos == other.pos &&
-                tex == other.tex &&
-                col == other.col &&
-                normal == other.normal &&
-                tangent == other.tangent;
+            return pos == other.pos && tex == other.tex && normal == other.normal && tangent == other.tangent;
         }
     };
 
@@ -57,26 +31,21 @@ namespace dvl {
             size_t seed = 0;
 
             // combine hashes for the vertex data using XOR and bit shifting:
-            seed ^= std::hash<float>()(vertex.pos.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.pos.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.pos.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.pos.x) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.pos.y) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.pos.z) + hashConst + (seed << 6) + (seed >> 2);
 
-            seed ^= std::hash<float>()(vertex.tex.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.tex.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tex.x) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tex.y) + hashConst + (seed << 6) + (seed >> 2);
 
-            seed ^= std::hash<float>()(vertex.col.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.col.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.col.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.col.w) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.normal.x) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.normal.y) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.normal.z) + hashConst + (seed << 6) + (seed >> 2);
 
-            seed ^= std::hash<float>()(vertex.normal.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.normal.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.normal.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-
-            seed ^= std::hash<float>()(vertex.tangent.x) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.tangent.y) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.tangent.z) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<float>()(vertex.tangent.w) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tangent.x) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tangent.y) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tangent.z) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<float>()(vertex.tangent.w) + hashConst + (seed << 6) + (seed >> 2);
 
             return seed;
         }
@@ -134,16 +103,16 @@ namespace dvl {
     struct TexHash {
         size_t operator()(const Texture& tex) const {
             size_t seed = 0;
-            seed ^= std::hash<VkhImage>{}(tex.image) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhSampler>{}(tex.sampler) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhImageView>{}(tex.imageView) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<std::string>{}(tex.path) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<uint32_t>{}(tex.mipLevels) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBufferMem) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<uint16_t>{}(tex.width) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<uint16_t>{}(tex.height) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhImage>{}(tex.image) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhSampler>{}(tex.sampler) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhDeviceMemory>{}(tex.memory) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhImageView>{}(tex.imageView) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<std::string>{}(tex.path) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<uint32_t>{}(tex.mipLevels) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBufferMem) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<uint16_t>{}(tex.width) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<uint16_t>{}(tex.height) + hashConst + (seed << 6) + (seed >> 2);
 
             return seed;
         }
@@ -450,7 +419,6 @@ namespace dvl {
             const float* positionData = getAccessorData(model, primitive.attributes, "POSITION");
             const float* texCoordData = getAccessorData(model, primitive.attributes, "TEXCOORD_0");
             const float* normalData = getAccessorData(model, primitive.attributes, "NORMAL");
-            const float* colorData = getAccessorData(model, primitive.attributes, "COLOR_0");
             const float* tangentData = getAccessorData(model, primitive.attributes, "TANGENT");
 
             if (!positionData || !texCoordData || !normalData) {
@@ -465,12 +433,9 @@ namespace dvl {
             auto positionIt = getAttributeIt("POSITION", primitive.attributes);
             const tinygltf::Accessor& positionAccessor = model.accessors[positionIt->second];
 
-            bool colorFound = (colorData);
-            bool tangentFound = (tangentData);
-
             // calculate the tangents if theyre not found
             std::vector<dml::vec4> tangents(positionAccessor.count, dml::vec4{ 0.0f, 0.0f, 0.0f, 0.0f });
-            if (!tangentFound) {
+            if (!tangentData) {
                 LOG_WARNING("Could not load tangents. Calculating tangents...");
 
                 switch (indexAccessor.componentType) {
@@ -513,21 +478,12 @@ namespace dvl {
                 vertex.tex = { texCoordData[2 * index], texCoordData[2 * index + 1] };
                 vertex.normal = { normalData[3 * index], normalData[3 * index + 1], normalData[3 * index + 2] };
 
-                if (colorFound) {
-                    vertex.col = { colorData[4 * index], colorData[4 * index + 1], colorData[4 * index + 2], colorData[4 * index + 3] };
-                }
-                else {
-                    vertex.col = { 1.0f, 1.0f, 1.0f, 1.0f };
-                }
-                //vertex.col.w = 0.6f;
-
                 // get handedness of the tangent
                 dml::vec3 t = tangents[index].xyz();
                 tangents[index].w = dml::dot(dml::cross(vertex.normal, t), tangents[index].xyz()) < 0.0f ? -1.0f : 1.0f;
 
-                if (tangentFound) {
+                if (tangentData) {
                     vertex.tangent = { tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3] };
-                    //std::cout << "calculated tangent: " << tangents[index] << "other tangent: " << forms::vec4(tangentData[4 * index], tangentData[4 * index + 1], tangentData[4 * index + 2], tangentData[4 * index + 3]) << "\n";
                 }
                 else {
                     vertex.tangent = tangents[index];
@@ -606,7 +562,7 @@ namespace dvl {
         size_t hash1 = std::hash<std::size_t>{}(meshInd * tempIndices.size() * tempVertices.size());
         size_t hash2 = std::hash<std::string>{}(mesh.name);
 
-        newObject.meshHash = hash1 ^ (hash2 + 0x9e3779b9 + (hash1 << 6) + (hash1 >> 2));
+        newObject.meshHash = hash1 ^ (hash2 + hashConst + (hash1 << 6) + (hash1 >> 2));
 
         newObject.name = mesh.name;
 

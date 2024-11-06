@@ -1926,41 +1926,35 @@ private:
 
         // vertex input attributes: defines how the vertex & instance data is structured
         std::vector<VkVertexInputAttributeDescription> attrDesc;
-        attrDesc.resize(10);
+        attrDesc.resize(9);
 
         attrDesc[0].binding = 0;
         attrDesc[0].location = 0;
         attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
         attrDesc[0].offset = offsetof(dvl::Vertex, pos);
 
-        // color
+        // texture coordinates
         attrDesc[1].binding = 0;
         attrDesc[1].location = 1;
-        attrDesc[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for color
-        attrDesc[1].offset = offsetof(dvl::Vertex, col);
-
-        // texture coordinates
-        attrDesc[2].binding = 0;
-        attrDesc[2].location = 2;
-        attrDesc[2].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
-        attrDesc[2].offset = offsetof(dvl::Vertex, tex);
+        attrDesc[1].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
+        attrDesc[1].offset = offsetof(dvl::Vertex, tex);
 
         // normal
-        attrDesc[3].binding = 0;
-        attrDesc[3].location = 3;
-        attrDesc[3].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
-        attrDesc[3].offset = offsetof(dvl::Vertex, normal);
+        attrDesc[2].binding = 0;
+        attrDesc[2].location = 2;
+        attrDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
+        attrDesc[2].offset = offsetof(dvl::Vertex, normal);
 
         // tangents
-        attrDesc[4].binding = 0;
-        attrDesc[4].location = 4;
-        attrDesc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
-        attrDesc[4].offset = offsetof(dvl::Vertex, tangent);
+        attrDesc[3].binding = 0;
+        attrDesc[3].location = 3;
+        attrDesc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
+        attrDesc[3].offset = offsetof(dvl::Vertex, tangent);
 
         // pass the model matrix as a per-instance data
         // seperate the matrix into 4 vec4's so it can be quickly passed and processed
         for (uint32_t i = 0; i < 4; i++) {
-            uint8_t index = 5 + i;
+            uint8_t index = 4 + i;
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -1968,10 +1962,10 @@ private:
         }
 
         // render flag
-        attrDesc[9].binding = 1;
-        attrDesc[9].location = 9;
-        attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[9].offset = offsetof(ModelInstance, render);
+        attrDesc[8].binding = 1;
+        attrDesc[8].location = 8;
+        attrDesc[8].format = VK_FORMAT_R32_UINT; // 1 uint32_t
+        attrDesc[8].offset = offsetof(ModelInstance, render);
 
         // vertex input state: defines the structure of vertex data for the pipeline
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -2466,50 +2460,44 @@ private:
 
         std::vector<VkVertexInputAttributeDescription> attrDesc;
 
-        attrDesc.resize(10);
+        attrDesc.resize(9);
 
         attrDesc[0].binding = 0;
         attrDesc[0].location = 0;
         attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
         attrDesc[0].offset = offsetof(dvl::Vertex, pos);
 
-        // color
+        // texture coordinates
         attrDesc[1].binding = 0;
         attrDesc[1].location = 1;
-        attrDesc[1].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for color
-        attrDesc[1].offset = offsetof(dvl::Vertex, col);
-
-        // texture coordinates
-        attrDesc[2].binding = 0;
-        attrDesc[2].location = 2;
-        attrDesc[2].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
-        attrDesc[2].offset = offsetof(dvl::Vertex, tex);
+        attrDesc[1].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
+        attrDesc[1].offset = offsetof(dvl::Vertex, tex);
 
         // normal
-        attrDesc[3].binding = 0;
-        attrDesc[3].location = 3;
-        attrDesc[3].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
-        attrDesc[3].offset = offsetof(dvl::Vertex, normal);
+        attrDesc[2].binding = 0;
+        attrDesc[2].location = 2;
+        attrDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
+        attrDesc[2].offset = offsetof(dvl::Vertex, normal);
 
         // tangents
-        attrDesc[4].binding = 0;
-        attrDesc[4].location = 4;
-        attrDesc[4].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
-        attrDesc[4].offset = offsetof(dvl::Vertex, tangent);
+        attrDesc[3].binding = 0;
+        attrDesc[3].location = 3;
+        attrDesc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
+        attrDesc[3].offset = offsetof(dvl::Vertex, tangent);
 
         // pass the model matrix as a per-instance data
         for (uint32_t i = 0; i < 4; i++) {
-            uint8_t index = 5 + i;
+            uint8_t index = 4 + i;
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
             attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
         }
 
-        attrDesc[9].binding = 1;
-        attrDesc[9].location = 9;
-        attrDesc[9].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[9].offset = offsetof(ModelInstance, render);
+        attrDesc[8].binding = 1;
+        attrDesc[8].location = 8;
+        attrDesc[8].format = VK_FORMAT_R32_UINT; // 1 uint32_t
+        attrDesc[8].offset = offsetof(ModelInstance, render);
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -4265,6 +4253,7 @@ private:
         if (rtEnabled) {
             setupAccelerationStructures();
         }
+
         setupTextures();
         loadSkybox("night-sky.hdr");
         setupBuffers();
@@ -4277,6 +4266,7 @@ private:
         if (rtEnabled) {
             createSBT();
         }
+
         imguiSetup();
         updateUBO();
 
