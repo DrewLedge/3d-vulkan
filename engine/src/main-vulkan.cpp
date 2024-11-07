@@ -281,7 +281,7 @@ private:
         }
     };
 
-    struct WBOITData { // weighted blended order independent transparency
+    struct WBOITData {
         dvl::Texture weightedColor{};
         VkhFramebuffer frameBuffer{};
     };
@@ -290,6 +290,14 @@ private:
         dvl::Texture color{};
         dvl::Texture depth{};
         VkhFramebuffer frameBuffer{};
+    };
+
+    struct DeferredRenderingData {
+        dvl::Texture albedo{};
+        dvl::Texture metallicRoughness{};
+        dvl::Texture normal{};
+        dvl::Texture emissive{};
+        dvl::Texture ao{};
     };
 
     struct CommandBufferCollection {
@@ -384,7 +392,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = true; // a bool if raytracing has been enabled
+    bool rtEnabled = false; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -411,6 +419,7 @@ private:
 
     OpaqueData opaqueData{};
     WBOITData wboit{};
+    DeferredRenderingData deferredRenderingData{};
 
     // command buffers and command pool
     VkhCommandPool commandPool{};
@@ -1089,8 +1098,6 @@ private:
         VkFormat imgFormat;
         switch (type) {
         case vkh::BASE:
-            imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
-            break;
         case vkh::EMISSIVE:
             imgFormat = VK_FORMAT_R8G8B8A8_SRGB;
             break;
@@ -1164,7 +1171,7 @@ private:
         tex.rawData.reset();
     }
 
-    void getImageDataHDR(std::string path, dvl::Texture& t, float*& imgData) {
+    void getImageDataHDR(const std::string& path, dvl::Texture& t, float*& imgData) {
         int texWidth, texHeight, texChannels;
         imgData = stbi_loadf(path.c_str(), &texWidth, &texHeight, &texChannels, 4);
         t.width = texWidth;
@@ -1231,41 +1238,20 @@ private:
         freeHDRImage(imgData);
     }
 
+    void createMeshTexture(dvl::Texture& tex, vkh::TextureType type) {
+        if (tex.found) {
+            createTexturedImage(tex, true, type);
+            vkh::createImageView(tex, type);
+            vkh::createSampler(tex.sampler, tex.mipLevels);
+        }
+    }
+
     void createMeshTextures(std::unique_ptr<dvl::Mesh>& newObject) {
-        // load the textures
-        if (newObject->material.baseColor.found) {
-            createTexturedImage(newObject->material.baseColor, true);
-            vkh::createImageView(newObject->material.baseColor);
-            vkh::createSampler(newObject->material.baseColor.sampler, newObject->material.baseColor.mipLevels);
-        }
-
-        if (newObject->material.metallicRoughness.found) {
-            createTexturedImage(newObject->material.metallicRoughness, true, vkh::METALLIC);
-            vkh::createImageView(newObject->material.metallicRoughness, vkh::METALLIC);
-            vkh::createSampler(newObject->material.metallicRoughness.sampler, newObject->material.metallicRoughness.mipLevels);
-
-        }
-
-        if (newObject->material.normalMap.found) {
-            createTexturedImage(newObject->material.normalMap, true, vkh::NORMAL);
-            vkh::createImageView(newObject->material.normalMap, vkh::NORMAL);
-            vkh::createSampler(newObject->material.normalMap.sampler, newObject->material.normalMap.mipLevels);
-
-        }
-
-        if (newObject->material.emissiveMap.found) {
-            createTexturedImage(newObject->material.emissiveMap, true, vkh::EMISSIVE);
-            vkh::createImageView(newObject->material.emissiveMap, vkh::EMISSIVE);
-            vkh::createSampler(newObject->material.emissiveMap.sampler, newObject->material.emissiveMap.mipLevels);
-
-        }
-
-        if (newObject->material.occlusionMap.found) {
-            createTexturedImage(newObject->material.occlusionMap, true, vkh::OCCLUSION);
-            vkh::createImageView(newObject->material.occlusionMap, vkh::OCCLUSION);
-            vkh::createSampler(newObject->material.occlusionMap.sampler, newObject->material.occlusionMap.mipLevels);
-
-        }
+        createMeshTexture(newObject->material.baseColor, vkh::BASE);
+        createMeshTexture(newObject->material.metallicRoughness, vkh::METALLIC);
+        createMeshTexture(newObject->material.normalMap, vkh::NORMAL);
+        createMeshTexture(newObject->material.emissiveMap, vkh::EMISSIVE);
+        createMeshTexture(newObject->material.occlusionMap, vkh::OCCLUSION);
     }
 
     void loadTexImageData(dvl::Texture& t) {
@@ -1274,56 +1260,57 @@ private:
         }
     }
 
+    void createTexture(dvl::Texture& tex, VkFormat format, VkImageUsageFlags usage, uint32_t width, uint32_t height) {
+        vkh::createImage(tex.image, tex.memory, width, height, format, 1, 1, false, usage, tex.sampleCount);
+        vkh::createImageView(tex, format);
+        vkh::createSampler(tex.sampler, tex.mipLevels);
+    }
+
+    void createTexture(dvl::Texture& tex, vkh::TextureType type, VkImageUsageFlags usage, uint32_t width, uint32_t height) {
+        vkh::createImage(tex.image, tex.memory, width, height, type, 1, 1, false, usage, tex.sampleCount);
+        vkh::createImageView(tex, type);
+        vkh::createSampler(tex.sampler, tex.mipLevels, type);
+    }
+
     void setupTextures() {
         depthFormat = vkh::findDepthFormat();
         static bool init = true;
 
         // composition image
-        vkh::createImage(compTex.image, compTex.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-            compTex.sampleCount);
-        vkh::createImageView(compTex, swap.imageFormat);
-        vkh::createSampler(compTex.sampler, compTex.mipLevels);
+        createTexture(compTex, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
 
         if (rtEnabled) {
             // rt image
-            vkh::createImage(rtTex.image, rtTex.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, VK_IMAGE_LAYOUT_GENERAL,
-                commandPool, rtTex.sampleCount);
-            vkh::createImageView(rtTex, VK_FORMAT_R16G16B16A16_SFLOAT);
-            vkh::createSampler(rtTex.sampler, rtTex.mipLevels);
+            createTexture(rtTex, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+            vkh::transitionImageLayout(commandPool, rtTex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1, 0);
         }
         else {
-            // opaque pass color image
-            vkh::createImage(opaqueData.color.image, opaqueData.color.memory, swap.extent.width, swap.extent.height, swap.imageFormat, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                commandPool, opaqueData.color.sampleCount);
-            vkh::createImageView(opaqueData.color, swap.imageFormat);
-            vkh::createSampler(opaqueData.color.sampler, opaqueData.color.mipLevels);
+            // opaque textures
+            createTexture(opaqueData.color, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, swap.extent.width, swap.extent.height);
+            createTexture(opaqueData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
 
-            // opaque pass depth image
-            vkh::createImage(opaqueData.depth.image, opaqueData.depth.memory, swap.extent.width, swap.extent.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                opaqueData.depth.sampleCount);
-            vkh::createImageView(opaqueData.depth, vkh::DEPTH);
-            vkh::createSampler(opaqueData.depth.sampler, opaqueData.depth.mipLevels, vkh::DEPTH);
-
-            // weighted color image
-            vkh::createImage(wboit.weightedColor.image, wboit.weightedColor.memory, swap.extent.width, swap.extent.height, VK_FORMAT_R16G16B16A16_SFLOAT, 1, 1, false, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                wboit.weightedColor.sampleCount);
-            vkh::createImageView(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT);
-            vkh::createSampler(wboit.weightedColor.sampler, wboit.weightedColor.mipLevels);
+            // wboit
+            createTexture(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
 
             // shadowmaps
             if (init) {
                 for (size_t i = 0; i < lights.size(); i++) {
-                    vkh::createImage(lights[i]->shadowMapData.image, lights[i]->shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                        lights[i]->shadowMapData.sampleCount);
-                    vkh::createImageView(lights[i]->shadowMapData, vkh::DEPTH);
-                    vkh::createSampler(lights[i]->shadowMapData.sampler, lights[i]->shadowMapData.mipLevels, vkh::DEPTH);
+                    createTexture(lights[i]->shadowMapData, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, shadowProps.width, shadowProps.height);
                 }
                 init = false;
             }
+
+            // deferred rendering textures
+            VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+            createTexture(deferredRenderingData.albedo, vkh::BASE, usage, swap.extent.width, swap.extent.height);
+            createTexture(deferredRenderingData.metallicRoughness, vkh::METALLIC, usage, swap.extent.width, swap.extent.height);
+            createTexture(deferredRenderingData.normal, vkh::NORMAL, usage, swap.extent.width, swap.extent.height);
+            createTexture(deferredRenderingData.emissive, vkh::EMISSIVE, usage, swap.extent.width, swap.extent.height);
+            createTexture(deferredRenderingData.ao, vkh::OCCLUSION, usage, swap.extent.width, swap.extent.height);
         }
     }
 
-    void loadSkybox(std::string path) {
+    void loadSkybox(const std::string& path) {
         skybox.cubemap.path = config::SKYBOX_DIR + path;
         createTexturedCubemap(skybox.cubemap, skybox.imgData);
 
@@ -1406,7 +1393,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void loadModel(std::string path, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
+    void loadModel(const std::string& path, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
         uint32_t meshInd = 0; // index of the mesh in the model
 
         tinygltf::Model gltfModel;
@@ -1455,7 +1442,7 @@ private:
         }
     }
 
-    void createObject(const std::string& name, const dml::vec3& scale, const dml::vec4& rot, const dml::vec3& pos) {
+    void createObject(const std::string& name, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
         std::string path = std::string(config::MODEL_DIR) + name;
         objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
     }
@@ -1655,7 +1642,7 @@ private:
 
         vkh::createDSLayout(obj.layout, binding, type, size, shaderStages);
         vkh::createDSPool(obj.pool, type, size);
-        obj.set = vkh::allocDS(&size, obj.pool, obj.layout);
+        obj.set = vkh::allocDS(obj.layout, obj.pool, &size);
 
         obj.binding = binding;
         obj.type = type;
@@ -1836,7 +1823,7 @@ private:
         return buffer;
     }
 
-    VkhShaderModule createShaderMod(std::string name) {
+    VkhShaderModule createShaderMod(const std::string& name) {
         std::vector<char> shaderCode = readFile(config::SHADER_DIR + name + std::string("_shader.spv"));
         return vkh::createShaderModule(shaderCode);
     }
@@ -3047,7 +3034,7 @@ private:
         sbt.callR.size = 0;
     }
 
-    void createBLAS(const vkh::BufData& bufferData, size_t index) {
+    void createBLAS(vkh::BufData bufferData, size_t index) {
         VkhAccelerationStructure blas{};
         uint32_t primitiveCount = bufferData.indexCount / 3;
 
@@ -3348,7 +3335,7 @@ private:
         return uniqueModels.size();
     }
 
-    size_t originalObjectsNameIndex(std::string name) {
+    size_t originalObjectsNameIndex(const std::string& name) {
         for (size_t i = 0; i < originalObjects.size(); i++) {
             if (originalObjects[i]->name == name) {
                 return i;
@@ -3443,7 +3430,7 @@ private:
         vkh::copyBuffer(stagingIndexBuffer, indBuffer, commandPool, graphicsQueue, totalIndexBufferSize);
     }
 
-    void cloneObject(dml::vec3 pos, std::string name, dml::vec3 scale, dml::vec4 rotation) {
+    void cloneObject(dml::vec3 pos, const std::string& name, dml::vec3 scale, dml::vec4 rotation) {
         size_t index = originalObjectsNameIndex(name);
         const std::unique_ptr<dvl::Mesh>& other = originalObjects[index];
 
@@ -3624,7 +3611,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+    void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
@@ -3677,7 +3664,7 @@ private:
         }
     }
 
-    void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+    void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
         size_t size = secondaries.size();
 
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
@@ -3724,7 +3711,7 @@ private:
         }
     }
 
-    void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, const size_t descriptorCount, const bool startCommand, const bool endCommand) {
+    void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
         if (startCommand) {
             if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
                 throw std::runtime_error("failed to begin recording composition secondary command buffer!");

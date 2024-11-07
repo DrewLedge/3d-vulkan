@@ -91,7 +91,7 @@ void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
         nextTexture += 1;
     }
     if (occlusionExists) {
-        occlusion = texture(texSamplers[nextTexture], uv).r;
+        occlusion = texture(texSamplers[nextTexture], uv).r * metallicRoughness.b;
     }
 }
 
