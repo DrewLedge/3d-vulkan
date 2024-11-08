@@ -511,7 +511,7 @@ private:
 
     std::vector<std::future<void>> objTasks;
     std::vector<std::future<void>> textureTasks;
-    std::vector<std::future<void>> cmdTasks;
+    std::vector<std::future<void>> shadowCmdTasks;
 
     size_t cmdIteration = 0;
     size_t prevCmdIteration = 0;
@@ -1289,7 +1289,7 @@ private:
         }
         else {
             // opaque textures
-            createTexture(opaqueData.color, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, swap.extent.width, swap.extent.height);
+            createTexture(opaqueData.color, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
             createTexture(opaqueData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
 
             // wboit
@@ -3803,13 +3803,13 @@ private:
             allocateCommandBuffers(rtCommandBuffers, swap.imageCount, 0);
         }
 
-        allocateCommandBuffers(compCommandBuffers, swap.imageCount, 1);
+        allocateCommandBuffers(compCommandBuffers, swap.imageCount, 0);
     }
 
 
     void cmdTasksWait() {
         for (size_t i = prevCmdIteration; i < cmdIteration; i++) {
-            cmdTasks[i].wait();
+            shadowCmdTasks[i].wait();
         }
     }
 
@@ -3953,27 +3953,6 @@ private:
         }
     }
 
-    void recordCompSecondaryCommandBuffers(VkhCommandBuffer& secondary, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
-        if (startCommand) {
-            if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
-                throw std::runtime_error("failed to begin recording composition secondary command buffer!");
-            }
-        }
-
-        vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.pipeline.v());
-        vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
-
-        vkCmdDraw(secondary.v(), 6, 1, 0, 0);
-
-        ImguiRenderFrame(secondary);
-
-        if (endCommand) {
-            if (vkEndCommandBuffer(secondary.v()) != VK_SUCCESS) {
-                throw std::runtime_error("failed to record composition secondary command buffer!");
-            }
-        }
-    }
-
     void recordSecondaryCommandBuffers() {
         const std::array<VkDescriptorSet, 2> deferredDS = { descs.textures.set.v(), descs.cam.set.v() };
         const std::array<VkDescriptorSet, 4> opaqueDS = { descs.textures.set.v(), descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v() };
@@ -4050,8 +4029,6 @@ private:
     }
 
     void recordDeferredCommandBuffers() {
-        prevCmdIteration = cmdIteration;
-
         std::array<VkClearValue, 5> clearValues;
         clearValues.fill(VkClearValue{ 0.0f, 0.0f, 0.0f, 1.0f });
         clearValues[4] = VkClearValue{ 1.0f, 0.0f };
@@ -4060,36 +4037,33 @@ private:
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
-        for (size_t i = 0; i < swap.images.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkhCommandBuffer& deferredCommandBuffer = deferredCommandBuffers.primary[i];
-                if (vkBeginCommandBuffer(deferredCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording command buffer!");
-                }
 
-                VkRenderPassBeginInfo renderPassInfo{};
-                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = deferredPipeline.renderPass.v();
-                renderPassInfo.framebuffer = deferredData.frameBuffer.v();
-                renderPassInfo.renderArea.offset = { 0, 0 };
-                renderPassInfo.renderArea.extent = swap.extent;
-                renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-                renderPassInfo.pClearValues = clearValues.data();
-
-                vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-                vkCmdExecuteCommands(deferredCommandBuffer.v(), static_cast<uint32_t>(deferredCommandBuffers.secondary.size()), deferredCommandBuffers.secondary.data());
-                vkCmdEndRenderPass(deferredCommandBuffer.v());
-                if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record command buffer!");
-                }
-                }));
-            cmdIteration++;
+        VkhCommandBuffer& deferredCommandBuffer = deferredCommandBuffers.primary[swap.index];
+        if (vkBeginCommandBuffer(deferredCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
         }
-        cmdTasksWait();
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = deferredPipeline.renderPass.v();
+        renderPassInfo.framebuffer = deferredData.frameBuffer.v();
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swap.extent;
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+        vkCmdExecuteCommands(deferredCommandBuffer.v(), static_cast<uint32_t>(deferredCommandBuffers.secondary.size()), deferredCommandBuffers.secondary.data());
+        vkCmdEndRenderPass(deferredCommandBuffer.v());
+        if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
     }
 
     void recordShadowCommandBuffers() {
-        prevCmdIteration = cmdIteration;
+        shadowCmdTasks.clear();
+        cmdIteration = 0;
+        prevCmdIteration = 0;
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
@@ -4099,7 +4073,7 @@ private:
         VkClearValue clearValue = VkClearValue{ 1.0f, 0 };
 
         for (size_t i = 0; i < lights.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
+            shadowCmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
                 VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
                 VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
@@ -4132,137 +4106,106 @@ private:
     }
 
     void recordOpaqueCommandBuffers() {
-        prevCmdIteration = cmdIteration;
-
         const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
-        for (size_t i = 0; i < swap.images.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkhCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[i];
-                if (vkBeginCommandBuffer(opaqueCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording command buffer!");
-                }
-
-                VkRenderPassBeginInfo renderPassInfo{};
-                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = opaquePipeline.renderPass.v();
-                renderPassInfo.framebuffer = opaqueData.frameBuffer.v();
-                renderPassInfo.renderArea.offset = { 0, 0 };
-                renderPassInfo.renderArea.extent = swap.extent;
-                renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-                renderPassInfo.pClearValues = clearValues.data();
-
-                vkCmdBeginRenderPass(opaqueCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-                vkCmdExecuteCommands(opaqueCommandBuffer.v(), static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
-                vkCmdEndRenderPass(opaqueCommandBuffer.v());
-                if (vkEndCommandBuffer(opaqueCommandBuffer.v()) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record command buffer!");
-                }
-                }));
-            cmdIteration++;
+        VkhCommandBuffer& opaqueCommandBuffer = opaquePassCommandBuffers.primary[swap.index];
+        if (vkBeginCommandBuffer(opaqueCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
         }
-        cmdTasksWait();
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = opaquePipeline.renderPass.v();
+        renderPassInfo.framebuffer = opaqueData.frameBuffer.v();
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swap.extent;
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(opaqueCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+        vkCmdExecuteCommands(opaqueCommandBuffer.v(), static_cast<uint32_t>(opaquePassCommandBuffers.secondary.size()), opaquePassCommandBuffers.secondary.data());
+        vkCmdEndRenderPass(opaqueCommandBuffer.v());
+        if (vkEndCommandBuffer(opaqueCommandBuffer.v()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
     }
 
     void recordWBOITCommandBuffers() {
-        prevCmdIteration = cmdIteration;
-
         std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        for (size_t i = 0; i < swap.images.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[i];
-                if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording command buffer!");
-                }
-
-                VkRenderPassBeginInfo renderPassInfo{};
-                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = wboitPipeline.renderPass.v();
-                renderPassInfo.framebuffer = wboit.frameBuffer.v();
-                renderPassInfo.renderArea.offset = { 0, 0 };
-                renderPassInfo.renderArea.extent = swap.extent;
-                renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-                renderPassInfo.pClearValues = clearValues.data();
-
-                vkh::transitionImageLayout(wboitCommandBuffer, opaqueData.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
-
-                vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-                vkCmdExecuteCommands(wboitCommandBuffer.v(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
-                vkCmdEndRenderPass(wboitCommandBuffer.v());
-
-                if (vkEndCommandBuffer(wboitCommandBuffer.v()) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record command buffer!");
-                }
-                }));
-            cmdIteration++;
+        VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[swap.index];
+        if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
         }
-        cmdTasksWait();
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = wboitPipeline.renderPass.v();
+        renderPassInfo.framebuffer = wboit.frameBuffer.v();
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swap.extent;
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vkh::transitionImageLayout(wboitCommandBuffer, opaqueData.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+
+        vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+        vkCmdExecuteCommands(wboitCommandBuffer.v(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
+        vkCmdEndRenderPass(wboitCommandBuffer.v());
+
+        if (vkEndCommandBuffer(wboitCommandBuffer.v()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
     }
 
     void recordCompCommandBuffers() {
-        prevCmdIteration = cmdIteration;
-
         std::array<VkClearValue, 2> clearValues = { VkClearValue{0.18f, 0.3f, 0.30f, 1.0f}, VkClearValue{1.0f, 0} };
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkCommandBufferInheritanceInfo inheritInfo{};
-        inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        inheritInfo.renderPass = compPipeline.renderPass.v();
-        inheritInfo.framebuffer = VK_NULL_HANDLE;
-        inheritInfo.subpass = 0;
-
-        VkCommandBufferBeginInfo beginInfoS{};
-        beginInfoS.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        beginInfoS.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
-        beginInfoS.pInheritanceInfo = &inheritInfo;
-
         VkDescriptorSet* set = (rtEnabled) ? descs.rt.set.p() : descs.composition.set.p();
-        recordCompSecondaryCommandBuffers(compCommandBuffers.secondary[0], beginInfoS, set, 1, true, true);
 
-        for (size_t i = 0; i < swap.images.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[i];
-                if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording command buffer!");
-                }
-
-                VkRenderPassBeginInfo renderPassInfo{};
-                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-                renderPassInfo.renderPass = compPipeline.renderPass.v();
-                renderPassInfo.framebuffer = swap.framebuffers[i].v();
-                renderPassInfo.renderArea.offset = { 0, 0 };
-                renderPassInfo.renderArea.extent = swap.extent;
-                renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
-                renderPassInfo.pClearValues = clearValues.data();
-
-                vkCmdBeginRenderPass(compCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-                vkCmdExecuteCommands(compCommandBuffer.v(), 1, compCommandBuffers.secondary[0].p());
-                vkCmdEndRenderPass(compCommandBuffer.v());
-                if (vkEndCommandBuffer(compCommandBuffer.v()) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record command buffer!");
-                }
-                }));
-            cmdIteration++;
+        VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[swap.index];
+        if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording command buffer!");
         }
-        cmdTasksWait();
+
+        VkRenderPassBeginInfo renderPassInfo{};
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        renderPassInfo.renderPass = compPipeline.renderPass.v();
+        renderPassInfo.framebuffer = swap.framebuffers[swap.index].v();
+        renderPassInfo.renderArea.offset = { 0, 0 };
+        renderPassInfo.renderArea.extent = swap.extent;
+        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.pClearValues = clearValues.data();
+
+        vkCmdBeginRenderPass(compCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdBindPipeline(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.pipeline.v());
+        vkCmdBindDescriptorSets(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.layout.v(), 0, 1, set, 0, nullptr);
+
+        vkCmdDraw(compCommandBuffer.v(), 6, 1, 0, 0);
+
+        ImguiRenderFrame(compCommandBuffer);
+
+        vkCmdEndRenderPass(compCommandBuffer.v());
+        if (vkEndCommandBuffer(compCommandBuffer.v()) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record command buffer!");
+        }
     }
 
     void recordRTCommandBuffers() {
-        prevCmdIteration = cmdIteration;
-
         const std::array<VkDescriptorSet, 7> ds = { descs.textures.set.v(), descs.lightData.set.v(), descs.skybox.set.v(), descs.cam.set.v(), descs.tlas.set.v(), descs.rt.set.v(), descs.texIndex.set.v() };
 
         VkCommandBufferInheritanceInfo inheritInfo{};
@@ -4276,34 +4219,23 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = &inheritInfo;
 
-        for (size_t i = 0; i < swap.images.size(); i++) {
-            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkCommandBuffer& commandBuffer = rtCommandBuffers.primary[i].v();
-                if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording rt command buffer!");
-                }
-
-                vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.pipeline.v());
-                vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.layout.v(), 0, static_cast<uint32_t>(ds.size()), ds.data(), 0, nullptr);
-
-                vkhfp::vkCmdTraceRaysKHR(commandBuffer, &sbt.raygenR, &sbt.missR, &sbt.hitR, &sbt.callR, swap.extent.width, swap.extent.height, 1);
-
-                if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record rt command buffer!");
-                }
-                }));
-            cmdIteration++;
+        VkCommandBuffer& commandBuffer = rtCommandBuffers.primary[swap.index].v();
+        if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
+            throw std::runtime_error("failed to begin recording rt command buffer!");
         }
 
-        cmdTasksWait();
+        vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.pipeline.v());
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.layout.v(), 0, static_cast<uint32_t>(ds.size()), ds.data(), 0, nullptr);
+
+        vkhfp::vkCmdTraceRaysKHR(commandBuffer, &sbt.raygenR, &sbt.missR, &sbt.hitR, &sbt.callR, swap.extent.width, swap.extent.height, 1);
+
+        if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
+            throw std::runtime_error("failed to record rt command buffer!");
+        }
     }
 
     void recordAllCommandBuffers() { // record every command buffer
         vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
-
-        cmdTasks.clear();
-        cmdIteration = 0;
-        prevCmdIteration = 0;
 
         if (rtEnabled) {
             recordRTCommandBuffers();
