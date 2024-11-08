@@ -293,13 +293,10 @@ private:
     };
 
     struct DeferredRenderingData {
-        dvl::Texture albedo{};
-        dvl::Texture metallicRoughness{};
-        dvl::Texture normal{};
-        dvl::Texture emissive{};
-        dvl::Texture ao{};
-        dvl::Texture depth{};
         VkhFramebuffer frameBuffer{};
+        std::array<dvl::Texture, 4> textures{};
+        dvl::Texture depth{};
+        std::array<VkFormat, 4> colorFormats{};
     };
 
     struct CommandBufferCollection {
@@ -394,7 +391,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = true; // a bool if raytracing has been enabled
+    bool rtEnabled = false; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -422,7 +419,7 @@ private:
 
     OpaqueData opaqueData{};
     WBOITData wboit{};
-    DeferredRenderingData deferredRenderingData{};
+    DeferredRenderingData deferredData{};
 
     // command buffers and command pool
     VkhCommandPool commandPool{};
@@ -451,6 +448,7 @@ private:
     std::vector<VkhFence> inFlightFences;
     VkhSemaphore imageAvailableSemaphore{};
     VkhSemaphore renderFinishedSemaphore{};
+    VkhSemaphore deferredSemaphore{};
     VkhSemaphore shadowSemaphore{};
     VkhSemaphore wboitSemaphore{};
     VkhSemaphore compSemaphore{};
@@ -920,6 +918,7 @@ private:
         vkh::createSemaphore(renderFinishedSemaphore);
 
         if (!rtEnabled) {
+            vkh::createSemaphore(deferredSemaphore);
             vkh::createSemaphore(shadowSemaphore);
             vkh::createSemaphore(wboitSemaphore);
         }
@@ -1306,13 +1305,11 @@ private:
 
             // deferred rendering textures
             VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            createTexture(deferredRenderingData.albedo, vkh::BASE, usage, swap.extent.width, swap.extent.height);
-            createTexture(deferredRenderingData.metallicRoughness, vkh::METALLIC, usage, swap.extent.width, swap.extent.height);
-            createTexture(deferredRenderingData.normal, vkh::NORMAL, usage, swap.extent.width, swap.extent.height);
-            createTexture(deferredRenderingData.emissive, vkh::EMISSIVE, usage, swap.extent.width, swap.extent.height);
-            createTexture(deferredRenderingData.ao, vkh::OCCLUSION, usage, swap.extent.width, swap.extent.height);
-            createTexture(deferredRenderingData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
-
+            for (uint8_t i = 0; i < 4; i++) {
+                deferredData.colorFormats[i] = vkh::getTextureFormat(vkh::TextureType(i));
+                createTexture(deferredData.textures[i], deferredData.colorFormats[i], usage, swap.extent.width, swap.extent.height);
+            }
+            createTexture(deferredData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
         }
     }
 
@@ -1933,7 +1930,7 @@ private:
         VkPipelineMultisampleStateCreateInfo multiSamp{};
         multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
         multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
-        multiSamp.alphaToCoverageEnable = VK_TRUE;
+        multiSamp.alphaToCoverageEnable = VK_FALSE;
         multiSamp.alphaToOneEnable = VK_FALSE;
         multiSamp.sampleShadingEnable = VK_FALSE;
         multiSamp.minSampleShading = 1.0f;
@@ -1949,23 +1946,17 @@ private:
         dStencil.stencilTestEnable = VK_FALSE;
 
         VkPipelineColorBlendAttachmentState colorBA{};
-        colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
-        colorBA.blendEnable = VK_TRUE; //enable blending
-        colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBA.colorBlendOp = VK_BLEND_OP_ADD;
-        colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
-        colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-        colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+        colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+        colorBA.blendEnable = VK_FALSE;
 
-        std::array<VkPipelineColorBlendAttachmentState, 5> blendAttachments{};
+        std::array<VkPipelineColorBlendAttachmentState, 4> blendAttachments{};
         blendAttachments.fill(colorBA);
 
         VkPipelineColorBlendStateCreateInfo colorBS{};
         colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
         colorBS.logicOpEnable = VK_FALSE;
         colorBS.logicOp = VK_LOGIC_OP_COPY;
-        colorBS.attachmentCount = 5;
+        colorBS.attachmentCount = 4;
         colorBS.pAttachments = blendAttachments.data();
 
         VkPushConstantRange pushConstantRange{};
@@ -1986,12 +1977,12 @@ private:
             throw std::runtime_error("failed to create pipeline layout!!");
         }
 
-        std::array<VkAttachmentDescription, 6> attachments{};
-        std::array<VkAttachmentReference, 5> colReferences{};
+        std::array<VkAttachmentDescription, 5> attachments{};
+        std::array<VkAttachmentReference, 4> colReferences{};
 
-        for (uint8_t i = 0; i < 5; i++) {
+        for (uint8_t i = 0; i < 4; i++) {
             VkAttachmentDescription& a = attachments[i];
-            a.format = vkh::getTextureFormat(vkh::TextureType(i)); //format of the color attachment
+            a.format = deferredData.colorFormats[i]; //format of the color attachment
             a.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
             a.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //what to do with the data in the attachment before rendering
             a.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //what to do with the data in the attachment after rendering
@@ -2005,22 +1996,22 @@ private:
             ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         }
 
-        attachments[5].format = depthFormat;
-        attachments[5].samples = VK_SAMPLE_COUNT_1_BIT;
-        attachments[5].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        attachments[5].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        attachments[5].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        attachments[5].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        attachments[5].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        attachments[5].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        attachments[4].format = depthFormat;
+        attachments[4].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[4].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[4].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[4].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachments[4].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[4].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[4].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkAttachmentReference depthAttachmentRef{};
-        depthAttachmentRef.attachment = 5;
+        depthAttachmentRef.attachment = 4;
         depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; //type of pipeline to bind to
-        subpass.colorAttachmentCount = 5;
+        subpass.colorAttachmentCount = 4;
         subpass.pColorAttachments = colReferences.data();
         subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
@@ -3824,6 +3815,17 @@ private:
 
     void createFrameBuffers(bool initial) {
         if (!rtEnabled) {
+
+            // create the deferred pass framebuffers
+            std::vector<VkImageView> attachmentsD;
+            attachmentsD.reserve(5);
+            for (uint8_t i = 0; i < 4; i++) {
+                attachmentsD.push_back(deferredData.textures[i].imageView.v());
+            }
+            attachmentsD.push_back(deferredData.depth.imageView.v());
+            vkh::createFB(deferredPipeline.renderPass, deferredData.frameBuffer, attachmentsD.data(), attachmentsD.size(), swap.extent.width, swap.extent.height);
+
+
             if (initial) {
                 // create the shadowmap framebuffers
                 for (size_t i = 0; i < lights.size(); i++) {
@@ -3851,7 +3853,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void recordOpaqueSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
+    void recordObjectSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
@@ -3973,9 +3975,24 @@ private:
     }
 
     void recordSecondaryCommandBuffers() {
+        const std::array<VkDescriptorSet, 2> deferredDS = { descs.textures.set.v(), descs.cam.set.v() };
         const std::array<VkDescriptorSet, 4> opaqueDS = { descs.textures.set.v(), descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v() };
-        std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.opaqueDepth.set.v() };
+        const std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.opaqueDepth.set.v() };
         const std::array<VkDescriptorSet, 2> skyboxDS = { descs.skybox.set.v(), descs.cam.set.v() };
+
+        // FOR THE DEFERRED PASS
+        VkCommandBufferInheritanceInfo deferredInheritInfo{};
+        deferredInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
+        deferredInheritInfo.renderPass = deferredPipeline.renderPass.v();
+        deferredInheritInfo.framebuffer = VK_NULL_HANDLE;
+        deferredInheritInfo.subpass = 0;
+
+        VkCommandBufferBeginInfo deferredBeginInfo{};
+        deferredBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        deferredBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        deferredBeginInfo.pInheritanceInfo = &deferredInheritInfo;
+
+        recordObjectSecondaryCommandBuffers(deferredCommandBuffers.secondary[0], deferredPipeline, deferredBeginInfo, deferredDS.data(), deferredDS.size(), true, true);
 
         // FOR THE SHADOW PASS
         VkCommandBufferInheritanceInfo shadowInheritInfo{};
@@ -4015,7 +4032,7 @@ private:
         vkCmdBindIndexBuffer(secondary.v(), skybox.indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(secondary.v(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);
 
-        recordOpaqueSecondaryCommandBuffers(secondary, opaquePipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
+        recordObjectSecondaryCommandBuffers(secondary, opaquePipeline, opaqueBeginInfo, opaqueDS.data(), opaqueDS.size(), false, true);
 
         // FOR THE WBOIT PASS
         VkCommandBufferInheritanceInfo wboitInheritInfo{};
@@ -4029,7 +4046,46 @@ private:
         wboitBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
 
-        recordOpaqueSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
+        recordObjectSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
+    }
+
+    void recordDeferredCommandBuffers() {
+        prevCmdIteration = cmdIteration;
+
+        std::array<VkClearValue, 5> clearValues;
+        clearValues.fill(VkClearValue{ 0.0f, 0.0f, 0.0f, 1.0f });
+        clearValues[4] = VkClearValue{ 1.0f, 0.0f };
+
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+        beginInfo.pInheritanceInfo = nullptr;
+        for (size_t i = 0; i < swap.images.size(); i++) {
+            cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
+                VkhCommandBuffer& deferredCommandBuffer = deferredCommandBuffers.primary[i];
+                if (vkBeginCommandBuffer(deferredCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
+                    throw std::runtime_error("failed to begin recording command buffer!");
+                }
+
+                VkRenderPassBeginInfo renderPassInfo{};
+                renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+                renderPassInfo.renderPass = deferredPipeline.renderPass.v();
+                renderPassInfo.framebuffer = deferredData.frameBuffer.v();
+                renderPassInfo.renderArea.offset = { 0, 0 };
+                renderPassInfo.renderArea.extent = swap.extent;
+                renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+                renderPassInfo.pClearValues = clearValues.data();
+
+                vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+                vkCmdExecuteCommands(deferredCommandBuffer.v(), static_cast<uint32_t>(deferredCommandBuffers.secondary.size()), deferredCommandBuffers.secondary.data());
+                vkCmdEndRenderPass(deferredCommandBuffer.v());
+                if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
+                    throw std::runtime_error("failed to record command buffer!");
+                }
+                }));
+            cmdIteration++;
+        }
+        cmdTasksWait();
     }
 
     void recordShadowCommandBuffers() {
@@ -4040,7 +4096,7 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkClearValue clearValue = { 1.0f, 0 };
+        VkClearValue clearValue = VkClearValue{ 1.0f, 0 };
 
         for (size_t i = 0; i < lights.size(); i++) {
             cmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
@@ -4253,6 +4309,7 @@ private:
             recordRTCommandBuffers();
         }
         else {
+            recordDeferredCommandBuffers();
             recordShadowCommandBuffers();
             recordOpaqueCommandBuffers();
             recordWBOITCommandBuffers();
@@ -4314,19 +4371,16 @@ private:
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         std::vector<VkSubmitInfo> submitInfos;
 
-
         if (!rtEnabled) {
-            for (VkhCommandBuffer& shadow : shadowMapCommandBuffers.primary.buffers) {
-                submitInfos.emplace_back(vkh::createSubmitInfo(&shadow, 1));
-            }
-
-            submitInfos.emplace_back(vkh::createSubmitInfo(&opaquePassCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, wboitSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(&wboitCommandBuffers.primary[imageIndex], 1, waitStages, wboitSemaphore, compSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, compSemaphore, renderFinishedSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphore, deferredSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(shadowMapCommandBuffers.primary.data(), lights.size(), waitStages, deferredSemaphore, shadowSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(opaquePassCommandBuffers.primary[imageIndex].p(), 1, waitStages, shadowSemaphore, wboitSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, waitStages, wboitSemaphore, compSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, compSemaphore, renderFinishedSemaphore));
         }
         else {
-            submitInfos.emplace_back(vkh::createSubmitInfo(&rtCommandBuffers.primary[imageIndex], 1, waitStages, imageAvailableSemaphore, rtSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(&compCommandBuffers.primary[imageIndex], 1, waitStages, rtSemaphore, renderFinishedSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphore, rtSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, rtSemaphore, renderFinishedSemaphore));
         }
 
         // submit all command buffers in a single call

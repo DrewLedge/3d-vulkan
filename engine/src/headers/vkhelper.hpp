@@ -404,43 +404,42 @@ namespace vkh {
         }
     }
 
-    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, size_t commandBufferCount) {
+    VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, size_t commandBufferCount) {
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.waitSemaphoreCount = 0;
         submitInfo.pWaitSemaphores = nullptr;
         submitInfo.pWaitDstStageMask = nullptr;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
-        submitInfo.signalSemaphoreCount = 0;
+        submitInfo.pCommandBuffers = commandBuffers;
+        submitInfo.commandBufferCount = commandBufferCount;
         submitInfo.pSignalSemaphores = nullptr;
+        submitInfo.signalSemaphoreCount = 0;
         return submitInfo;
     }
 
-    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkhSemaphore& wait, const VkhSemaphore& signal) {
+    VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkhSemaphore& wait, const VkhSemaphore& signal) {
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.waitSemaphoreCount = 1;
         submitInfo.pWaitSemaphores = wait.p();
         submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
-        submitInfo.signalSemaphoreCount = 1;
+        submitInfo.pCommandBuffers = commandBuffers;
+        submitInfo.commandBufferCount = commandBufferCount;
         submitInfo.pSignalSemaphores = signal.p();
+        submitInfo.signalSemaphoreCount = 1;
         return submitInfo;
     }
 
-    VkSubmitInfo createSubmitInfo(const VkhCommandBuffer* commandBuffers, const VkPipelineStageFlags* waitStages, const VkhSemaphore* wait, const VkhSemaphore* signal, size_t commandBufferCount, size_t waitSemaphoreCount, size_t signalSemaphoreCount) {
-
+    VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, size_t commandBufferCount, const VkPipelineStageFlags* waitStages, const VkSemaphore* wait, const VkSemaphore* signal, size_t waitSemaphoreCount, size_t signalSemaphoreCount) {
         VkSubmitInfo submitInfo{};
         submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.waitSemaphoreCount = static_cast<uint32_t>(waitSemaphoreCount);
-        submitInfo.pWaitSemaphores = wait->p();
+        submitInfo.pWaitSemaphores = wait;
         submitInfo.pWaitDstStageMask = waitStages;
-        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
-        submitInfo.pCommandBuffers = commandBuffers->p();
+        submitInfo.pCommandBuffers = commandBuffers;
+        submitInfo.commandBufferCount = commandBufferCount;
+        submitInfo.pSignalSemaphores = signal;
         submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
-        submitInfo.pSignalSemaphores = signal->p();
         return submitInfo;
     }
 
