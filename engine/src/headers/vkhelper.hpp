@@ -183,11 +183,11 @@ MAKE_RAII(VkhAccelerationStructure, VkAccelerationStructureKHR, vkhfp::vkDestroy
 namespace vkh {
     typedef enum {
         BASE,
-        DEPTH,
         NORMAL,
         METALLIC,
         EMISSIVE,
         OCCLUSION,
+        DEPTH,
         CUBEMAP,
         ALPHA
     } TextureType;

@@ -298,6 +298,8 @@ private:
         dvl::Texture normal{};
         dvl::Texture emissive{};
         dvl::Texture ao{};
+        dvl::Texture depth{};
+        VkhFramebuffer frameBuffer{};
     };
 
     struct CommandBufferCollection {
@@ -392,7 +394,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = false; // a bool if raytracing has been enabled
+    bool rtEnabled = true; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -412,6 +414,7 @@ private:
     SCData swap{};
 
     // pipeline data
+    PipelineData deferredPipeline{};
     PipelineData opaquePipeline{};
     PipelineData shadowPipeline{};
     PipelineData compPipeline{};
@@ -423,6 +426,7 @@ private:
 
     // command buffers and command pool
     VkhCommandPool commandPool{};
+    CommandBufferSet deferredCommandBuffers{};
     CommandBufferSet opaquePassCommandBuffers{};
     CommandBufferSet shadowMapCommandBuffers{};
     CommandBufferSet wboitCommandBuffers{};
@@ -1307,6 +1311,8 @@ private:
             createTexture(deferredRenderingData.normal, vkh::NORMAL, usage, swap.extent.width, swap.extent.height);
             createTexture(deferredRenderingData.emissive, vkh::EMISSIVE, usage, swap.extent.width, swap.extent.height);
             createTexture(deferredRenderingData.ao, vkh::OCCLUSION, usage, swap.extent.width, swap.extent.height);
+            createTexture(deferredRenderingData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+
         }
     }
 
@@ -1828,7 +1834,232 @@ private:
         return vkh::createShaderModule(shaderCode);
     }
 
-    void createGraphicsPipeline() {
+
+    void createDeferredPipeline() {
+        VkhShaderModule vertShaderModule = createShaderMod("deferred_vertex");
+        VkhShaderModule fragShaderModule = createShaderMod("deferred_fragment");
+
+        VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
+        VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
+        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+
+        VkVertexInputBindingDescription vertBindDesc{};
+        vertBindDesc.binding = 0;
+        vertBindDesc.stride = sizeof(dvl::Vertex);
+        vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+        VkVertexInputBindingDescription instanceBindDesc{};
+        instanceBindDesc.binding = 1;
+        instanceBindDesc.stride = sizeof(ModelInstance);
+        instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+        std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
+
+        std::vector<VkVertexInputAttributeDescription> attrDesc;
+        attrDesc.resize(9);
+
+        attrDesc[0].binding = 0;
+        attrDesc[0].location = 0;
+        attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
+        attrDesc[0].offset = offsetof(dvl::Vertex, pos);
+
+        // texture coordinates
+        attrDesc[1].binding = 0;
+        attrDesc[1].location = 1;
+        attrDesc[1].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
+        attrDesc[1].offset = offsetof(dvl::Vertex, tex);
+
+        // normal
+        attrDesc[2].binding = 0;
+        attrDesc[2].location = 2;
+        attrDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
+        attrDesc[2].offset = offsetof(dvl::Vertex, normal);
+
+        // tangents
+        attrDesc[3].binding = 0;
+        attrDesc[3].location = 3;
+        attrDesc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
+        attrDesc[3].offset = offsetof(dvl::Vertex, tangent);
+
+        // pass the model matrix as a per-instance data
+        // seperate the matrix into 4 vec4's so it can be quickly passed and processed
+        for (uint32_t i = 0; i < 4; i++) {
+            uint8_t index = 4 + i;
+            attrDesc[index].binding = 1;
+            attrDesc[index].location = index;
+            attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
+        }
+
+        // render flag
+        attrDesc[8].binding = 1;
+        attrDesc[8].location = 8;
+        attrDesc[8].format = VK_FORMAT_R32_UINT; // 1 uint32_t
+        attrDesc[8].offset = offsetof(ModelInstance, render);
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
+        vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+
+        VkPipelineInputAssemblyStateCreateInfo inputAssem{};
+        inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssem.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST; //set the topology to triangle list (3 vertices per triangle)
+        inputAssem.primitiveRestartEnable = VK_FALSE;
+
+        VkRect2D scissor{};
+        scissor.offset = { 0, 0 };
+        scissor.extent = swap.extent;
+
+        VkPipelineViewportStateCreateInfo vpState{};
+        vpState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        vpState.viewportCount = 1;
+        vpState.pViewports = &swap.viewport;
+        vpState.scissorCount = 1;
+        vpState.pScissors = &scissor;
+
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_TRUE;
+
+        VkPipelineMultisampleStateCreateInfo multiSamp{};
+        multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multiSamp.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+        multiSamp.alphaToCoverageEnable = VK_TRUE;
+        multiSamp.alphaToOneEnable = VK_FALSE;
+        multiSamp.sampleShadingEnable = VK_FALSE;
+        multiSamp.minSampleShading = 1.0f;
+
+        VkPipelineDepthStencilStateCreateInfo dStencil{};
+        dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+        dStencil.depthTestEnable = VK_TRUE;
+        dStencil.depthWriteEnable = VK_TRUE;
+        dStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+        dStencil.depthBoundsTestEnable = VK_FALSE;
+        dStencil.minDepthBounds = 0.0f;
+        dStencil.maxDepthBounds = 1.0f;
+        dStencil.stencilTestEnable = VK_FALSE;
+
+        VkPipelineColorBlendAttachmentState colorBA{};
+        colorBA.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT; //color channels to apply the blending operation to
+        colorBA.blendEnable = VK_TRUE; //enable blending
+        colorBA.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBA.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBA.colorBlendOp = VK_BLEND_OP_ADD;
+        colorBA.srcAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        colorBA.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        colorBA.alphaBlendOp = VK_BLEND_OP_ADD;
+
+        std::array<VkPipelineColorBlendAttachmentState, 5> blendAttachments{};
+        blendAttachments.fill(colorBA);
+
+        VkPipelineColorBlendStateCreateInfo colorBS{};
+        colorBS.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBS.logicOpEnable = VK_FALSE;
+        colorBS.logicOp = VK_LOGIC_OP_COPY;
+        colorBS.attachmentCount = 5;
+        colorBS.pAttachments = blendAttachments.data();
+
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(int) * 2; // 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
+
+        VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.cam.layout.v() };
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInf{};
+        pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
+        pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+        pipelineLayoutInf.pushConstantRangeCount = 1;
+        VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, deferredPipeline.layout.p());
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("failed to create pipeline layout!!");
+        }
+
+        std::array<VkAttachmentDescription, 6> attachments{};
+        std::array<VkAttachmentReference, 5> colReferences{};
+
+        for (uint8_t i = 0; i < 5; i++) {
+            VkAttachmentDescription& a = attachments[i];
+            a.format = vkh::getTextureFormat(vkh::TextureType(i)); //format of the color attachment
+            a.samples = VK_SAMPLE_COUNT_1_BIT; //number of samples to use for multisampling
+            a.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR; //what to do with the data in the attachment before rendering
+            a.storeOp = VK_ATTACHMENT_STORE_OP_STORE; //what to do with the data in the attachment after rendering
+            a.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE; //what to do with the stencil data before rendering
+            a.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE; //what to do with the stencil data after rendering
+            a.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED; //layout of the image before the render pass starts
+            a.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL; //layout of the image after the render pass ends
+
+            VkAttachmentReference& ref = colReferences[i];
+            ref.attachment = i;
+            ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        }
+
+        attachments[5].format = depthFormat;
+        attachments[5].samples = VK_SAMPLE_COUNT_1_BIT;
+        attachments[5].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachments[5].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachments[5].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachments[5].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachments[5].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        attachments[5].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference depthAttachmentRef{};
+        depthAttachmentRef.attachment = 5;
+        depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS; //type of pipeline to bind to
+        subpass.colorAttachmentCount = 5;
+        subpass.pColorAttachments = colReferences.data();
+        subpass.pDepthStencilAttachment = &depthAttachmentRef;
+
+        //render pass setup: describes the attachments (color & depth) and subpasses used by the pipeline
+        VkRenderPassCreateInfo renderPassInf{};
+        renderPassInf.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInf.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassInf.pAttachments = attachments.data();
+        renderPassInf.subpassCount = 1;
+        renderPassInf.pSubpasses = &subpass;
+        VkResult renderPassResult = vkCreateRenderPass(device, &renderPassInf, nullptr, deferredPipeline.renderPass.p());
+        if (renderPassResult != VK_SUCCESS) {
+            throw std::runtime_error("failed to create render pass!");
+        }
+
+        //pipeline setup: the data needed to create the pipeline
+        VkGraphicsPipelineCreateInfo pipelineInf{};
+        pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInf.stageCount = 2; // two shaders - vertex and fragment
+        pipelineInf.pStages = stages;
+        pipelineInf.pVertexInputState = &vertexInputInfo;
+        pipelineInf.pInputAssemblyState = &inputAssem;
+        pipelineInf.pViewportState = &vpState;
+        pipelineInf.pRasterizationState = &rasterizer;
+        pipelineInf.pMultisampleState = &multiSamp;
+        pipelineInf.pDepthStencilState = &dStencil;
+        pipelineInf.pColorBlendState = &colorBS;
+        pipelineInf.layout = deferredPipeline.layout.v();
+        pipelineInf.renderPass = deferredPipeline.renderPass.v();
+        pipelineInf.subpass = 0;
+        pipelineInf.basePipelineHandle = VK_NULL_HANDLE;
+        pipelineInf.basePipelineIndex = -1;
+        VkResult pipelineResult = vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInf, nullptr, deferredPipeline.pipeline.p());
+        if (pipelineResult != VK_SUCCESS) {
+            throw std::runtime_error("failed to create graphics pipeline!");
+        }
+    }
+
+    void createOpaquePipeline() {
         VkhShaderModule vertShaderModule = createShaderMod("vertex");
         VkhShaderModule fragShaderModule = createShaderMod("fragment");
 
@@ -2822,11 +3053,13 @@ private:
             createRayTracingPipeline();
         }
         else {
+            deferredPipeline.reset();
             opaquePipeline.reset();
             skybox.resetPipeline();
             wboitPipeline.reset();
 
-            createGraphicsPipeline();
+            createDeferredPipeline();
+            createOpaquePipeline();
             createSkyboxPipeline();
             if (shadow) {
                 shadowPipeline.reset();
@@ -3460,7 +3693,9 @@ private:
             updateTLAS(true);
             getTexIndices();
         }
-        recordSecondaryCommandBuffers();
+        else {
+            recordSecondaryCommandBuffers();
+        }
     }
 
     void summonLight() {
@@ -3504,7 +3739,10 @@ private:
 
         createLightBuffer();
         updateLightDS();
-        recordSecondaryCommandBuffers();
+
+        if (!rtEnabled) {
+            recordSecondaryCommandBuffers();
+        }
     }
 
     void resetScene() {
@@ -3537,8 +3775,9 @@ private:
             updateTLAS(true);
             getTexIndices();
         }
-
-        recordSecondaryCommandBuffers();
+        else {
+            recordSecondaryCommandBuffers();
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -3565,6 +3804,7 @@ private:
     void createCommandBuffers() {
         if (!rtEnabled) {
             allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
+            allocateCommandBuffers(deferredCommandBuffers, swap.imageCount, 1);
             allocateCommandBuffers(opaquePassCommandBuffers, swap.imageCount, 1);
             allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
         }
@@ -3732,7 +3972,7 @@ private:
         }
     }
 
-    void recordRasterizationSecondaryCommandBuffers() {
+    void recordSecondaryCommandBuffers() {
         const std::array<VkDescriptorSet, 4> opaqueDS = { descs.textures.set.v(), descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v() };
         std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.opaqueDepth.set.v() };
         const std::array<VkDescriptorSet, 2> skyboxDS = { descs.skybox.set.v(), descs.cam.set.v() };
@@ -3790,12 +4030,6 @@ private:
         wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
 
         recordOpaqueSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
-    }
-
-    void recordSecondaryCommandBuffers() {
-        if (!rtEnabled) {
-            recordRasterizationSecondaryCommandBuffers();
-        }
     }
 
     void recordShadowCommandBuffers() {
@@ -4057,7 +4291,9 @@ private:
 
         initializeMouseInput(true);
 
-        recordSecondaryCommandBuffers();
+        if (!rtEnabled) {
+            recordSecondaryCommandBuffers();
+        }
     }
 
     void drawFrame() {
@@ -4198,7 +4434,11 @@ private:
         // setup the framebuffers and command buffers
         createFrameBuffers(true);
         createCommandBuffers();
-        recordSecondaryCommandBuffers();
+
+        if (!rtEnabled) {
+            recordSecondaryCommandBuffers();
+        }
+
         recordAllCommandBuffers();
 
         auto duration = utils::duration<milliseconds>(now);

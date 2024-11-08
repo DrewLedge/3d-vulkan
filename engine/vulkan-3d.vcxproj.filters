@@ -135,6 +135,12 @@
     <None Include="..\.editorconfig">
       <Filter>Source Files\Other files</Filter>
     </None>
+    <None Include="shaders\deferred.frag">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
+    <None Include="shaders\deferred.vert">
+      <Filter>Shaders\rasterization</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="stb_image.h">

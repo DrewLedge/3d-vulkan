@@ -147,6 +147,8 @@
     <None Include="shaders\compile.bat" />
     <None Include="shaders\composition.frag" />
     <None Include="shaders\composition.vert" />
+    <None Include="shaders\deferred.frag" />
+    <None Include="shaders\deferred.vert" />
     <None Include="shaders\engine.frag" />
     <None Include="shaders\engine.vert" />
     <None Include="shaders\includes\fragformulas.glsl" />

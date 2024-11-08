@@ -5,6 +5,9 @@ if exist shaderlogs rmdir /s /q shaderlogs
 mkdir compiled
 mkdir shaderlogs
 
+glslc --target-env=vulkan1.3 -O deferred.vert -I ./includes/ -o compiled/deferred_vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
+glslc --target-env=vulkan1.3 -O deferred.frag -I ./includes/ -o compiled/deferred_fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
+
 glslc --target-env=vulkan1.3 -O engine.vert -I ./includes/ -o compiled/vertex_shader.spv > shaderlogs/ShaderError.txt 2>&1
 glslc --target-env=vulkan1.3 -O engine.frag -I ./includes/ -o compiled/fragment_shader.spv >> shaderlogs/ShaderError.txt 2>&1
 
