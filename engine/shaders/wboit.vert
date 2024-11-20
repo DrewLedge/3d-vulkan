@@ -31,15 +31,14 @@ layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 proj;
 } CamUBO;
 
-layout(push_constant) uniform PC {
+layout(push_constant, std430) uniform pcV {
     int textureExist;
     int texInd;
-} pc;
+};
 
 void main() {
     outRender = inToRender;
-    uint texIndex = pc.texInd;
-    outBitfield = pc.textureExist;
+    outBitfield = textureExist;
 
     mat4 proj = CamUBO.proj;
     mat4 view = CamUBO.view;
@@ -50,7 +49,7 @@ void main() {
     outTBN = getTBN(inTangent, model, inNormal);
 
     outTexCoord = inTexCoord;
-    outTexIndex = texIndex; // pass the texture index to the fragment shader
+    outTexIndex = texInd; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDir = viewDir;
 

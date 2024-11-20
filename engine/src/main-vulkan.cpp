@@ -392,8 +392,13 @@ private:
         TexIndexObj indices[config::MAX_MODELS];
     };
 
-    struct LightingPushConst {
+    struct FramePushConst {
         int frame;
+    };
+
+    struct ObjectPushConst {
+        int textureExist; // bitfield of which textures exist
+        int texIndex; // starting index of the textures in the texture array
     };
 
 private:
@@ -855,9 +860,6 @@ private:
             swap.imageCount = swapChainSupport.capabilities.maxImageCount;
         }
 
-        // get the graphics queue family indices
-        uint32_t graphicsIndices[] = { queueFamilyIndices.graphicsFamily.value() };
-
         // create the swap chain
         VkSwapchainCreateInfoKHR newinfo{};
         newinfo.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
@@ -873,7 +875,7 @@ private:
         // this reduces synchronization overhead
         newinfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         newinfo.queueFamilyIndexCount = 1;
-        newinfo.pQueueFamilyIndices = graphicsIndices; // which queue families will handle the swap chain images
+        newinfo.pQueueFamilyIndices = &queueFamilyIndices.graphicsFamily.value(); // which queue families will handle the swap chain images
         newinfo.preTransform = swapChainSupport.capabilities.currentTransform; // transform to apply to the swap chain before presentation
         newinfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR; // set the alpha channel to opaque when compositing the final image
         newinfo.presentMode = present;
@@ -1889,7 +1891,7 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         VkVertexInputBindingDescription vertBindDesc{};
         vertBindDesc.binding = 0;
@@ -1903,9 +1905,7 @@ private:
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
-        std::vector<VkVertexInputAttributeDescription> attrDesc;
-        attrDesc.resize(9);
-
+        std::array<VkVertexInputAttributeDescription, 9> attrDesc{};
         attrDesc[0].binding = 0;
         attrDesc[0].location = 0;
         attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
@@ -1947,10 +1947,10 @@ private:
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2013,14 +2013,14 @@ private:
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
         pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(int) * 2; // 1 int for a bitfield of which textures exist, and 1 int for num of textures in a model
+        pushConstantRange.size = sizeof(ObjectPushConst);
 
-        VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.cam.layout.v() };
+        std::array<VkDescriptorSetLayout, 2> layouts = { descs.textures.layout.v(), descs.cam.layout.v() };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
-        pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pSetLayouts = layouts.data();
+        pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
         pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
         pipelineLayoutInf.pushConstantRangeCount = 1;
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, deferredPipeline.layout.p());
@@ -2081,8 +2081,8 @@ private:
         //pipeline setup: the data needed to create the pipeline
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2; // two shaders - vertex and fragment
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -2107,7 +2107,7 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         /*
         // input binding data: tells Vulkan how to read/organize data based on the binding, stride and rate
@@ -2232,16 +2232,16 @@ private:
         VkPushConstantRange pushConstantRange{};
         pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(int);
+        pushConstantRange.size = sizeof(FramePushConst);
+
+        std::array<VkDescriptorSetLayout, 5> layouts = { descs.deferred.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
 
         // pipeline layout setup: defines the connection between shader stages and resources
         // this data includes: descriptorsets and push constants
-        VkDescriptorSetLayout layouts[] = { descs.deferred.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
-
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
-        pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pSetLayouts = layouts.data();
+        pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
         pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
         pipelineLayoutInf.pushConstantRangeCount = 1;
 
@@ -2287,8 +2287,8 @@ private:
         //pipeline setup: the data needed to create the pipeline
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2; // two shaders - vertex and fragment
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -2313,7 +2313,7 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         VkVertexInputBindingDescription vertBindDesc{};
         vertBindDesc.binding = 0;
@@ -2327,9 +2327,7 @@ private:
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
-        std::vector<VkVertexInputAttributeDescription> attrDesc; // array of attribute descriptions
-        attrDesc.resize(5);
-
+        std::array<VkVertexInputAttributeDescription, 5> attrDesc{};
         // vertex position attribute
         attrDesc[0].binding = 0;
         attrDesc[0].location = 0;
@@ -2348,10 +2346,10 @@ private:
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2451,10 +2449,10 @@ private:
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = 1;
         pipelineLayoutInf.pSetLayouts = descs.lightData.layout.p();
-        pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
+        pipelineLayoutInf.setLayoutCount = 1;
         pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+        pipelineLayoutInf.pushConstantRangeCount = 1; // one range of push constants
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, shadowPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!!");
@@ -2463,8 +2461,8 @@ private:
         // create the pipeline based off this pipeline and some data from the lighting pipeline
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2;
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -2488,26 +2486,25 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         VkVertexInputBindingDescription bindDesc{};
         bindDesc.binding = 0;
         bindDesc.stride = sizeof(dml::vec3); // the stride is the size of vec3
         bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-        std::array<VkVertexInputAttributeDescription, 1> attrDesc;
-
-        attrDesc[0].binding = 0;
-        attrDesc[0].location = 0;
-        attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // vec3 is three 32-bit floats
-        attrDesc[0].offset = 0; // offset within the vec3 is 0, since pos is the first element
+        VkVertexInputAttributeDescription attrDesc{};
+        attrDesc.binding = 0;
+        attrDesc.location = 0;
+        attrDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+        attrDesc.offset = 0;
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.pVertexBindingDescriptions = &bindDesc;
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputInfo.vertexBindingDescriptionCount = 1;
+        vertexInputInfo.pVertexAttributeDescriptions = &attrDesc;
+        vertexInputInfo.vertexAttributeDescriptionCount = 1;
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2566,11 +2563,12 @@ private:
         colorBS.attachmentCount = 1;
         colorBS.pAttachments = &colorBA;
 
-        VkDescriptorSetLayout layouts[] = { descs.skybox.layout.v(), descs.cam.layout.v() };
+        std::array<VkDescriptorSetLayout, 2> layouts = { descs.skybox.layout.v(), descs.cam.layout.v() };
+
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
-        pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pSetLayouts = layouts.data();
+        pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, skybox.pipelineLayout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout for skybox!");
@@ -2578,8 +2576,8 @@ private:
 
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2;
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -2602,7 +2600,7 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         VkVertexInputBindingDescription vertBindDesc{};
         vertBindDesc.binding = 0;
@@ -2615,10 +2613,7 @@ private:
         instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
-
-        std::vector<VkVertexInputAttributeDescription> attrDesc;
-
-        attrDesc.resize(9);
+        std::array<VkVertexInputAttributeDescription, 9> attrDesc{};
 
         attrDesc[0].binding = 0;
         attrDesc[0].location = 0;
@@ -2659,10 +2654,10 @@ private:
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
         vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2760,18 +2755,26 @@ private:
             throw std::runtime_error("failed to create render pass!");
         }
 
-        VkPushConstantRange pushConstantRange{};
-        pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        pushConstantRange.offset = 0;
-        pushConstantRange.size = sizeof(int) * 2;
+        VkPushConstantRange objectPCRange{};
+        objectPCRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        objectPCRange.offset = 0;
+        objectPCRange.size = sizeof(ObjectPushConst);
 
-        VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
+        VkPushConstantRange framePCRange{};
+        framePCRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        framePCRange.offset = sizeof(ObjectPushConst);
+        framePCRange.size = sizeof(FramePushConst);
+
+        std::array<VkDescriptorSetLayout, 5> layouts = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
+        std::array<VkPushConstantRange, 2> ranges = { objectPCRange, framePCRange };
+
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
-        pipelineLayoutInf.pSetLayouts = layouts;
-        pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-        pipelineLayoutInf.pushConstantRangeCount = 1;
+        pipelineLayoutInf.pSetLayouts = layouts.data();
+        pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
+        pipelineLayoutInf.pPushConstantRanges = ranges.data();
+        pipelineLayoutInf.pushConstantRangeCount = static_cast<uint32_t>(ranges.size());
+
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, wboitPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout for WBOIT!!");
@@ -2779,8 +2782,8 @@ private:
 
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2;
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -2814,7 +2817,7 @@ private:
 
         VkPipelineShaderStageCreateInfo vertStage = vkh::createShaderStage(VK_SHADER_STAGE_VERTEX_BIT, vertShaderModule);
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
-        VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+        std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2948,8 +2951,8 @@ private:
 
         VkGraphicsPipelineCreateInfo pipelineInf{};
         pipelineInf.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
-        pipelineInf.stageCount = 2;
-        pipelineInf.pStages = stages;
+        pipelineInf.pStages = stages.data();
+        pipelineInf.stageCount = static_cast<uint32_t>(stages.size());
         pipelineInf.pVertexInputState = &vertexInputInfo;
         pipelineInf.pInputAssemblyState = &inputAssem;
         pipelineInf.pViewportState = &vpState;
@@ -3024,12 +3027,12 @@ private:
         shaderGroups[4].closestHitShader = 4;
 
         // create the pipeline layoyut
-        VkDescriptorSetLayout layouts[] = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v(), descs.rt.layout.v(), descs.texIndex.layout.v() };
+        std::array<VkDescriptorSetLayout, 7> layouts = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.skybox.layout.v(), descs.cam.layout.v(), descs.tlas.layout.v(), descs.rt.layout.v(), descs.texIndex.layout.v() };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-        pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
-        pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pSetLayouts = layouts.data();
+        pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create raytracing pipeline layout!!");
@@ -3898,11 +3901,7 @@ private:
                 textureExistence |= (objects[j]->material.emissiveMap.found ? 1 : 0) << 3;
                 textureExistence |= (objects[j]->material.occlusionMap.found ? 1 : 0) << 4;
 
-                struct {
-                    int textureExist; // bitfield of which textures exist
-                    int texIndex; // starting index of the textures in the texture array
-                } pushConst;
-
+                ObjectPushConst pushConst{};
                 pushConst.textureExist = textureExistence;
                 pushConst.texIndex = meshTexStartInd[p];
 
@@ -4037,6 +4036,7 @@ private:
         renderPassInfo.pClearValues = clearValues.data();
 
         vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
+
         vkCmdExecuteCommands(deferredCommandBuffer.v(), static_cast<uint32_t>(deferredCommandBuffers.secondary.size()), deferredCommandBuffers.secondary.data());
         vkCmdEndRenderPass(deferredCommandBuffer.v());
         if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
@@ -4131,7 +4131,7 @@ private:
         vkCmdBindPipeline(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.pipeline.v());
         vkCmdBindDescriptorSets(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.layout.v(), 0, static_cast<uint32_t>(lightingDS.size()), lightingDS.data(), 0, nullptr);
 
-        LightingPushConst pushConst{};
+        FramePushConst pushConst{};
         pushConst.frame = swap.index;
 
         vkCmdPushConstants(lightingCommandBuffer.v(), lightingPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
@@ -4155,6 +4155,10 @@ private:
         if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
+
+        FramePushConst pushConst{};
+        pushConst.frame = swap.index;
+        vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(ObjectPushConst), sizeof(FramePushConst), &pushConst);
 
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -4310,7 +4314,7 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
-        VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
+        VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         std::vector<VkSubmitInfo> submitInfos;
         std::vector<VkCommandBuffer> shadowCmds;
 
@@ -4321,15 +4325,15 @@ private:
                 shadowCmds.push_back(shadowMapCommandBuffers.primary.buffers[index].v());
             }
 
-            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphores[k], deferredSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), lights.size(), waitStages, deferredSemaphores[k], shadowSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[imageIndex].p(), 1, waitStages, shadowSemaphores[k], wboitSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, waitStages, wboitSemaphores[k], compSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, compSemaphores[k], renderFinishedSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, &waitStage, imageAvailableSemaphores[k], deferredSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), lights.size(), &waitStage, deferredSemaphores[k], shadowSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[imageIndex].p(), 1, &waitStage, shadowSemaphores[k], wboitSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, &waitStage, wboitSemaphores[k], compSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, &waitStage, compSemaphores[k], renderFinishedSemaphores[k]));
         }
         else {
-            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphores[k], rtSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, rtSemaphores[k], renderFinishedSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, &waitStage, imageAvailableSemaphores[k], rtSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, &waitStage, rtSemaphores[k], renderFinishedSemaphores[k]));
         }
 
         // submit all command buffers in a single call
@@ -4342,9 +4346,8 @@ private:
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
         presentInfo.pWaitSemaphores = renderFinishedSemaphores[k].p();
-        VkSwapchainKHR swapChains[] = { swap.swapChain.v() };
         presentInfo.swapchainCount = 1;
-        presentInfo.pSwapchains = swapChains;
+        presentInfo.pSwapchains = swap.swapChain.p();
         presentInfo.pImageIndices = &imageIndex;
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
 

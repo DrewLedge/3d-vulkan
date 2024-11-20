@@ -7,7 +7,7 @@ layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
 layout(set = 2, binding = 0) uniform sampler2DShadow shadowMapSamplers[];
 
-layout(set = 4, binding = 0) uniform sampler2D depthSampler;
+layout(set = 4, binding = 0) uniform sampler2D depthSamplers[];
 
 struct LightData {
     vec4 pos;
@@ -29,6 +29,7 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
+
 layout(location = 0) in vec2 inTexCoord;
 layout(location = 1) flat in uint inTexIndex;
 layout(location = 2) in vec3 inFragPos;
@@ -40,6 +41,10 @@ layout(location = 9) in float inFarPlane;
 layout(location = 10) in float inNearPlane;
 
 layout(location = 0) out vec4 outColor;
+
+layout(push_constant, std430) uniform pcF {
+    layout(offset = 8) int frame;
+};
 
 vec4 albedo = vec4(1.0f);
 vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
@@ -55,7 +60,6 @@ float getWeight(float z, float a) {
     return 1.0 - weight;
 }
 
-
 void main() {
     if (inRender == 1) {
         discard;
@@ -63,11 +67,11 @@ void main() {
 
     getTextures(inBitfield, inTexIndex, inTexCoord, inTBN);
 
-    vec4 color = calcLighting(false, true);
+    vec4 color = calcLighting(frame, false, true);
 
     // get the depth from the opaque texture
-    vec2 cords = getTexCords(depthSampler, gl_FragCoord.xy);
-    float oDepth = texture(depthSampler, cords).r;
+    vec2 cords = getTexCords(depthSamplers[frame], gl_FragCoord.xy);
+    float oDepth = texture(depthSamplers[frame], cords).r;
     oDepth = linDepth(oDepth, inNearPlane, inFarPlane);
 
     // get the depth of the fragment

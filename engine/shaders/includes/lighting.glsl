@@ -1,14 +1,15 @@
 #define PI 3.141592653589793238
 
 // get the PCF shadow factor (used for softer shadows)
-float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {
+float shadowPCF(int frame, int lightCount, int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
-    vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[lightIndex], 0);
+    int shadowTexIndex = (frame * lightCount) + lightIndex;
+    vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[shadowTexIndex], 0);
 
     // loop through the PCF kernel
     for (int x = -halfSize; x <= halfSize; ++x) {
@@ -16,7 +17,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
             // sample the depth from shadow map
             vec2 sampleCoords = projCoords.xy + vec2(x, y) * texelSize;
             float currentDepth = projCoords.z;
-            shadow += texture(shadowMapSamplers[lightIndex], vec3(sampleCoords.xy, currentDepth));
+            shadow += texture(shadowMapSamplers[shadowTexIndex], vec3(sampleCoords.xy, currentDepth));
         }
     }
 
@@ -26,7 +27,7 @@ float shadowPCF(int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 nor
 }
 
 
-vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
+vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
     if (discardTranslucent && albedo.a < 0.95) discard;
     if (discardOpaque && albedo.a >= 0.95) discard;
 
@@ -57,7 +58,7 @@ vec4 calcLighting(bool discardTranslucent, bool discardOpaque) {
 
         // shadow factor
         vec4 fragPosLightSpace = lights[i].proj * lights[i].view * vec4(inFragPos, 1.0);
-        float shadowFactor = shadowPCF(i, fragPosLightSpace, 4, normal, fragToLightDir);
+        float shadowFactor = shadowPCF(frame, lights.length(), i, fragPosLightSpace, 4, normal, fragToLightDir);
         if (shadowFactor < 0.01) continue;
 
         // attenuation
