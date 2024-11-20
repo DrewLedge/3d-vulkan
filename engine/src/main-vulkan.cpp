@@ -70,7 +70,8 @@ struct MouseData {
         lastX(0.0f),
         lastY(0.0f),
         locked(true)
-    {}
+    {
+    }
 };
 
 // globals
@@ -136,8 +137,8 @@ private:
     struct Light {
         LightDataObject data{};
 
-        dvl::Texture shadowMapData{};
-        VkhFramebuffer frameBuffer{};
+        std::vector<dvl::Texture> shadowMapData{};
+        std::vector<VkhFramebuffer> frameBuffer{};
 
         bool followPlayer = false;
     };
@@ -217,7 +218,8 @@ private:
             pool(),
             layout(),
             set(pool.v())
-        {}
+        {
+        }
     };
 
     struct DesciptorSetsObj {
@@ -273,7 +275,8 @@ private:
         explicit KeyPO(int key) :
             pressedLastFrame(false),
             keyPress(key)
-        {}
+        {
+        }
 
         bool isPressed() {
             bool notPressedLast = !pressedLastFrame;
@@ -283,20 +286,22 @@ private:
     };
 
     struct WBOITData {
-        dvl::Texture weightedColor{};
-        VkhFramebuffer frameBuffer{};
+        std::vector<dvl::Texture> weightedColor{};
+        std::vector<VkhFramebuffer> frameBuffer{};
     };
 
     struct LightingData {
-        dvl::Texture color{};
-        VkhFramebuffer frameBuffer{};
+        std::vector<dvl::Texture> color;
+        std::vector<VkhFramebuffer> frameBuffer;
     };
 
     struct DeferredRenderingData {
-        VkhFramebuffer frameBuffer{};
-        std::array<dvl::Texture, 4> textures{};
-        dvl::Texture depth{};
+        std::vector<VkhFramebuffer> frameBuffer{};
+        std::vector<dvl::Texture> textures{};
+        std::vector<dvl::Texture> depth{};
         std::array<VkFormat, 4> colorFormats{};
+
+        size_t colorCount = 0;
     };
 
     struct CommandBufferCollection {
@@ -387,6 +392,10 @@ private:
         TexIndexObj indices[config::MAX_MODELS];
     };
 
+    struct LightingPushConst {
+        int frame;
+    };
+
 private:
     const ShadowMapDim shadowProps{};
 
@@ -446,13 +455,13 @@ private:
 
     // synchronization primitives
     std::vector<VkhFence> inFlightFences;
-    VkhSemaphore imageAvailableSemaphore{};
-    VkhSemaphore renderFinishedSemaphore{};
-    VkhSemaphore deferredSemaphore{};
-    VkhSemaphore shadowSemaphore{};
-    VkhSemaphore wboitSemaphore{};
-    VkhSemaphore compSemaphore{};
-    VkhSemaphore rtSemaphore{};
+    std::vector<VkhSemaphore> imageAvailableSemaphores{};
+    std::vector<VkhSemaphore> renderFinishedSemaphores{};
+    std::vector<VkhSemaphore> deferredSemaphores{};
+    std::vector<VkhSemaphore> shadowSemaphores{};
+    std::vector<VkhSemaphore> wboitSemaphores{};
+    std::vector<VkhSemaphore> compSemaphores{};
+    std::vector<VkhSemaphore> rtSemaphores{};
 
     // descriptor sets and pools
     DesciptorSetsObj descs{};
@@ -492,8 +501,10 @@ private:
     std::vector<VkDescriptorImageInfo> shadowInfos;
     std::vector<int> meshTexStartInd;
     uint32_t totalTextureCount = 0;
-    dvl::Texture compTex = dvl::Texture(VK_SAMPLE_COUNT_8_BIT);
     VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+
+    std::vector<dvl::Texture> compTextures;
+    VkSampleCountFlagBits compositionSampleCount = VK_SAMPLE_COUNT_8_BIT;
 
     // skybox data
     SkyboxObject skybox{};
@@ -801,9 +812,9 @@ private:
     }
 
     void createSCImageViews() { //create the image views for the swap chain images
-        swap.imageViews.resize(swap.images.size());
+        swap.imageViews.resize(swap.imageCount);
 
-        for (size_t i = 0; i < swap.images.size(); i++) {
+        for (size_t i = 0; i < swap.imageCount; i++) {
             if (swap.imageViews[i].valid()) swap.imageViews[i].reset();
             VkImageViewCreateInfo newinfo{};
             newinfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -899,7 +910,7 @@ private:
     }
 
     void setupFences() {
-        inFlightFences.resize(swap.images.size());
+        inFlightFences.resize(swap.imageCount);
         VkFenceCreateInfo fenceInfo{};
         fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT; // signaled state fence (fence is signaled when created)
@@ -911,19 +922,21 @@ private:
     }
 
     void createSemaphores() {
-        vkh::createSemaphore(imageAvailableSemaphore);
-        vkh::createSemaphore(renderFinishedSemaphore);
+        for (size_t i = 0; i < swap.imageCount; i++) {
+            imageAvailableSemaphores.emplace_back(vkh::createSemaphore());
+            renderFinishedSemaphores.emplace_back(vkh::createSemaphore());
 
-        if (!rtEnabled) {
-            vkh::createSemaphore(deferredSemaphore);
-            vkh::createSemaphore(shadowSemaphore);
-            vkh::createSemaphore(wboitSemaphore);
-        }
-        else {
-            vkh::createSemaphore(rtSemaphore);
-        }
+            if (!rtEnabled) {
+                deferredSemaphores.emplace_back(vkh::createSemaphore());
+                shadowSemaphores.emplace_back(vkh::createSemaphore());
+                wboitSemaphores.emplace_back(vkh::createSemaphore());
+            }
+            else {
+                rtSemaphores.emplace_back(vkh::createSemaphore());
+            }
 
-        vkh::createSemaphore(compSemaphore);
+            compSemaphores.emplace_back(vkh::createSemaphore());
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1272,12 +1285,14 @@ private:
         vkh::createSampler(tex.sampler, tex.mipLevels, type);
     }
 
-    void setupTextures() {
+    void setupTextures(bool shadow) {
         depthFormat = vkh::findDepthFormat();
-        static bool init = true;
 
         // composition image
-        createTexture(compTex, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+        for (size_t i = 0; i < swap.imageCount; i++) {
+            compTextures.emplace_back(compositionSampleCount);
+            createTexture(compTextures[i], swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+        }
 
         if (rtEnabled) {
             // rt image
@@ -1285,27 +1300,40 @@ private:
             vkh::transitionImageLayout(commandPool, rtTex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1, 0);
         }
         else {
-            // lighting textures
-            createTexture(lightingData.color, swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
-
-            // wboit
-            createTexture(wboit.weightedColor, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
-
-            // shadowmaps
-            if (init) {
-                for (size_t i = 0; i < lights.size(); i++) {
-                    createTexture(lights[i]->shadowMapData, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, shadowProps.width, shadowProps.height);
-                }
-                init = false;
-            }
+            lightingData.color.resize(swap.imageCount);
+            wboit.weightedColor.resize(swap.imageCount);
 
             // deferred rendering textures
-            VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
-            for (uint8_t i = 0; i < 4; i++) {
-                deferredData.colorFormats[i] = vkh::getTextureFormat(vkh::TextureType(i));
-                createTexture(deferredData.textures[i], deferredData.colorFormats[i], usage, swap.extent.width, swap.extent.height);
+            deferredData.colorCount = swap.imageCount * 4;
+            deferredData.depth.resize(swap.imageCount);
+            deferredData.textures.resize(deferredData.colorCount);
+            VkImageUsageFlags deferredUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+            for (size_t i = 0; i < swap.imageCount; i++) {
+
+                // lighting textures
+                createTexture(lightingData.color[i], swap.imageFormat, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+
+                // wboit
+                createTexture(wboit.weightedColor[i], VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+
+                // shadowmaps
+                if (shadow) {
+                    for (size_t j = 0; j < lights.size(); j++) {
+                        dvl::Texture shadowMap{};
+                        createTexture(shadowMap, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, shadowProps.width, shadowProps.height);
+                        lights[j]->shadowMapData.push_back(shadowMap);
+                    }
+                }
+
+                createTexture(deferredData.depth[i], vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+
+                for (size_t j = 0; j < 4; j++) {
+                    size_t texIndex = (i * 4) + j;
+                    deferredData.colorFormats[j] = vkh::getTextureFormat(vkh::TextureType(j));
+                    createTexture(deferredData.textures[texIndex], deferredData.colorFormats[j], deferredUsage, swap.extent.width, swap.extent.height);
+                }
             }
-            createTexture(deferredData.depth, vkh::DEPTH, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
         }
     }
 
@@ -1675,10 +1703,9 @@ private:
         VkDescriptorBufferInfo texIndexInfo{};
 
         // rasterization
-        std::array<VkDescriptorImageInfo, 2> compositionPassImageInfo{};
-        std::array<VkDescriptorImageInfo, 4> deferredImageInfo{};
-        shadowInfos.resize(lightSize);
-        VkDescriptorImageInfo depthInfo{};
+        std::vector<VkDescriptorImageInfo> compositionPassImageInfo{};
+        std::vector<VkDescriptorImageInfo> deferredImageInfo{};
+        std::vector<VkDescriptorImageInfo> depthInfo{};
 
         // raytracing
         VkWriteDescriptorSetAccelerationStructureKHR tlasInfo{};
@@ -1698,27 +1725,46 @@ private:
             texIndexInfo.range = sizeof(TexIndexSSBO);
         }
         else {
-            for (size_t i = 0; i < 2; i++) {
-                compositionPassImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                compositionPassImageInfo[i].imageView = (i == 0) ? lightingData.color.imageView.v() : wboit.weightedColor.imageView.v();
-                compositionPassImageInfo[i].sampler = (i == 0) ? lightingData.color.sampler.v() : wboit.weightedColor.sampler.v();
-            }
+            compositionPassImageInfo.reserve(swap.imageCount * 2);
+            deferredImageInfo.reserve(deferredData.colorCount);
+            shadowInfos.reserve(swap.imageCount * lightSize);
+            depthInfo.reserve(swap.imageCount);
 
-            for (size_t i = 0; i < 4; i++) {
-                deferredImageInfo[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                deferredImageInfo[i].imageView = deferredData.textures[i].imageView.v();
-                deferredImageInfo[i].sampler = deferredData.textures[i].sampler.v();
-            }
+            for (size_t i = 0; i < swap.imageCount; i++) {
+                for (uint8_t j = 0; j < 2; j++) {
+                    VkDescriptorImageInfo info{};
+                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    info.imageView = (j == 0) ? lightingData.color[i].imageView.v() : wboit.weightedColor[i].imageView.v();
+                    info.sampler = (j == 0) ? lightingData.color[i].sampler.v() : wboit.weightedColor[i].sampler.v();
 
-            for (size_t i = 0; i < lightSize; i++) {
-                shadowInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                shadowInfos[i].imageView = lights[i]->shadowMapData.imageView.v();
-                shadowInfos[i].sampler = lights[i]->shadowMapData.sampler.v();
-            }
+                    compositionPassImageInfo.push_back(info);
+                }
 
-            depthInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            depthInfo.imageView = deferredData.depth.imageView.v();
-            depthInfo.sampler = deferredData.depth.sampler.v();
+                for (size_t j = 0; j < 4; j++) {
+                    VkDescriptorImageInfo info{};
+                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    info.imageView = deferredData.textures[i].imageView.v();
+                    info.sampler = deferredData.textures[i].sampler.v();
+
+                    deferredImageInfo.push_back(info);
+                }
+
+                for (size_t j = 0; j < lights.size(); j++) {
+                    VkDescriptorImageInfo info{};
+                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    info.imageView = lights[j]->shadowMapData[i].imageView.v();
+                    info.sampler = lights[j]->shadowMapData[i].sampler.v();
+
+                    shadowInfos.push_back(info);
+                }
+
+                VkDescriptorImageInfo info{};
+                info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                info.imageView = deferredData.depth[i].imageView.v();
+                info.sampler = deferredData.depth[i].sampler.v();
+
+                depthInfo.push_back(info);
+            }
         }
 
         // shader stages
@@ -1743,10 +1789,10 @@ private:
 
         // rasterization specific descriptorsets
         else {
-            createDescriptorSet(descs.deferred, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 4, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config::MAX_LIGHTS, VK_SHADER_STAGE_FRAGMENT_BIT);
-            createDescriptorSet(descs.composition, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2, VK_SHADER_STAGE_FRAGMENT_BIT);
-            createDescriptorSet(descs.depth, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.deferred, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, deferredData.colorCount, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config::MAX_LIGHTS * swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.composition, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.depth, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
 
             textursSS = VK_SHADER_STAGE_FRAGMENT_BIT;
             lightDataSS = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
@@ -1776,7 +1822,7 @@ private:
             descriptorWrites.emplace_back(vkh::createDSWrite(descs.deferred.set, descs.deferred.binding, 0, descs.deferred.type, deferredImageInfo.data(), deferredImageInfo.size()));
             descriptorWrites.emplace_back(vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size()));
             descriptorWrites.emplace_back(vkh::createDSWrite(descs.composition.set, descs.composition.binding, 0, descs.composition.type, compositionPassImageInfo.data(), compositionPassImageInfo.size()));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.depth.set, descs.depth.binding, 0, descs.depth.type, depthInfo));
+            descriptorWrites.emplace_back(vkh::createDSWrite(descs.depth.set, descs.depth.binding, 0, descs.depth.type, depthInfo.data(), depthInfo.size()));
         }
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -1886,7 +1932,7 @@ private:
         // pass the model matrix as a per-instance data
         // seperate the matrix into 4 vec4's so it can be quickly passed and processed
         for (uint32_t i = 0; i < 4; i++) {
-            uint8_t index = 4 + i;
+            uint32_t index = 4 + i;
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -2183,6 +2229,11 @@ private:
         colorBS.attachmentCount = 1; //number of color blend attachments
         colorBS.pAttachments = &colorBA;
 
+        VkPushConstantRange pushConstantRange{};
+        pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pushConstantRange.offset = 0;
+        pushConstantRange.size = sizeof(int);
+
         // pipeline layout setup: defines the connection between shader stages and resources
         // this data includes: descriptorsets and push constants
         VkDescriptorSetLayout layouts[] = { descs.deferred.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
@@ -2191,6 +2242,9 @@ private:
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInf.setLayoutCount = sizeof(layouts) / sizeof(VkDescriptorSetLayout);
         pipelineLayoutInf.pSetLayouts = layouts;
+        pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+        pipelineLayoutInf.pushConstantRangeCount = 1;
+
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, lightingPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create pipeline layout!!");
@@ -2285,7 +2339,7 @@ private:
         // pass the model matrix as a per-instance data
         // seperate the matrix into 4 vec4's so it can be quickly passed and processed
         for (uint32_t i = 0; i < 4; i++) {
-            uint8_t index = i + 1;
+            uint32_t index = i + 1;
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -2591,7 +2645,7 @@ private:
 
         // pass the model matrix as a per-instance data
         for (uint32_t i = 0; i < 4; i++) {
-            uint8_t index = 4 + i;
+            uint32_t index = 4 + i;
             attrDesc[index].binding = 1;
             attrDesc[index].location = index;
             attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
@@ -2799,7 +2853,7 @@ private:
 
         VkPipelineMultisampleStateCreateInfo multiSamp{};
         multiSamp.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-        multiSamp.rasterizationSamples = compTex.sampleCount;
+        multiSamp.rasterizationSamples = compositionSampleCount;
         multiSamp.alphaToCoverageEnable = VK_FALSE;
         multiSamp.alphaToOneEnable = VK_FALSE;
         multiSamp.sampleShadingEnable = VK_TRUE;
@@ -2833,7 +2887,7 @@ private:
 
         VkAttachmentDescription colorAttachment{};
         colorAttachment.format = swap.imageFormat;
-        colorAttachment.samples = compTex.sampleCount;
+        colorAttachment.samples = compositionSampleCount;
         colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
@@ -3083,7 +3137,7 @@ private:
         initInfo.MinImageCount = swap.imageCount;
         initInfo.ImageCount = swap.imageCount;
         initInfo.CheckVkResultFn = check_vk_result; // function to check vulkan results
-        initInfo.MSAASamples = compTex.sampleCount;
+        initInfo.MSAASamples = compositionSampleCount;
 
         ImGui_ImplVulkan_Init(&initInfo, compPipeline.renderPass.v());
 
@@ -3655,11 +3709,12 @@ private:
         Light l = createLight(pos, target);
 
         if (!rtEnabled) {
-            vkh::createImage(l.shadowMapData.image, l.shadowMapData.memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                l.shadowMapData.sampleCount);
-            vkh::createImageView(l.shadowMapData, vkh::DEPTH);
-            vkh::createSampler(l.shadowMapData.sampler, l.shadowMapData.mipLevels, vkh::DEPTH);
-            vkh::createFB(shadowPipeline.renderPass, l.frameBuffer, l.shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+            for (size_t i = 0; i < swap.imageCount; i++) {
+                vkh::createImage(l.shadowMapData[i].image, l.shadowMapData[i].memory, shadowProps.width, shadowProps.height, depthFormat, 1, 1, false, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, l.shadowMapData[i].sampleCount);
+                vkh::createImageView(l.shadowMapData[i], vkh::DEPTH);
+                vkh::createSampler(l.shadowMapData[i].sampler, l.shadowMapData[i].mipLevels, vkh::DEPTH);
+                vkh::createFB(shadowPipeline.renderPass, l.frameBuffer[i], l.shadowMapData[i].imageView.p(), 1, shadowProps.width, shadowProps.height);
+            }
 
             VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
             VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
@@ -3675,11 +3730,13 @@ private:
 
             lights.push_back(std::make_unique<Light>(l));
 
-            VkDescriptorImageInfo shadowInfo{};
-            shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
-            shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
-            shadowInfos.push_back(shadowInfo);
+            for (size_t i = 0; i < swap.imageCount; i++) {
+                VkDescriptorImageInfo shadowInfo{};
+                shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                shadowInfo.imageView = lights.back()->shadowMapData[i].imageView.v();
+                shadowInfo.sampler = lights.back()->shadowMapData[i].sampler.v();
+                shadowInfos.push_back(shadowInfo);
+            }
         }
         else {
             lights.push_back(std::make_unique<Light>(l));
@@ -3702,11 +3759,14 @@ private:
         allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
 
         shadowInfos.clear();
-        VkDescriptorImageInfo shadowInfo{};
-        shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-        shadowInfo.imageView = lights.back()->shadowMapData.imageView.v();
-        shadowInfo.sampler = lights.back()->shadowMapData.sampler.v();
-        shadowInfos.push_back(shadowInfo);
+
+        for (size_t i = 0; i < swap.imageCount; i++) {
+            VkDescriptorImageInfo shadowInfo{};
+            shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            shadowInfo.imageView = lights.back()->shadowMapData[i].imageView.v();
+            shadowInfo.sampler = lights.back()->shadowMapData[i].sampler.v();
+            shadowInfos.push_back(shadowInfo);
+        }
 
         createLightBuffer();
         updateLightDS();
@@ -3752,7 +3812,7 @@ private:
     void createCommandBuffers() {
         if (!rtEnabled) {
             allocateCommandBuffers(deferredCommandBuffers, swap.imageCount, 1);
-            allocateCommandBuffers(shadowMapCommandBuffers, lights.size(), lights.size());
+            allocateCommandBuffers(shadowMapCommandBuffers, lights.size() * swap.imageCount, lights.size());
             allocateCommandBuffers(lightingPassCommandBuffers, swap.imageCount, 0);
             allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
         }
@@ -3763,38 +3823,46 @@ private:
         allocateCommandBuffers(compCommandBuffers, swap.imageCount, 0);
     }
 
-    void createFrameBuffers(bool initial) {
+    void createFrameBuffers(bool shadow) {
         if (!rtEnabled) {
+            deferredData.frameBuffer.resize(swap.imageCount);
+            lightingData.frameBuffer.resize(swap.imageCount);
+            wboit.frameBuffer.resize(swap.imageCount);
 
-            // create the deferred pass framebuffers
-            std::vector<VkImageView> attachmentsD;
-            attachmentsD.reserve(5);
-            for (uint8_t i = 0; i < 4; i++) {
-                attachmentsD.push_back(deferredData.textures[i].imageView.v());
-            }
-            attachmentsD.push_back(deferredData.depth.imageView.v());
-            vkh::createFB(deferredPipeline.renderPass, deferredData.frameBuffer, attachmentsD.data(), attachmentsD.size(), swap.extent.width, swap.extent.height);
+            for (size_t i = 0; i < swap.imageCount; i++) {
 
-            if (initial) {
-                // create the shadowmap framebuffers
-                for (size_t i = 0; i < lights.size(); i++) {
-                    vkh::createFB(shadowPipeline.renderPass, lights[i]->frameBuffer, lights[i]->shadowMapData.imageView.p(), 1, shadowProps.width, shadowProps.height);
+                // create the deferred pass framebuffers
+                std::array<VkImageView, 5> attachments{};
+                for (size_t j = 0; j < 4; j++) {
+                    size_t k = (i * 4) + j;
+                    attachments[j] = deferredData.textures[k].imageView.v();
                 }
+
+                attachments[4] = deferredData.depth[i].imageView.v();
+                vkh::createFB(deferredPipeline.renderPass, deferredData.frameBuffer[i], attachments.data(), 5, swap.extent.width, swap.extent.height);
+
+                // shadowmap framebuffers
+                if (shadow) {
+                    for (size_t j = 0; j < lights.size(); j++) {
+                        VkhFramebuffer fb{};
+                        vkh::createFB(shadowPipeline.renderPass, fb, lights[j]->shadowMapData[i].imageView.p(), 1, shadowProps.width, shadowProps.height);
+                        lights[j]->frameBuffer.push_back(fb);
+                    }
+                }
+
+                // create the lighting pass framebuffer
+                vkh::createFB(lightingPipeline.renderPass, lightingData.frameBuffer[i], lightingData.color[i].imageView.p(), 1, swap.extent.width, swap.extent.height);
+
+                // create the wboit framebuffer
+                vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer[i], wboit.weightedColor[i].imageView.p(), 1, swap.extent.width, swap.extent.height);
             }
-
-            // create the lighting pass framebuffer
-            vkh::createFB(lightingPipeline.renderPass, lightingData.frameBuffer, lightingData.color.imageView.p(), 1, swap.extent.width, swap.extent.height);
-
-            // create the wboit framebuffer
-            vkh::createFB(wboitPipeline.renderPass, wboit.frameBuffer, wboit.weightedColor.imageView.p(), 1, swap.extent.width, swap.extent.height);
         }
 
         // create the composition framebuffers
-        size_t swapSize = swap.imageViews.size();
-        if (initial) swap.framebuffers.resize(swapSize);
-        for (size_t i = 0; i < swapSize; i++) {
-            std::vector<VkImageView> attachments = { compTex.imageView.v(), swap.imageViews[i].v() };
-            vkh::createFB(compPipeline.renderPass, swap.framebuffers[i], attachments.data(), attachments.size(), swap.extent.width, swap.extent.height);
+        swap.framebuffers.resize(swap.imageCount);
+        for (size_t i = 0; i < swap.imageCount; i++) {
+            std::array<VkImageView, 2> attachments = { compTextures[i].imageView.v(), swap.imageViews[i].v() };
+            vkh::createFB(compPipeline.renderPass, swap.framebuffers[i], attachments.data(), 2, swap.extent.width, swap.extent.height);
         }
     }
 
@@ -3854,17 +3922,15 @@ private:
         }
     }
 
-    void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
+    void recordShadowSecondaryCommandBuffers(std::vector<VkhCommandBuffer>& secondaries, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount) {
         size_t size = secondaries.size();
 
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
         for (size_t i = 0; i < size; i++) {
-            if (startCommand) {
-                if (vkBeginCommandBuffer(secondaries[i].v(), &beginInfo) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to begin recording shadow secondary command buffer!");
-                }
+            if (vkBeginCommandBuffer(secondaries[i].v(), &beginInfo) != VK_SUCCESS) {
+                throw std::runtime_error("failed to begin recording shadow secondary command buffer!");
             }
 
             vkCmdBindPipeline(secondaries[i].v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
@@ -3892,11 +3958,9 @@ private:
             }
         }
 
-        if (endCommand) {
-            for (size_t i = 0; i < size; i++) {
-                if (vkEndCommandBuffer(secondaries[i].v()) != VK_SUCCESS) {
-                    throw std::runtime_error("failed to record shadow secondary command buffer!");
-                }
+        for (size_t i = 0; i < size; i++) {
+            if (vkEndCommandBuffer(secondaries[i].v()) != VK_SUCCESS) {
+                throw std::runtime_error("failed to record shadow secondary command buffer!");
             }
         }
     }
@@ -3931,7 +3995,7 @@ private:
         shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-        recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowPipeline, shadowBeginInfo, descs.lightData.set.p(), 1, true, true);
+        recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowPipeline, shadowBeginInfo, descs.lightData.set.p(), 1);
 
         // FOR THE WBOIT PASS
         VkCommandBufferInheritanceInfo wboitInheritInfo{};
@@ -3966,7 +4030,7 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = deferredPipeline.renderPass.v();
-        renderPassInfo.framebuffer = deferredData.frameBuffer.v();
+        renderPassInfo.framebuffer = deferredData.frameBuffer[swap.index].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -3988,11 +4052,12 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkClearValue clearValue = VkClearValue{ 1.0f, 0 };
+        const VkClearValue clearValue = VkClearValue{ 1.0f, 0 };
 
         for (size_t i = 0; i < lights.size(); i++) {
             shadowCmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[i];
+                size_t index = (swap.index * lights.size()) + i;
+                VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[index];
                 VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
                 if (vkBeginCommandBuffer(shadowCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
@@ -4003,7 +4068,7 @@ private:
                 VkRenderPassBeginInfo renderPassInfo{};
                 renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassInfo.renderPass = shadowPipeline.renderPass.v();
-                renderPassInfo.framebuffer = lights[i]->frameBuffer.v();
+                renderPassInfo.framebuffer = lights[i]->frameBuffer[swap.index].v();
                 renderPassInfo.renderArea.offset = { 0, 0 };
                 renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
                 renderPassInfo.clearValueCount = 1;
@@ -4045,13 +4110,13 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = lightingPipeline.renderPass.v();
-        renderPassInfo.framebuffer = lightingData.frameBuffer.v();
+        renderPassInfo.framebuffer = lightingData.frameBuffer[swap.index].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearValue;
 
-        vkh::transitionImageLayout(lightingCommandBuffer, deferredData.depth.image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+        vkh::transitionImageLayout(lightingCommandBuffer, deferredData.depth[swap.index].image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
         vkCmdBeginRenderPass(lightingCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -4065,6 +4130,12 @@ private:
         // lighting
         vkCmdBindPipeline(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.pipeline.v());
         vkCmdBindDescriptorSets(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.layout.v(), 0, static_cast<uint32_t>(lightingDS.size()), lightingDS.data(), 0, nullptr);
+
+        LightingPushConst pushConst{};
+        pushConst.frame = swap.index;
+
+        vkCmdPushConstants(lightingCommandBuffer.v(), lightingPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
+
         vkCmdDraw(lightingCommandBuffer.v(), 6, 1, 0, 0);
         vkCmdEndRenderPass(lightingCommandBuffer.v());
 
@@ -4088,7 +4159,7 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = wboitPipeline.renderPass.v();
-        renderPassInfo.framebuffer = wboit.frameBuffer.v();
+        renderPassInfo.framebuffer = wboit.frameBuffer[swap.index].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -4205,7 +4276,7 @@ private:
 
         createSC();
         createSCImageViews();
-        setupTextures();
+        setupTextures(false);
 
         // create the descriptorsets
         setupDescriptorSets();
@@ -4224,11 +4295,12 @@ private:
     }
 
     void drawFrame() {
+        size_t k = swap.index;
         uint32_t imageIndex;
         vkResetFences(device, 1, inFlightFences[swap.index].p());
 
         // acquire the next image from the swapchain
-        VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphore.v(), VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[k].v(), VK_NULL_HANDLE, &imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             vkDeviceWaitIdle(device);
             recreateSwap();
@@ -4240,17 +4312,24 @@ private:
 
         VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
         std::vector<VkSubmitInfo> submitInfos;
+        std::vector<VkCommandBuffer> shadowCmds;
 
         if (!rtEnabled) {
-            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphore, deferredSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(shadowMapCommandBuffers.primary.data(), lights.size(), waitStages, deferredSemaphore, shadowSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[imageIndex].p(), 1, waitStages, shadowSemaphore, wboitSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, waitStages, wboitSemaphore, compSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, compSemaphore, renderFinishedSemaphore));
+            shadowCmds.reserve(lights.size());
+            for (size_t i = 0; i < lights.size(); i++) {
+                size_t index = (k * lights.size()) + i;
+                shadowCmds.push_back(shadowMapCommandBuffers.primary.buffers[index].v());
+            }
+
+            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphores[k], deferredSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), lights.size(), waitStages, deferredSemaphores[k], shadowSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[imageIndex].p(), 1, waitStages, shadowSemaphores[k], wboitSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, waitStages, wboitSemaphores[k], compSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, compSemaphores[k], renderFinishedSemaphores[k]));
         }
         else {
-            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphore, rtSemaphore));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, rtSemaphore, renderFinishedSemaphore));
+            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, waitStages, imageAvailableSemaphores[k], rtSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, waitStages, rtSemaphores[k], renderFinishedSemaphores[k]));
         }
 
         // submit all command buffers in a single call
@@ -4262,7 +4341,7 @@ private:
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = renderFinishedSemaphore.p();
+        presentInfo.pWaitSemaphores = renderFinishedSemaphores[k].p();
         VkSwapchainKHR swapChains[] = { swap.swapChain.v() };
         presentInfo.swapchainCount = 1;
         presentInfo.pSwapchains = swapChains;
@@ -4279,36 +4358,34 @@ private:
         }
     }
 
-    void calcFps(auto& start, auto& prev, uint8_t& frameCount) {
-        auto endTime = std::chrono::steady_clock::now();
+    void calcFps() {
+        static auto lastUpdated = utils::now();
+
+        // num of frames since fps was last updated
+        static size_t frameCount = 0;
         frameCount++;
 
-        // calculate FPS every 200 ms
-        auto timeSincePrevious = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - prev).count();
-        if (timeSincePrevious >= 200) {
-            fps = static_cast<uint32_t>(1000 * frameCount / timeSincePrevious);
+        // time since fps was last updated
+        double elapsed = utils::duration<milliseconds>(lastUpdated).count() / 1000.0;
+
+        // calculate FPS every 200ms
+        if (elapsed >= 0.2) {
+            fps = static_cast<uint32_t>(frameCount / elapsed);
             frameCount = 0;
-            prev = endTime;
+            lastUpdated = utils::now();
         }
     }
 
     void mainLoop() {
-        uint8_t frameCount = 0;
-        uint8_t swapSize = static_cast<uint8_t>(swap.images.size());
-        auto startTime = std::chrono::steady_clock::now();
-        auto previousTime = startTime;
-
         while (!glfwWindowShouldClose(window)) {
-            swap.index = (swap.index + 1) % swapSize;
+            calcFps();
             glfwPollEvents();
-            drawFrame();
             handleKeyboardInput();
-            recordAllCommandBuffers();
             updateUBO();
-            calcFps(startTime, previousTime, frameCount);
-            if (rtEnabled) {
-                updateTLAS();
-            }
+            if (rtEnabled) updateTLAS();
+            recordAllCommandBuffers();
+            drawFrame();
+            swap.index = (swap.index + 1) % swap.imageCount;
         }
 
         vkDeviceWaitIdle(device);
@@ -4339,7 +4416,7 @@ private:
             setupAccelerationStructures();
         }
 
-        setupTextures();
+        setupTextures(true);
         loadSkybox("night-sky.hdr");
         setupBuffers();
         getAllTextures();

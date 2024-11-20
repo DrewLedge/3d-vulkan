@@ -394,14 +394,17 @@ namespace vkh {
         }
     }
 
-    void createSemaphore(VkhSemaphore& semaphore) {
+    VkhSemaphore createSemaphore() {
+        VkhSemaphore result{};
+
         VkSemaphoreCreateInfo semaphoreInfo{};
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
-        VkResult resultRenderFinished = vkCreateSemaphore(device, &semaphoreInfo, nullptr, semaphore.p());
-        if (resultRenderFinished != VK_SUCCESS) {
+        if (vkCreateSemaphore(device, &semaphoreInfo, nullptr, result.p()) != VK_SUCCESS) {
             throw std::runtime_error("failed to create semaphore!");
         }
+
+        return result;
     }
 
     VkSubmitInfo createSubmitInfo(const VkCommandBuffer* commandBuffers, size_t commandBufferCount) {
