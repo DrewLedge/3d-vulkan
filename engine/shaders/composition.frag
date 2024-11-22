@@ -8,12 +8,18 @@ layout(set = 0, binding = 0) uniform sampler2D textures[];
 layout(location = 0) in vec2 inUV;
 layout(location = 0) out vec4 outColor;
 
+layout(push_constant, std430) uniform pcF {
+    int frame;
+};
+
 void main() {
+    int base = frame * 2;
+
     // get the color and depth from the main pass 
-    vec4 mainColor = texture(textures[0], inUV);
+    vec4 mainColor = texture(textures[base], inUV);
 
     // get the weighted color and alpha from the wboit pass
-    vec4 weightedColor = texture(textures[1], inUV);
+    vec4 weightedColor = texture(textures[base + 1], inUV);
     float weightedAlpha = weightedColor.a;
 
     // if there is no weighted color, early out

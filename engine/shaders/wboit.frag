@@ -29,7 +29,6 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 };
 
-
 layout(location = 0) in vec2 inTexCoord;
 layout(location = 1) flat in uint inTexIndex;
 layout(location = 2) in vec3 inFragPos;
@@ -43,7 +42,7 @@ layout(location = 10) in float inNearPlane;
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant, std430) uniform pcF {
-    layout(offset = 8) int frame;
+    int frame;
 };
 
 vec4 albedo = vec4(1.0f);

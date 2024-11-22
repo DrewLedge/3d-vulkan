@@ -40,7 +40,7 @@
 using microseconds = std::chrono::microseconds;
 using milliseconds = std::chrono::milliseconds;
 
-namespace config {
+namespace cfg {
     constexpr uint32_t MAX_MODELS = 1600;
     constexpr uint32_t MAX_LIGHTS = 200;
 
@@ -154,7 +154,7 @@ private:
     };
 
     struct ModelInstanceData {
-        ModelInstance object[config::MAX_MODELS];
+        ModelInstance object[cfg::MAX_MODELS];
     };
     struct CamUBO {
         dml::mat4 view{};
@@ -264,8 +264,8 @@ private:
         std::vector<VkhImageView> imageViews;
         std::vector<VkhFramebuffer> framebuffers;
 
-        size_t index = 0;
         uint32_t imageCount = 0;
+        uint32_t imageIndex = 0;
     };
 
     struct KeyPO {
@@ -389,7 +389,7 @@ private:
     };
 
     struct TexIndexSSBO {
-        TexIndexObj indices[config::MAX_MODELS];
+        TexIndexObj indices[cfg::MAX_MODELS];
     };
 
     struct FramePushConst {
@@ -408,6 +408,8 @@ private:
     bool rtEnabled = false; // a bool if raytracing has been enabled
 
     CamData cam{};
+
+    uint32_t currentFrame = 0;
 
     // window and rendering context
     VkQueue presentQueue{};
@@ -467,6 +469,8 @@ private:
     std::vector<VkhSemaphore> wboitSemaphores{};
     std::vector<VkhSemaphore> compSemaphores{};
     std::vector<VkhSemaphore> rtSemaphores{};
+
+    FramePushConst framePushConst{};
 
     // descriptor sets and pools
     DesciptorSetsObj descs{};
@@ -537,16 +541,16 @@ private:
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE); // enable window resizing
 
-        std::string engineName = "3d-vulkan " + config::ENGINE_VER;
+        std::string engineName = "3d-vulkan " + cfg::ENGINE_VER;
 
-        window = glfwCreateWindow(config::SCREEN_WIDTH, config::SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
+        window = glfwCreateWindow(cfg::SCREEN_WIDTH, cfg::SCREEN_HEIGHT, engineName.c_str(), nullptr, nullptr);
 
         // imgui initialization
         IMGUI_CHECKVERSION();
         ImGui::CreateContext();
         ImGui_ImplGlfw_InitForVulkan(window, true);
 
-        largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((config::FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
+        largeFont = ImGui::GetIO().Fonts->AddFontFromFileTTF((cfg::FONT_DIR + "OpenSans/OpenSans-VariableFont_wdth,wght.ttf").c_str(), 50.0f);
     }
 
     void validateFiles() {
@@ -851,7 +855,7 @@ private:
         // choose the best surface format, present mode, and swap extent for the swap chain
         VkSurfaceFormatKHR surfaceFormat = vkh::chooseSwapSurfaceFormat(swapChainSupport.formats);
         VkPresentModeKHR present = vkh::chooseSwapPresentMode(swapChainSupport.presentModes);
-        VkExtent2D extent = vkh::chooseSwapExtent(swapChainSupport.capabilities, config::SCREEN_WIDTH, config::SCREEN_HEIGHT);
+        VkExtent2D extent = vkh::chooseSwapExtent(swapChainSupport.capabilities, cfg::SCREEN_WIDTH, cfg::SCREEN_HEIGHT);
 
         // get the number of images for the sc. this is the minumum + 1
         swap.imageCount = swapChainSupport.capabilities.minImageCount + 1;
@@ -986,9 +990,9 @@ private:
 
     void handleKeyboardInput() {
         if (mouse.locked) {
-            double currentFrame = glfwGetTime();
-            float deltaTime = static_cast<float>(currentFrame - lastFrame);
-            lastFrame = currentFrame;
+            double g = glfwGetTime();
+            float deltaTime = static_cast<float>(g - lastFrame);
+            lastFrame = g;
 
             float cameraSpeed = 2.0f * deltaTime;
 
@@ -1042,7 +1046,7 @@ private:
 
             std::cout << "Vertex count: " << vertCount << "\n";
             std::cout << "Object count: " << objects.size() << "\n";
-            std::cout << "Light count: " << lights.size() << " / " << config::MAX_LIGHTS << "\n";
+            std::cout << "Light count: " << lights.size() << " / " << cfg::MAX_LIGHTS << "\n";
             std::cout << "Score: " << score << "\n";
             utils::sep();
         }
@@ -1340,7 +1344,7 @@ private:
     }
 
     void loadSkybox(const std::string& path) {
-        skybox.cubemap.path = config::SKYBOX_DIR + path;
+        skybox.cubemap.path = cfg::SKYBOX_DIR + path;
         createTexturedCubemap(skybox.cubemap, skybox.imgData);
 
         vkh::createImageView(skybox.cubemap, vkh::CUBEMAP);
@@ -1472,7 +1476,7 @@ private:
     }
 
     void createObject(const std::string& name, dml::vec3 scale, dml::vec4 rot, dml::vec3 pos) {
-        std::string path = std::string(config::MODEL_DIR) + name;
+        std::string path = std::string(cfg::MODEL_DIR) + name;
         objTasks.emplace_back(std::async(std::launch::async, &Engine::loadModel, this, path, scale, rot, pos));
     }
 
@@ -1733,20 +1737,13 @@ private:
             depthInfo.reserve(swap.imageCount);
 
             for (size_t i = 0; i < swap.imageCount; i++) {
-                for (uint8_t j = 0; j < 2; j++) {
-                    VkDescriptorImageInfo info{};
-                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    info.imageView = (j == 0) ? lightingData.color[i].imageView.v() : wboit.weightedColor[i].imageView.v();
-                    info.sampler = (j == 0) ? lightingData.color[i].sampler.v() : wboit.weightedColor[i].sampler.v();
-
-                    compositionPassImageInfo.push_back(info);
-                }
-
                 for (size_t j = 0; j < 4; j++) {
+                    size_t k = (i * 4) + j;
+
                     VkDescriptorImageInfo info{};
                     info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    info.imageView = deferredData.textures[i].imageView.v();
-                    info.sampler = deferredData.textures[i].sampler.v();
+                    info.imageView = deferredData.textures[k].imageView.v();
+                    info.sampler = deferredData.textures[k].sampler.v();
 
                     deferredImageInfo.push_back(info);
                 }
@@ -1760,12 +1757,23 @@ private:
                     shadowInfos.push_back(info);
                 }
 
-                VkDescriptorImageInfo info{};
-                info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                info.imageView = deferredData.depth[i].imageView.v();
-                info.sampler = deferredData.depth[i].sampler.v();
+                VkDescriptorImageInfo dinfo{};
+                dinfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                dinfo.imageView = deferredData.depth[i].imageView.v();
+                dinfo.sampler = deferredData.depth[i].sampler.v();
+                depthInfo.push_back(dinfo);
 
-                depthInfo.push_back(info);
+                VkDescriptorImageInfo linfo{};
+                linfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                linfo.imageView = lightingData.color[i].imageView.v();
+                linfo.sampler = lightingData.color[i].sampler.v();
+                compositionPassImageInfo.push_back(linfo);
+
+                VkDescriptorImageInfo winfo{};
+                winfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                winfo.imageView = wboit.weightedColor[i].imageView.v();
+                winfo.sampler = wboit.weightedColor[i].sampler.v();
+                compositionPassImageInfo.push_back(winfo);
             }
         }
 
@@ -1792,7 +1800,7 @@ private:
         // rasterization specific descriptorsets
         else {
             createDescriptorSet(descs.deferred, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, deferredData.colorCount, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT);
-            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, config::MAX_LIGHTS * swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
+            createDescriptorSet(descs.shadowmaps, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, cfg::MAX_LIGHTS * swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
             createDescriptorSet(descs.composition, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 2 * swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
             createDescriptorSet(descs.depth, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, swap.imageCount, VK_SHADER_STAGE_FRAGMENT_BIT);
 
@@ -1880,7 +1888,7 @@ private:
     }
 
     VkhShaderModule createShaderMod(const std::string& name) {
-        std::vector<char> shaderCode = readFile(config::SHADER_DIR + name + std::string("_shader.spv"));
+        std::vector<char> shaderCode = readFile(cfg::SHADER_DIR + name + std::string("_shader.spv"));
         return vkh::createShaderModule(shaderCode);
     }
 
@@ -2755,18 +2763,18 @@ private:
             throw std::runtime_error("failed to create render pass!");
         }
 
-        VkPushConstantRange objectPCRange{};
-        objectPCRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
-        objectPCRange.offset = 0;
-        objectPCRange.size = sizeof(ObjectPushConst);
-
         VkPushConstantRange framePCRange{};
         framePCRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-        framePCRange.offset = sizeof(ObjectPushConst);
+        framePCRange.offset = 0;
         framePCRange.size = sizeof(FramePushConst);
 
-        std::array<VkDescriptorSetLayout, 5> layouts = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
-        std::array<VkPushConstantRange, 2> ranges = { objectPCRange, framePCRange };
+        VkPushConstantRange objectPCRange{};
+        objectPCRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+        objectPCRange.offset = sizeof(FramePushConst);
+        objectPCRange.size = sizeof(ObjectPushConst);
+
+        const std::array<VkDescriptorSetLayout, 5> layouts = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
+        const std::array<VkPushConstantRange, 2> ranges = { framePCRange, objectPCRange };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -2941,7 +2949,14 @@ private:
             pipelineLayoutInf.pSetLayouts = descs.rt.layout.p();
         }
         else {
+            VkPushConstantRange pushConstantRange{};
+            pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+            pushConstantRange.offset = 0;
+            pushConstantRange.size = sizeof(FramePushConst);
+
             pipelineLayoutInf.pSetLayouts = descs.composition.layout.p();
+            pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
+            pipelineLayoutInf.pushConstantRangeCount = 1;
         }
 
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipeline.layout.p());
@@ -3398,13 +3413,13 @@ private:
         if (tlas.as.valid()) tlas.as.reset();
 
         // create a buffer to hold all of the instances
-        VkDeviceSize iSize = config::MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
+        VkDeviceSize iSize = cfg::MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
         VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
         vkh::createAndWriteHostBuffer(tlas.instanceBuffer, tlas.instanceBufferMem, meshInstances.data(), iSize, iUsage, iMemFlags);
 
         uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
-        uint32_t primitiveCountMax = config::MAX_MODELS;
+        uint32_t primitiveCountMax = cfg::MAX_MODELS;
 
         // acceleration structure geometry
         VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
@@ -3685,8 +3700,8 @@ private:
     }
 
     void summonModel() {
-        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
-        if (objects.size() + 2 >= config::MAX_MODELS) return;
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        if (objects.size() + 2 >= cfg::MAX_MODELS) return;
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
         cloneObject(pos, "Soi_SimpleArmor.001_Armour_Cloth_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
@@ -3704,8 +3719,8 @@ private:
     }
 
     void summonLight() {
-        if (lights.size() + 1 > config::MAX_LIGHTS) return;
-        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
+        if (lights.size() + 1 > cfg::MAX_LIGHTS) return;
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
         dml::vec3 target = pos + dml::quatToDir(cam.quat);
@@ -3754,7 +3769,7 @@ private:
     }
 
     void resetScene() {
-        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
         // remove all non player following lights
         lights.erase(std::remove_if(lights.begin(), lights.end(), [](const std::unique_ptr<Light>& l) { return l && !l->followPlayer; }), lights.end());
@@ -3817,7 +3832,7 @@ private:
             allocateCommandBuffers(deferredCommandBuffers, swap.imageCount, 1);
             allocateCommandBuffers(shadowMapCommandBuffers, lights.size() * swap.imageCount, lights.size());
             allocateCommandBuffers(lightingPassCommandBuffers, swap.imageCount, 0);
-            allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 1);
+            allocateCommandBuffers(wboitCommandBuffers, swap.imageCount, 0);
         }
         else {
             allocateCommandBuffers(rtCommandBuffers, swap.imageCount, 0);
@@ -3872,7 +3887,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void recordObjectSecondaryCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand) {
+    void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand, bool framePushConst) {
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffer.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
@@ -3905,7 +3920,9 @@ private:
                 pushConst.textureExist = textureExistence;
                 pushConst.texIndex = meshTexStartInd[p];
 
-                vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(pushConst), &pushConst);
+                uint32_t offset = (framePushConst) ? static_cast<uint32_t>(sizeof(FramePushConst)) : 0;
+                vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, offset, sizeof(ObjectPushConst), &pushConst);
+
                 size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
                 uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
                 vkCmdDrawIndexed(secondary.v(), bufferData[bufferInd].indexCount, instanceCount,
@@ -3966,7 +3983,6 @@ private:
 
     void recordSecondaryCommandBuffers() {
         const std::array<VkDescriptorSet, 2> deferredDS = { descs.textures.set.v(), descs.cam.set.v() };
-        const std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.depth.set.v() };
 
         // FOR THE DEFERRED PASS
         VkCommandBufferInheritanceInfo deferredInheritInfo{};
@@ -3980,7 +3996,7 @@ private:
         deferredBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         deferredBeginInfo.pInheritanceInfo = &deferredInheritInfo;
 
-        recordObjectSecondaryCommandBuffers(deferredCommandBuffers.secondary[0], deferredPipeline, deferredBeginInfo, deferredDS.data(), deferredDS.size(), true, true);
+        recordObjectCommandBuffers(deferredCommandBuffers.secondary[0], deferredPipeline, deferredBeginInfo, deferredDS.data(), deferredDS.size(), true, true, false);
 
         // FOR THE SHADOW PASS
         VkCommandBufferInheritanceInfo shadowInheritInfo{};
@@ -3995,20 +4011,6 @@ private:
         shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
         recordShadowSecondaryCommandBuffers(shadowMapCommandBuffers.secondary.buffers, shadowPipeline, shadowBeginInfo, descs.lightData.set.p(), 1);
-
-        // FOR THE WBOIT PASS
-        VkCommandBufferInheritanceInfo wboitInheritInfo{};
-        wboitInheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
-        wboitInheritInfo.renderPass = wboitPipeline.renderPass.v();
-        wboitInheritInfo.framebuffer = VK_NULL_HANDLE;
-        wboitInheritInfo.subpass = 0;
-
-        VkCommandBufferBeginInfo wboitBeginInfo{};
-        wboitBeginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        wboitBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-        wboitBeginInfo.pInheritanceInfo = &wboitInheritInfo;
-
-        recordObjectSecondaryCommandBuffers(wboitCommandBuffers.secondary[0], wboitPipeline, wboitBeginInfo, wboitDS.data(), wboitDS.size(), true, true);
     }
 
     void recordDeferredCommandBuffers() {
@@ -4021,7 +4023,7 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkhCommandBuffer& deferredCommandBuffer = deferredCommandBuffers.primary[swap.index];
+        VkhCommandBuffer& deferredCommandBuffer = deferredCommandBuffers.primary[currentFrame];
         if (vkBeginCommandBuffer(deferredCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
@@ -4029,7 +4031,7 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = deferredPipeline.renderPass.v();
-        renderPassInfo.framebuffer = deferredData.frameBuffer[swap.index].v();
+        renderPassInfo.framebuffer = deferredData.frameBuffer[currentFrame].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -4056,7 +4058,7 @@ private:
 
         for (size_t i = 0; i < lights.size(); i++) {
             shadowCmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                size_t index = (swap.index * lights.size()) + i;
+                size_t index = (currentFrame * lights.size()) + i;
                 VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[index];
                 VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
 
@@ -4068,7 +4070,7 @@ private:
                 VkRenderPassBeginInfo renderPassInfo{};
                 renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
                 renderPassInfo.renderPass = shadowPipeline.renderPass.v();
-                renderPassInfo.framebuffer = lights[i]->frameBuffer[swap.index].v();
+                renderPassInfo.framebuffer = lights[i]->frameBuffer[currentFrame].v();
                 renderPassInfo.renderArea.offset = { 0, 0 };
                 renderPassInfo.renderArea.extent = { shadowProps.width, shadowProps.height };
                 renderPassInfo.clearValueCount = 1;
@@ -4102,7 +4104,7 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkhCommandBuffer& lightingCommandBuffer = lightingPassCommandBuffers.primary[swap.index];
+        VkhCommandBuffer& lightingCommandBuffer = lightingPassCommandBuffers.primary[currentFrame];
         if (vkBeginCommandBuffer(lightingCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
@@ -4110,13 +4112,13 @@ private:
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = lightingPipeline.renderPass.v();
-        renderPassInfo.framebuffer = lightingData.frameBuffer[swap.index].v();
+        renderPassInfo.framebuffer = lightingData.frameBuffer[currentFrame].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = 1;
         renderPassInfo.pClearValues = &clearValue;
 
-        vkh::transitionImageLayout(lightingCommandBuffer, deferredData.depth[swap.index].image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
+        vkh::transitionImageLayout(lightingCommandBuffer, deferredData.depth[currentFrame].image, depthFormat, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1, 1, 0);
 
         vkCmdBeginRenderPass(lightingCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
@@ -4131,10 +4133,7 @@ private:
         vkCmdBindPipeline(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.pipeline.v());
         vkCmdBindDescriptorSets(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, lightingPipeline.layout.v(), 0, static_cast<uint32_t>(lightingDS.size()), lightingDS.data(), 0, nullptr);
 
-        FramePushConst pushConst{};
-        pushConst.frame = swap.index;
-
-        vkCmdPushConstants(lightingCommandBuffer.v(), lightingPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pushConst), &pushConst);
+        vkCmdPushConstants(lightingCommandBuffer.v(), lightingPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
 
         vkCmdDraw(lightingCommandBuffer.v(), 6, 1, 0, 0);
         vkCmdEndRenderPass(lightingCommandBuffer.v());
@@ -4145,32 +4144,33 @@ private:
     }
 
     void recordWBOITCommandBuffers() {
-        std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
+        const std::array<VkDescriptorSet, 5> wboitDS = { descs.textures.set.v(),  descs.lightData.set.v(), descs.shadowmaps.set.v(), descs.cam.set.v(), descs.depth.set.v() };
+        const std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
+
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[swap.index];
+        VkhCommandBuffer& wboitCommandBuffer = wboitCommandBuffers.primary[currentFrame];
         if (vkBeginCommandBuffer(wboitCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
-        FramePushConst pushConst{};
-        pushConst.frame = swap.index;
-        vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(ObjectPushConst), sizeof(FramePushConst), &pushConst);
-
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = wboitPipeline.renderPass.v();
-        renderPassInfo.framebuffer = wboit.frameBuffer[swap.index].v();
+        renderPassInfo.framebuffer = wboit.frameBuffer[currentFrame].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();
 
-        vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_SECONDARY_COMMAND_BUFFERS);
-        vkCmdExecuteCommands(wboitCommandBuffer.v(), static_cast<uint32_t>(wboitCommandBuffers.secondary.size()), wboitCommandBuffers.secondary.data());
+        vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
+        recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), false, false, true);
+
         vkCmdEndRenderPass(wboitCommandBuffer.v());
 
         if (vkEndCommandBuffer(wboitCommandBuffer.v()) != VK_SUCCESS) {
@@ -4188,15 +4188,17 @@ private:
 
         VkDescriptorSet* set = (rtEnabled) ? descs.rt.set.p() : descs.composition.set.p();
 
-        VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[swap.index];
+        VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[currentFrame];
         if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
+        vkCmdPushConstants(compCommandBuffer.v(), compPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
+
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = compPipeline.renderPass.v();
-        renderPassInfo.framebuffer = swap.framebuffers[swap.index].v();
+        renderPassInfo.framebuffer = swap.framebuffers[swap.imageIndex].v();
         renderPassInfo.renderArea.offset = { 0, 0 };
         renderPassInfo.renderArea.extent = swap.extent;
         renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
@@ -4231,7 +4233,7 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         beginInfo.pInheritanceInfo = &inheritInfo;
 
-        VkCommandBuffer& commandBuffer = rtCommandBuffers.primary[swap.index].v();
+        VkCommandBuffer& commandBuffer = rtCommandBuffers.primary[currentFrame].v();
         if (vkBeginCommandBuffer(commandBuffer, &beginInfo) != VK_SUCCESS) {
             throw std::runtime_error("failed to begin recording rt command buffer!");
         }
@@ -4247,8 +4249,6 @@ private:
     }
 
     void recordAllCommandBuffers() { // record every command buffer
-        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
-
         if (rtEnabled) {
             recordRTCommandBuffers();
         }
@@ -4272,11 +4272,10 @@ private:
             glfwGetFramebufferSize(window, &width, &height);
             glfwWaitEvents();
         }
-        vkWaitForFences(device, 1, inFlightFences[swap.index].p(), VK_TRUE, UINT64_MAX);
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
         vkDeviceWaitIdle(device); // wait for the device to be idle
 
         swap.swapChain.reset(); // reset the SC
-        swap.index = 0;
 
         createSC();
         createSCImageViews();
@@ -4299,12 +4298,11 @@ private:
     }
 
     void drawFrame() {
-        size_t k = swap.index;
-        uint32_t imageIndex;
-        vkResetFences(device, 1, inFlightFences[swap.index].p());
+        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
+        vkResetFences(device, 1, inFlightFences[currentFrame].p());
 
         // acquire the next image from the swapchain
-        VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), std::numeric_limits<uint64_t>::max(), imageAvailableSemaphores[k].v(), VK_NULL_HANDLE, &imageIndex);
+        VkResult result = vkAcquireNextImageKHR(device, swap.swapChain.v(), UINT64_MAX, imageAvailableSemaphores[currentFrame].v(), VK_NULL_HANDLE, &swap.imageIndex);
         if (result == VK_ERROR_OUT_OF_DATE_KHR) {
             vkDeviceWaitIdle(device);
             recreateSwap();
@@ -4314,6 +4312,8 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
+        recordAllCommandBuffers();
+
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         std::vector<VkSubmitInfo> submitInfos;
         std::vector<VkCommandBuffer> shadowCmds;
@@ -4321,23 +4321,23 @@ private:
         if (!rtEnabled) {
             shadowCmds.reserve(lights.size());
             for (size_t i = 0; i < lights.size(); i++) {
-                size_t index = (k * lights.size()) + i;
+                size_t index = (currentFrame * lights.size()) + i;
                 shadowCmds.push_back(shadowMapCommandBuffers.primary.buffers[index].v());
             }
 
-            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[imageIndex].p(), 1, &waitStage, imageAvailableSemaphores[k], deferredSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), lights.size(), &waitStage, deferredSemaphores[k], shadowSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[imageIndex].p(), 1, &waitStage, shadowSemaphores[k], wboitSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[imageIndex].p(), 1, &waitStage, wboitSemaphores[k], compSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, &waitStage, compSemaphores[k], renderFinishedSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], deferredSemaphores[currentFrame]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), lights.size(), &waitStage, deferredSemaphores[currentFrame], shadowSemaphores[currentFrame]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[currentFrame].p(), 1, &waitStage, shadowSemaphores[currentFrame], wboitSemaphores[currentFrame]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[currentFrame].p(), 1, &waitStage, wboitSemaphores[currentFrame], compSemaphores[currentFrame]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, compSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
         }
         else {
-            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[imageIndex].p(), 1, &waitStage, imageAvailableSemaphores[k], rtSemaphores[k]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[imageIndex].p(), 1, &waitStage, rtSemaphores[k], renderFinishedSemaphores[k]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], rtSemaphores[currentFrame]));
+            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, rtSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
         }
 
         // submit all command buffers in a single call
-        if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[swap.index].v()) != VK_SUCCESS) {
+        if (vkQueueSubmit(graphicsQueue, static_cast<uint32_t>(submitInfos.size()), submitInfos.data(), inFlightFences[currentFrame].v()) != VK_SUCCESS) {
             throw std::runtime_error("failed to submit command buffers!");
         }
 
@@ -4345,10 +4345,10 @@ private:
         VkPresentInfoKHR presentInfo{};
         presentInfo.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
         presentInfo.waitSemaphoreCount = 1;
-        presentInfo.pWaitSemaphores = renderFinishedSemaphores[k].p();
-        presentInfo.swapchainCount = 1;
+        presentInfo.pWaitSemaphores = renderFinishedSemaphores[currentFrame].p();
         presentInfo.pSwapchains = swap.swapChain.p();
-        presentInfo.pImageIndices = &imageIndex;
+        presentInfo.swapchainCount = 1;
+        presentInfo.pImageIndices = &swap.imageIndex;
         result = vkQueuePresentKHR(presentQueue, &presentInfo);
 
         //check if the swap chain is out of date (window was resized, etc):
@@ -4386,9 +4386,10 @@ private:
             handleKeyboardInput();
             updateUBO();
             if (rtEnabled) updateTLAS();
-            recordAllCommandBuffers();
             drawFrame();
-            swap.index = (swap.index + 1) % swap.imageCount;
+
+            currentFrame = (currentFrame + 1) % swap.imageCount;
+            framePushConst.frame = currentFrame;
         }
 
         vkDeviceWaitIdle(device);
@@ -4442,8 +4443,6 @@ private:
         if (!rtEnabled) {
             recordSecondaryCommandBuffers();
         }
-
-        recordAllCommandBuffers();
 
         auto duration = utils::duration<milliseconds>(now);
         utils::printDuration(duration);

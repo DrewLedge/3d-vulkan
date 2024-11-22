@@ -32,7 +32,7 @@ layout(set = 3, binding = 0) uniform CamBufferObject {
 } CamUBO;
 
 layout(push_constant, std430) uniform pcV {
-    int textureExist;
+    layout(offset = 4) int textureExist;
     int texInd;
 };
 
