@@ -27,7 +27,7 @@ struct LightData {
 
 layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
-};
+} lssbo[];
 
 layout(set = 4, binding = 0) uniform sampler2D depthSampler[];
 

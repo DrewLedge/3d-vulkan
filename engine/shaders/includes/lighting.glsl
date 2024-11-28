@@ -1,10 +1,10 @@
 #define PI 3.141592653589793238
 
 // get the PCF shadow factor (used for softer shadows)
-float shadowPCF(int frame, int lightCount, int lightIndex, vec4 fragPosLightSpace, int kernelSize, vec3 norm, vec3 lightDir) {
+float shadowPCF(int frame, int lightCount, int lightIndex, vec4 fragPosLightspace, int kernelSize, vec3 norm, vec3 lightDir) {
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
+    vec3 projCoords = fragPosLightspace.xyz / fragPosLightspace.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
@@ -36,18 +36,18 @@ vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
     float roughness = metallicRoughness.g;
     float metallic = metallicRoughness.b;
 
-    for (int i = 0; i < lights.length(); i++) {
-        if (lights[i].intensity < 0.01) continue;
+    for (int i = 0; i < lssbo[frame].lights.length(); i++) {
+        if (lssbo[frame].lights[i].intensity < 0.01) continue;
 
-        float inner = lights[i].innerConeAngle;
-        float outer = lights[i].outerConeAngle;
-        float constAttenuation = lights[i].constantAttenuation;
-        float linAttenuation = lights[i].linearAttenuation;
-        float quadAttenuation = lights[i].quadraticAttenuation;
+        float inner = lssbo[frame].lights[i].innerConeAngle;
+        float outer = lssbo[frame].lights[i].outerConeAngle;
+        float constAttenuation = lssbo[frame].lights[i].constantAttenuation;
+        float linAttenuation = lssbo[frame].lights[i].linearAttenuation;
+        float quadAttenuation = lssbo[frame].lights[i].quadraticAttenuation;
 
-        vec3 lightPos = lights[i].pos.xyz;
-        vec3 target = lights[i].target.xyz;
-        vec3 lightColor = lights[i].color.xyz;
+        vec3 lightPos = lssbo[frame].lights[i].pos.xyz;
+        vec3 target = lssbo[frame].lights[i].target.xyz;
+        vec3 lightColor = lssbo[frame].lights[i].color.xyz;
 
         vec3 spotDir = normalize(lightPos - target);
         vec3 fragToLightDir = normalize(lightPos - inFragPos);
@@ -57,8 +57,8 @@ vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
         if (theta <= cos(outer)) continue;
 
         // shadow factor
-        vec4 fragPosLightSpace = lights[i].proj * lights[i].view * vec4(inFragPos, 1.0);
-        float shadowFactor = shadowPCF(frame, lights.length(), i, fragPosLightSpace, 4, normal, fragToLightDir);
+        vec4 fragPosLightspace = lssbo[frame].lights[i].proj * lssbo[frame].lights[i].view * vec4(inFragPos, 1.0);
+        float shadowFactor = shadowPCF(frame, lssbo[frame].lights.length(), i, fragPosLightspace, 4, normal, fragToLightDir);
         if (shadowFactor < 0.01) continue;
 
         // attenuation
@@ -67,7 +67,7 @@ vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
         if (attenuation < 0.01) continue;
 
         // get the contribution
-        float contribution = lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
+        float contribution = lssbo[frame].lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
         if (contribution < 0.01) continue;
 
         vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, albedo, metallic, roughness);

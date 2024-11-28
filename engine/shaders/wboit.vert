@@ -17,28 +17,20 @@ layout(location = 7) in vec4 inModel4;
 layout(location = 8) in uint inToRender;
 
 layout(location = 0) out vec2 outTexCoord;
-layout(location = 1) flat out uint outTexIndex;
-layout(location = 2) out vec3 outFragPos;
-layout(location = 3) out vec3 outViewDir;
-layout(location = 4) out mat3 outTBN; // uses locations 4, 5 and 6
-layout(location = 7) flat out uint outRender;
-layout(location = 8) flat out uint outBitfield;
-layout(location = 9) out float outFarPlane;
-layout(location = 10) out float outNearPlane;
+layout(location = 1) out vec3 outFragPos;
+layout(location = 2) out vec3 outViewDir;
+layout(location = 3) out mat3 outTBN; // uses locations 3, 4 and 5
+layout(location = 6) flat out uint outRender;
+layout(location = 7) out float outFarPlane;
+layout(location = 8) out float outNearPlane;
 
 layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;
 
-layout(push_constant, std430) uniform pcV {
-    layout(offset = 4) int textureExist;
-    int texInd;
-};
-
 void main() {
     outRender = inToRender;
-    outBitfield = textureExist;
 
     mat4 proj = CamUBO.proj;
     mat4 view = CamUBO.view;
@@ -49,7 +41,6 @@ void main() {
     outTBN = getTBN(inTangent, model, inNormal);
 
     outTexCoord = inTexCoord;
-    outTexIndex = texInd; // pass the texture index to the fragment shader
     outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
     outViewDir = viewDir;
 

@@ -1,5 +1,7 @@
 #version 460
 
+#extension GL_EXT_nonuniform_qualifier : enable
+
 #include "includes/vertformulas.glsl"
 
 layout(location = 0) in vec3 inPosition;
@@ -28,16 +30,14 @@ struct LightData {
 
 layout(set = 0, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
+} lssbo[];
+
+layout(push_constant) uniform pc {
+    int frame;
+    int lightIndex;
 };
 
-layout(push_constant) uniform PC {
-    int lightIndex;
-} pc;
-
 void main() {
-    int index = pc.lightIndex;
-
-    // fetch matrices
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4); // model matrix of the model
-    gl_Position = getPos(lights[index].proj, lights[index].view, model, inPosition); // transform position
+    gl_Position = getPos(lssbo[frame].lights[lightIndex].proj, lssbo[frame].lights[lightIndex].view, model, inPosition); // transform position
 }

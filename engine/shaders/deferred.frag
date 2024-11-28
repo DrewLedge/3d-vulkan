@@ -4,15 +4,18 @@
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
 layout(location = 0) in vec2 inTexCoord;
-layout(location = 1) flat in uint inTexindex;
-layout(location = 2) in mat3 inTBN; // uses locations 2, 3 and 4
-layout(location = 5) flat in uint inRender;
-layout(location = 6) flat in uint inBitfield;
+layout(location = 1) in mat3 inTBN; // uses locations 1, 2 and 3
+layout(location = 4) flat in uint inRender;
 
 layout(location = 0) out vec4 outAlbedo;
 layout(location = 1) out vec4 outMetallicRoughness;
 layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmissiveAO;
+
+layout(push_constant) uniform pc {
+    int bitfield;
+    int texInd;
+};
 
 vec4 albedo = vec4(1.0f);
 vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
@@ -27,7 +30,7 @@ void main() {
         discard;
     }
 
-    getTextures(inBitfield, inTexindex, inTexCoord, inTBN);
+    getTextures(bitfield, texInd, inTexCoord, inTBN);
 
     if (albedo.a < 0.95f) {
         discard;

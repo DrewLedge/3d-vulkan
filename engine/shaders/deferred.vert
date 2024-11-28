@@ -16,24 +16,16 @@ layout(location = 7) in vec4 inModel4;
 layout(location = 8) in uint inToRender;
 
 layout(location = 0) out vec2 outTexCoord;
-layout(location = 1) flat out uint outTexIndex;
-layout(location = 2) out mat3 outTBN; // uses locations 2, 3 and 4
-layout(location = 5) flat out uint outRender;
-layout(location = 6) flat out uint outBitfield;
+layout(location = 1) out mat3 outTBN; // uses locations 1, 2 and 3
+layout(location = 4) flat out uint outRender;
 
 layout(set = 1, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
 } CamUBO;
 
-layout(push_constant) uniform PC {
-    int textureExist;
-    int texInd;
-} pc;
-
 void main() {
     outRender = inToRender;
-    outBitfield = pc.textureExist;
 
     mat4 proj = CamUBO.proj;
     mat4 view = CamUBO.view;
@@ -44,5 +36,4 @@ void main() {
     outTBN = getTBN(inTangent, model, inNormal);
 
     outTexCoord = inTexCoord;
-    outTexIndex = pc.texInd;
 }
