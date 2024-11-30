@@ -41,6 +41,7 @@ layout(location = 0) out vec4 outColor;
 
 layout(push_constant, std430) uniform pc {
     int frame;
+    int lightCount;
     int bitfield;
     int texInd;
 };
@@ -66,7 +67,7 @@ void main() {
 
     getTextures(bitfield, texInd, inTexCoord, inTBN);
 
-    vec4 color = calcLighting(frame, false, true);
+    vec4 color = calcLighting(frame, lightCount, false, true);
 
     // get the depth from the opaque texture
     vec2 cords = getTexCords(depthSamplers[frame], gl_FragCoord.xy);

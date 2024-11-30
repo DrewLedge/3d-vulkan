@@ -1004,6 +1004,15 @@ namespace vkh {
         return set;
     }
 
+    VkDescriptorImageInfo createDSImageInfo(const VkhImageView& imageView, const VkhSampler& sampler) {
+        VkDescriptorImageInfo info{};
+        info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        info.imageView = imageView.v();
+        info.sampler = sampler.v();
+
+        return info;
+    }
+
     // ------------------ PIPELINES ------------------ //
     VkhShaderModule createShaderModule(const std::vector<char>& code) { //takes in SPIRV binary and creates a shader module
         VkShaderModuleCreateInfo createInfo{};

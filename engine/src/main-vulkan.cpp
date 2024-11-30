@@ -144,8 +144,7 @@ private:
     };
 
     struct LightDataSSBO {
-        std::vector<LightDataObject> lightCords;
-        size_t memSize = 0;
+        LightDataObject lightCords[cfg::MAX_LIGHTS];
     };
 
     struct ModelInstance {
@@ -396,6 +395,11 @@ private:
         int frame;
     };
 
+    struct LightPushConst {
+        int frame;
+        int lightCount;
+    };
+
     struct ObjectPushConst {
         int textureExist; // bitfield of which textures exist
         int texIndex; // starting index of the textures in the texture array
@@ -472,6 +476,7 @@ private:
     std::vector<VkhSemaphore> rtSemaphores{};
 
     FramePushConst framePushConst{};
+    LightPushConst lightPushConst{};
 
     // descriptor sets and pools
     DesciptorSetsObj descs{};
@@ -1564,19 +1569,6 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void updateLightBuffer() {
-        lightData.lightCords.resize(lights.size());
-        lightData.memSize = lights.size() * sizeof(LightDataObject);
-        vkh::createHostVisibleBuffer(lightBuffers[currentFrame], lightBufferMems[currentFrame], lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-    }
-
-    void createLightBuffers() {
-        lightData.lightCords.resize(lights.size());
-        lightData.memSize = lights.size() * sizeof(LightDataObject);
-        for (size_t i = 0; i < maxFrames; i++) {
-            vkh::createHostVisibleBuffer(lightBuffers[i], lightBufferMems[i], lightData.memSize, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-        }
-    }
 
     void setupBuffers() {
         lightBuffers.resize(maxFrames);
@@ -1588,9 +1580,8 @@ private:
         cam.buffers.resize(maxFrames);
         cam.bufferMems.resize(maxFrames);
 
-        createLightBuffers();
-
         for (size_t i = 0; i < maxFrames; i++) {
+            vkh::createHostVisibleBuffer(lightBuffers[i], lightBufferMems[i], sizeof(LightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
             vkh::createHostVisibleBuffer(objInstanceBuffers[i], objInstanceBufferMems[i], sizeof(ModelInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
             vkh::createHostVisibleBuffer(cam.buffers[i], cam.bufferMems[i], sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         }
@@ -1638,7 +1629,7 @@ private:
             std::memcpy(&lightData.lightCords[i], &l.data, sizeof(LightDataObject));
         }
 
-        vkh::writeBuffer(lightBufferMems[currentFrame], lightData.lightCords.data(), lightData.memSize);
+        vkh::writeBuffer(lightBufferMems[currentFrame], &lightData.lightCords, sizeof(LightDataObject) * lights.size());
 
         // calc matricies for camera
         calcCameraMats();
@@ -1701,19 +1692,28 @@ private:
         obj.type = type;
     }
 
-    void createDS() {
-        // global
-        std::vector<VkDescriptorImageInfo> imageInfos(totalTextureCount);
-        for (size_t i = 0; i < totalTextureCount; i++) {
-            imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfos[i].imageView = allTextures[i].imageView.v();
-            imageInfos[i].sampler = allTextures[i].sampler.v();
+    void setupDescriptorSets() {
+        totalTextureCount = 0;
+        for (size_t i = 0; i < objects.size(); i++) {
+            auto& obj = objects[i];
+            if (uniqueModelIndex[obj->meshHash] == i) {
+                totalTextureCount += static_cast<uint32_t>(obj->textureCount);
+            }
         }
 
         uint32_t lightSize = static_cast<uint32_t>(lights.size());
 
+        // global
+        std::vector<VkDescriptorImageInfo> imageInfos;
+        imageInfos.reserve(totalTextureCount);
+
+        for (size_t i = 0; i < totalTextureCount; i++) {
+            imageInfos.emplace_back(vkh::createDSImageInfo(allTextures[i].imageView, allTextures[i].sampler));
+        }
+
         std::vector<VkDescriptorBufferInfo> lightBufferInfos{};
         std::vector<VkDescriptorBufferInfo> camBufferInfos{};
+        VkDescriptorImageInfo skyboxInfo = vkh::createDSImageInfo(skybox.cubemap.imageView, skybox.cubemap.sampler);
 
         lightBufferInfos.reserve(maxFrames);
         camBufferInfos.reserve(maxFrames);
@@ -1722,7 +1722,7 @@ private:
             VkDescriptorBufferInfo linfo{};
             linfo.buffer = lightBuffers[i].v();
             linfo.offset = 0;
-            linfo.range = lightData.memSize;
+            linfo.range = sizeof(LightDataSSBO);
             lightBufferInfos.push_back(linfo);
 
             VkDescriptorBufferInfo cinfo{};
@@ -1731,11 +1731,6 @@ private:
             cinfo.range = sizeof(CamUBO);
             camBufferInfos.push_back(cinfo);
         }
-
-        VkDescriptorImageInfo skyboxInfo{};
-        skyboxInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-        skyboxInfo.imageView = skybox.cubemap.imageView.v();
-        skyboxInfo.sampler = skybox.cubemap.sampler.v();
 
         // rasterization
         std::vector<VkDescriptorImageInfo> compositionPassImageInfo{};
@@ -1766,44 +1761,24 @@ private:
             shadowInfos.reserve(maxFrames * lightSize);
             depthInfo.reserve(maxFrames);
 
+            for (size_t i = 0; i < lights.size(); i++) {
+                for (size_t j = 0; j < maxFrames; j++) {
+                    dvl::Texture& tex = lights[i]->shadowMapData[j];
+                    shadowInfos.emplace_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
+                }
+            }
+
             for (size_t i = 0; i < maxFrames; i++) {
                 for (size_t j = 0; j < 4; j++) {
                     size_t k = (i * 4) + j;
 
-                    VkDescriptorImageInfo info{};
-                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    info.imageView = deferredData.textures[k].imageView.v();
-                    info.sampler = deferredData.textures[k].sampler.v();
-
-                    deferredImageInfo.push_back(info);
+                    dvl::Texture& tex = deferredData.textures[k];
+                    deferredImageInfo.emplace_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
                 }
 
-                for (size_t j = 0; j < lights.size(); j++) {
-                    VkDescriptorImageInfo info{};
-                    info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                    info.imageView = lights[j]->shadowMapData[i].imageView.v();
-                    info.sampler = lights[j]->shadowMapData[i].sampler.v();
-
-                    shadowInfos.push_back(info);
-                }
-
-                VkDescriptorImageInfo dinfo{};
-                dinfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                dinfo.imageView = deferredData.depth[i].imageView.v();
-                dinfo.sampler = deferredData.depth[i].sampler.v();
-                depthInfo.push_back(dinfo);
-
-                VkDescriptorImageInfo linfo{};
-                linfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                linfo.imageView = lightingData.color[i].imageView.v();
-                linfo.sampler = lightingData.color[i].sampler.v();
-                compositionPassImageInfo.push_back(linfo);
-
-                VkDescriptorImageInfo winfo{};
-                winfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                winfo.imageView = wboit.weightedColor[i].imageView.v();
-                winfo.sampler = wboit.weightedColor[i].sampler.v();
-                compositionPassImageInfo.push_back(winfo);
+                depthInfo.emplace_back(vkh::createDSImageInfo(deferredData.depth[i].imageView, deferredData.depth[i].sampler));
+                compositionPassImageInfo.emplace_back(vkh::createDSImageInfo(lightingData.color[i].imageView, lightingData.color[i].sampler));
+                compositionPassImageInfo.emplace_back(vkh::createDSImageInfo(wboit.weightedColor[i].imageView, wboit.weightedColor[i].sampler));
             }
         }
 
@@ -1868,37 +1843,9 @@ private:
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
-    void setupDescriptorSets() {
-        totalTextureCount = 0;
-        for (size_t i = 0; i < objects.size(); i++) {
-            auto& obj = objects[i];
-            if (uniqueModelIndex[obj->meshHash] == i) {
-                totalTextureCount += static_cast<uint32_t>(obj->textureCount);
-            }
-        }
-        createDS(); //create the descriptor set
-    }
-
     void updateLightDS() {
-        uint32_t lightSize = static_cast<uint32_t>(lights.size());
-
-        VkDescriptorBufferInfo lightBufferInfo{};
-        lightBufferInfo.buffer = lightBuffers[currentFrame].v();
-        lightBufferInfo.offset = 0;
-        lightBufferInfo.range = lightData.memSize;
-
-        std::array<VkWriteDescriptorSet, 2> dw{};
-        dw[0] = vkh::createDSWrite(descs.lightData.set, descs.lightData.binding, 0, descs.lightData.type, &lightBufferInfo, 1);
-
-        // if raytracing is enabled, only update the buffer
-        // otherwise also update the shadowmaps
-        if (rtEnabled) {
-            vkUpdateDescriptorSets(device, 1, &dw[0], 0, nullptr);
-        }
-        else {
-            dw[1] = vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), lightSize);
-            vkUpdateDescriptorSets(device, static_cast<uint32_t>(dw.size()), dw.data(), 0, nullptr);
-        }
+        VkWriteDescriptorSet dw = vkh::createDSWrite(descs.shadowmaps.set, descs.shadowmaps.binding, 0, descs.shadowmaps.type, shadowInfos.data(), shadowInfos.size());
+        vkUpdateDescriptorSets(device, 1, &dw, 0, nullptr);
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2796,7 +2743,7 @@ private:
         VkPushConstantRange objectPCRange{};
         objectPCRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
         objectPCRange.offset = 0;
-        objectPCRange.size = sizeof(FramePushConst) + sizeof(ObjectPushConst);
+        objectPCRange.size = sizeof(LightPushConst) + sizeof(ObjectPushConst);
 
         const std::array<VkDescriptorSetLayout, 5> layouts = { descs.textures.layout.v(), descs.lightData.layout.v(), descs.shadowmaps.layout.v(), descs.cam.layout.v(), descs.depth.layout.v() };
 
@@ -3741,7 +3688,6 @@ private:
 
     void summonLight() {
         if (lights.size() + 1 > cfg::MAX_LIGHTS) return;
-
         vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
 
         dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
@@ -3758,20 +3704,15 @@ private:
                 vkh::createSampler(s.sampler, s.mipLevels, vkh::DEPTH);
                 vkh::createFB(shadowPipeline.renderPass, f, s.imageView.p(), 1, shadowProps.width, shadowProps.height);
 
-                VkDescriptorImageInfo shadowInfo{};
-                shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                shadowInfo.imageView = s.imageView.v();
-                shadowInfo.sampler = s.sampler.v();
-                shadowInfos.insert(shadowInfos.begin() + index, shadowInfo);
-
                 l.shadowMapData.push_back(s);
                 l.frameBuffer.push_back(f);
 
                 VkhCommandPool p = vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
                 VkhCommandBuffer c = vkh::allocateCommandBuffers(p);
 
-                shadowMapCommandBuffers.primary.pools.insert(shadowMapCommandBuffers.primary.pools.begin() + index, p);
-                shadowMapCommandBuffers.primary.buffers.insert(shadowMapCommandBuffers.primary.buffers.begin() + index, c);
+                shadowMapCommandBuffers.primary.pools.push_back(p);
+                shadowMapCommandBuffers.primary.buffers.push_back(c);
+                shadowInfos.emplace_back(vkh::createDSImageInfo(s.imageView, s.sampler));
 
                 index += lights.size();
             }
@@ -3783,13 +3724,12 @@ private:
             shadowMapCommandBuffers.secondary.buffers.push_back(c);
 
             lights.push_back(std::make_unique<Light>(l));
+            updateLightDS();
         }
         else {
             lights.push_back(std::make_unique<Light>(l));
         }
 
-        updateLightBuffer();
-        updateLightDS();
 
         if (!rtEnabled) {
             recordShadowSecondaryCommandBuffers();
@@ -3814,7 +3754,6 @@ private:
             shadowInfos.push_back(shadowInfo);
         }
 
-        createLightBuffers();
         updateLightDS();
 
         objects.clear();
@@ -3915,7 +3854,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand, bool framePushConst) {
+    void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand, uint32_t pushConstOffset) {
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffers[currentFrame].v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
@@ -3948,8 +3887,7 @@ private:
                 pushConst.textureExist = textureExistence;
                 pushConst.texIndex = meshTexStartInd[p];
 
-                uint32_t offset = (framePushConst) ? static_cast<uint32_t>(sizeof(FramePushConst)) : 0;
-                vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, offset, sizeof(ObjectPushConst), &pushConst);
+                vkCmdPushConstants(secondary.v(), pipe.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, pushConstOffset, sizeof(ObjectPushConst), &pushConst);
 
                 size_t bufferInd = modelHashToBufferIndex[objects[j]->meshHash];
                 uint32_t instanceCount = getModelNumHash(objects[uniqueModelInd]->meshHash);
@@ -4049,7 +3987,7 @@ private:
 
         vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        recordObjectCommandBuffers(deferredCommandBuffer, deferredPipeline, beginInfo, deferredDS.data(), deferredDS.size(), false, false, false);
+        recordObjectCommandBuffers(deferredCommandBuffer, deferredPipeline, beginInfo, deferredDS.data(), deferredDS.size(), false, false, 0);
 
         vkCmdEndRenderPass(deferredCommandBuffer.v());
         if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
@@ -4070,7 +4008,7 @@ private:
 
         for (size_t i = 0; i < lights.size(); i++) {
             shadowCmdTasks.emplace_back(std::async(std::launch::async, [&, i, beginInfo]() {
-                size_t index = (currentFrame * lights.size()) + i;
+                size_t index = (i * maxFrames) + currentFrame;
 
                 VkhCommandBuffer& shadowCommandBuffer = shadowMapCommandBuffers.primary.buffers[index];
                 VkhCommandBuffer& secondary = shadowMapCommandBuffers.secondary.buffers[i];
@@ -4183,8 +4121,8 @@ private:
 
         vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-        vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
-        recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), false, false, true);
+        vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(LightPushConst), &lightPushConst);
+        recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), false, false, sizeof(LightPushConst));
 
         vkCmdEndRenderPass(wboitCommandBuffer.v());
 
@@ -4316,6 +4254,9 @@ private:
         currentFrame = (currentFrame + 1) % maxFrames;
         framePushConst.frame = currentFrame;
 
+        lightPushConst.frame = currentFrame;
+        lightPushConst.lightCount = static_cast<int>(lights.size());
+
         vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, inFlightFences[currentFrame].p());
 
@@ -4339,7 +4280,7 @@ private:
         if (!rtEnabled) {
             shadowCmds.reserve(lights.size());
             for (size_t i = 0; i < lights.size(); i++) {
-                size_t index = (currentFrame * lights.size()) + i;
+                size_t index = (i * maxFrames) + currentFrame;
                 shadowCmds.push_back(shadowMapCommandBuffers.primary.buffers[index].v());
             }
 

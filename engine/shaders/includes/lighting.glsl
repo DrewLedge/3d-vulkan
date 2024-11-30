@@ -1,14 +1,16 @@
 #define PI 3.141592653589793238
 
 // get the PCF shadow factor (used for softer shadows)
-float shadowPCF(int frame, int lightCount, int lightIndex, vec4 fragPosLightspace, int kernelSize, vec3 norm, vec3 lightDir) {
+float shadowPCF(int frame, int lightIndex, vec4 fragPosLightspace, int kernelSize, vec3 norm, vec3 lightDir) {
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
     vec3 projCoords = fragPosLightspace.xyz / fragPosLightspace.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
-    int shadowTexIndex = (frame * lightCount) + lightIndex;
+
+    // 2 is temp
+    int shadowTexIndex = (lightIndex * 2) + frame;
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[shadowTexIndex], 0);
 
     // loop through the PCF kernel
@@ -27,7 +29,7 @@ float shadowPCF(int frame, int lightCount, int lightIndex, vec4 fragPosLightspac
 }
 
 
-vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
+vec4 calcLighting(int frame, int lightCount, bool discardTranslucent, bool discardOpaque) {
     if (discardTranslucent && albedo.a < 0.95) discard;
     if (discardOpaque && albedo.a >= 0.95) discard;
 
@@ -36,7 +38,7 @@ vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
     float roughness = metallicRoughness.g;
     float metallic = metallicRoughness.b;
 
-    for (int i = 0; i < lssbo[frame].lights.length(); i++) {
+    for (int i = 0; i < lightCount; i++) {
         if (lssbo[frame].lights[i].intensity < 0.01) continue;
 
         float inner = lssbo[frame].lights[i].innerConeAngle;
@@ -58,7 +60,7 @@ vec4 calcLighting(int frame, bool discardTranslucent, bool discardOpaque) {
 
         // shadow factor
         vec4 fragPosLightspace = lssbo[frame].lights[i].proj * lssbo[frame].lights[i].view * vec4(inFragPos, 1.0);
-        float shadowFactor = shadowPCF(frame, lssbo[frame].lights.length(), i, fragPosLightspace, 4, normal, fragToLightDir);
+        float shadowFactor = shadowPCF(frame, i, fragPosLightspace, 4, normal, fragToLightDir);
         if (shadowFactor < 0.01) continue;
 
         // attenuation
