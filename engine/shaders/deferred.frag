@@ -13,7 +13,7 @@ layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmissiveAO;
 
 layout(push_constant) uniform pc {
-    int bitfield;
+    layout(offset = 4) int bitfield;
     int texInd;
 };
 

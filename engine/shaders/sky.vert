@@ -1,17 +1,22 @@
 #version 460
 
+#extension GL_EXT_nonuniform_qualifier : enable
+
 layout(location = 0) in vec3 inPos;
 layout(location = 0) out vec4 outPos;
+
+layout(push_constant) uniform PC {
+    int frame;
+};
 
 layout(set = 1, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
-} CamUBO;
-
+} CamUBO[];
 
 void main() {
-    mat4 view = CamUBO.view;
-    mat4 projection = CamUBO.proj;
+    mat4 view = CamUBO[frame].view;
+    mat4 projection = CamUBO[frame].proj;
     mat4 rotationOnlyView = view;
     rotationOnlyView[3] = vec4(0.0, 0.0, 0.0, 1.0);
 

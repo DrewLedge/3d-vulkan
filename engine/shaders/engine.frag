@@ -33,13 +33,13 @@ layout(set = 4, binding = 0) uniform sampler2D depthSampler[];
 
 layout(push_constant) uniform PC {
     int frame;
-} pc;
+};
 
 void main() {
-    int baseIndex = pc.frame * 4;
+    int baseIndex = frame * 4;
     vec4 albedo = texture(deferredTextures[baseIndex], inTexCoord);
 
-    float depth = texture(depthSampler[pc.frame], inTexCoord).r;
+    float depth = texture(depthSampler[frame], inTexCoord).r;
     if (depth == 1.0f) discard;
     outColor = albedo;
 }

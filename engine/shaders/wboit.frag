@@ -36,12 +36,12 @@ layout(location = 3) in mat3 inTBN; // uses locations 3, 4 and 5
 layout(location = 6) flat in uint inRender;
 layout(location = 7) in float inFarPlane;
 layout(location = 8) in float inNearPlane;
+layout(location = 9) flat in int inFrame;
 
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant, std430) uniform pc {
-    int frame;
-    int lightCount;
+    layout(offset = 4) int lightCount;
     int frameCount;
     int bitfield;
     int texInd;
@@ -68,11 +68,11 @@ void main() {
 
     getTextures(bitfield, texInd, inTexCoord, inTBN);
 
-    vec4 color = calcLighting(frame, lightCount, false, true);
+    vec4 color = calcLighting(inFrame, lightCount, false, true);
 
     // get the depth from the opaque texture
-    vec2 cords = getTexCords(depthSamplers[frame], gl_FragCoord.xy);
-    float oDepth = texture(depthSamplers[frame], cords).r;
+    vec2 cords = getTexCords(depthSamplers[inFrame], gl_FragCoord.xy);
+    float oDepth = texture(depthSamplers[inFrame], cords).r;
     oDepth = linDepth(oDepth, inNearPlane, inFarPlane);
 
     // get the depth of the fragment

@@ -23,17 +23,25 @@ layout(location = 3) out mat3 outTBN; // uses locations 3, 4 and 5
 layout(location = 6) flat out uint outRender;
 layout(location = 7) out float outFarPlane;
 layout(location = 8) out float outNearPlane;
+layout(location = 9) flat out int outFrame;
+
+
+layout(push_constant, std430) uniform pc {
+    int frame;
+};
 
 layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
-} CamUBO;
+} CamUBO[];
 
 void main() {
     outRender = inToRender;
 
-    mat4 proj = CamUBO.proj;
-    mat4 view = CamUBO.view;
+    outFrame = frame;
+
+    mat4 proj = CamUBO[frame].proj;
+    mat4 view = CamUBO[frame].view;
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4);
 
     vec3 viewDir = getViewDir(view, model, inPosition);

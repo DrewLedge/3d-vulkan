@@ -19,16 +19,20 @@ layout(location = 0) out vec2 outTexCoord;
 layout(location = 1) out mat3 outTBN; // uses locations 1, 2 and 3
 layout(location = 4) flat out uint outRender;
 
+layout(push_constant) uniform pc {
+    int frame;
+};
+
 layout(set = 1, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
-} CamUBO;
+} CamUBO[];
 
 void main() {
     outRender = inToRender;
 
-    mat4 proj = CamUBO.proj;
-    mat4 view = CamUBO.view;
+    mat4 proj = CamUBO[frame].proj;
+    mat4 view = CamUBO[frame].view;
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4);
 
     gl_Position = getPos(proj, view, model, inPosition);

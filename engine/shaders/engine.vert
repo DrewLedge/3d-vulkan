@@ -4,11 +4,6 @@
 
 layout(location = 0) out vec2 outTexCoord;
 
-layout(set = 3, binding = 0) uniform CamBufferObject {
-    mat4 view;
-    mat4 proj;
-} CamUBO;
-
 vec2 positions[6] = {
     vec2(-1.0, -1.0),
     vec2(1.0, -1.0),
