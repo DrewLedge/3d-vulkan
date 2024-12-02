@@ -396,6 +396,11 @@ private:
         int frameCount;
     };
 
+    struct RTPushConst {
+        int frame;
+        int lightCount;
+    };
+
     struct ShadowPushConst {
         int frame;
         int lightIndex;
@@ -410,7 +415,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = false; // a bool if raytracing has been enabled
+    bool rtEnabled = true; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -477,8 +482,6 @@ private:
     std::vector<VkhSemaphore> rtSemaphores{};
 
     FramePushConst framePushConst{};
-    ShadowPushConst shadowPushConst{};
-    LightPushConst lightPushConst{};
 
     // descriptor sets and pools
     DesciptorSetsObj descs{};
@@ -872,7 +875,7 @@ private:
             swap.imageCount = swapChainSupport.capabilities.maxImageCount;
         }
 
-        maxFrames = 2;
+        maxFrames = 3;
 
         // create the swap chain
         VkSwapchainCreateInfoKHR newinfo{};
@@ -1834,17 +1837,18 @@ private:
 
         if (rtEnabled) {
             initDescriptorSet(descs.rt, false);
+            initDescriptorSet(descs.texIndices, true);
+        }
+        else {
+            initDescriptorSet(descs.deferred, true);
+            initDescriptorSet(descs.shadowmaps, true);
+            initDescriptorSet(descs.camDepth, true);
+            initDescriptorSet(descs.compTextures, true);
         }
 
         initDescriptorSet(descs.materialTextures, true);
-        initDescriptorSet(descs.texIndices, true);
         initDescriptorSet(descs.camData, true);
         initDescriptorSet(descs.lights, true);
-        initDescriptorSet(descs.deferred, true);
-        initDescriptorSet(descs.shadowmaps, true);
-        initDescriptorSet(descs.camDepth, true);
-        initDescriptorSet(descs.compTextures, true);
-
         initDescriptorSet(descs.known, false);
 
         updateDescriptorSets();
@@ -3038,13 +3042,26 @@ private:
         shaderGroups[4].generalShader = VK_SHADER_UNUSED_KHR;
         shaderGroups[4].closestHitShader = 4;
 
+        VkPushConstantRange genPCRange{};
+        genPCRange.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        genPCRange.offset = 0;
+        genPCRange.size = sizeof(FramePushConst);
+
+        VkPushConstantRange chPCRange{};
+        chPCRange.stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        chPCRange.offset = sizeof(FramePushConst);
+        chPCRange.size = sizeof(LightPushConst);
+
         // create the pipeline layoyut
-        std::array<VkDescriptorSetLayout, 6> layouts = { descs.materialTextures.layout.v(), descs.lights.layout.v(), descs.known.layout.v(), descs.camData.layout.v(), descs.rt.layout.v(), descs.texIndices.layout.v() };
+        const std::array<VkDescriptorSetLayout, 6> layouts = { descs.materialTextures.layout.v(), descs.lights.layout.v(), descs.known.layout.v(), descs.camData.layout.v(), descs.rt.layout.v(), descs.texIndices.layout.v() };
+        const std::array< VkPushConstantRange, 2> ranges = { genPCRange, chPCRange };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInf.pSetLayouts = layouts.data();
         pipelineLayoutInf.setLayoutCount = static_cast<uint32_t>(layouts.size());
+        pipelineLayoutInf.pPushConstantRanges = ranges.data();
+        pipelineLayoutInf.pushConstantRangeCount = static_cast<uint32_t>(ranges.size());
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, rtPipeline.layout.p());
         if (result != VK_SUCCESS) {
             throw std::runtime_error("failed to create raytracing pipeline layout!!");
@@ -3983,6 +4000,7 @@ private:
             vkCmdBindPipeline(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline.pipeline.v());
             vkCmdBindDescriptorSets(secondary, VK_PIPELINE_BIND_POINT_GRAPHICS, shadowPipeline.layout.v(), 0, 1, descs.lights.set.p(), 0, nullptr);
 
+            ShadowPushConst shadowPushConst{};
             shadowPushConst.frame = static_cast<int>(currentFrame);
             shadowPushConst.lightIndex = static_cast<int>(i);
 
@@ -4147,6 +4165,11 @@ private:
         vkCmdBeginRenderPass(wboitCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(FramePushConst), &framePushConst);
+
+        LightPushConst lightPushConst{};
+        lightPushConst.lightCount = static_cast<int>(lights.size());
+        lightPushConst.frameCount = static_cast<int>(maxFrames);
+
         vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(FramePushConst), sizeof(LightPushConst), &lightPushConst);
         recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), false, false, sizeof(FramePushConst) + sizeof(LightPushConst));
 
@@ -4172,8 +4195,6 @@ private:
             throw std::runtime_error("failed to begin recording command buffer!");
         }
 
-        vkCmdPushConstants(compCommandBuffer.v(), compPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
-
         VkRenderPassBeginInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
         renderPassInfo.renderPass = compPipeline.renderPass.v();
@@ -4188,6 +4209,10 @@ private:
         vkCmdBindPipeline(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.pipeline.v());
         vkCmdBindDescriptorSets(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.layout.v(), 0, 1, set, 0, nullptr);
 
+        if (!rtEnabled) {
+            vkCmdPushConstants(compCommandBuffer.v(), compPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
+        }
+
         vkCmdDraw(compCommandBuffer.v(), 6, 1, 0, 0);
 
         ImguiRenderFrame(compCommandBuffer);
@@ -4199,7 +4224,7 @@ private:
     }
 
     void recordRTCommandBuffers() {
-        const std::array<VkDescriptorSet, 7> ds = { descs.materialTextures.set.v(), descs.lights.set.v(), descs.known.set.v(), descs.camData.set.v(), descs.rt.set.v(), descs.texIndices.set.v() };
+        const std::array<VkDescriptorSet, 6> ds = { descs.materialTextures.set.v(), descs.lights.set.v(), descs.known.set.v(), descs.camData.set.v(), descs.rt.set.v(), descs.texIndices.set.v() };
 
         VkCommandBufferInheritanceInfo inheritInfo{};
         inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -4219,6 +4244,14 @@ private:
 
         vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.pipeline.v());
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtPipeline.layout.v(), 0, static_cast<uint32_t>(ds.size()), ds.data(), 0, nullptr);
+
+        vkCmdPushConstants(commandBuffer, rtPipeline.layout.v(), VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(FramePushConst), &framePushConst);
+
+        RTPushConst rtPC{};
+        rtPC.frame = static_cast<int>(currentFrame);
+        rtPC.lightCount = static_cast<int>(lights.size());
+
+        vkCmdPushConstants(commandBuffer, rtPipeline.layout.v(), VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, sizeof(FramePushConst), sizeof(RTPushConst), &rtPC);
 
         vkhfp::vkCmdTraceRaysKHR(commandBuffer, &sbt.raygenR, &sbt.missR, &sbt.hitR, &sbt.callR, swap.extent.width, swap.extent.height, 1);
 
@@ -4275,9 +4308,6 @@ private:
     void drawFrame() {
         currentFrame = (currentFrame + 1) % maxFrames;
         framePushConst.frame = currentFrame;
-
-        lightPushConst.lightCount = static_cast<int>(lights.size());
-        lightPushConst.frameCount = static_cast<int>(maxFrames);
 
         vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
         vkResetFences(device, 1, inFlightFences[currentFrame].p());

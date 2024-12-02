@@ -9,6 +9,11 @@
 
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
+layout(push_constant) uniform pc {
+    layout(offset = 4) int frame;
+    int lightSize;
+};
+
 struct LightData {
     vec4 pos;
     vec4 color;
@@ -27,7 +32,7 @@ struct LightData {
 
 layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
-};
+} lssbo[];
 
 layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
 
@@ -39,7 +44,7 @@ struct TexIndexData {
     uint64_t indexAddress;
 };
 
-layout(set = 6, binding = 0) readonly buffer TexIndexBuffer {
+layout(set = 5, binding = 0) readonly buffer TexIndexBuffer {
     TexIndexData texIndices[];
 };
 
@@ -175,18 +180,18 @@ void main() {
     vec3 refl = payload.col * F * (1.0 - roughness);
 
     vec3 accumulated = vec3(0.0);
-    for (int i = 0; i < lights.length(); i++) {
-        if (lights[i].intensity < 0.01) continue;
+    for (int i = 0; i < lightSize; i++) {
+        if (lssbo[frame].lights[i].intensity < 0.01) continue;
 
-        float inner = lights[i].innerConeAngle;
-        float outer = lights[i].outerConeAngle;
-        float constAttenuation = lights[i].constantAttenuation;
-        float linAttenuation = lights[i].linearAttenuation;
-        float quadAttenuation = lights[i].quadraticAttenuation;
+        float inner = lssbo[frame].lights[i].innerConeAngle;
+        float outer = lssbo[frame].lights[i].outerConeAngle;
+        float constAttenuation = lssbo[frame].lights[i].constantAttenuation;
+        float linAttenuation = lssbo[frame].lights[i].linearAttenuation;
+        float quadAttenuation = lssbo[frame].lights[i].quadraticAttenuation;
 
-        vec3 lightPos = lights[i].pos.xyz;
-        vec3 target = lights[i].target.xyz;
-        vec3 lightColor = lights[i].color.xyz;
+        vec3 lightPos = lssbo[frame].lights[i].pos.xyz;
+        vec3 target = lssbo[frame].lights[i].target.xyz;
+        vec3 lightColor = lssbo[frame].lights[i].color.xyz;
 
         vec3 spotDir = normalize(lightPos - target);
         vec3 fragToLightDir = normalize(lightPos - hitPos);
@@ -201,7 +206,7 @@ void main() {
         if (attenuation < 0.01) continue;
 
         // get the contribution
-        float contribution = lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
+        float contribution = lssbo[frame].lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
         if (contribution < 0.01) continue;
 
         float min = 0.001;
