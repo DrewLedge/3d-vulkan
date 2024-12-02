@@ -414,7 +414,7 @@ namespace vkh {
         submitInfo.pWaitSemaphores = nullptr;
         submitInfo.pWaitDstStageMask = nullptr;
         submitInfo.pCommandBuffers = commandBuffers;
-        submitInfo.commandBufferCount = commandBufferCount;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
         submitInfo.pSignalSemaphores = nullptr;
         submitInfo.signalSemaphoreCount = 0;
         return submitInfo;
@@ -427,7 +427,7 @@ namespace vkh {
         submitInfo.pWaitSemaphores = wait.p();
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.pCommandBuffers = commandBuffers;
-        submitInfo.commandBufferCount = commandBufferCount;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
         submitInfo.pSignalSemaphores = signal.p();
         submitInfo.signalSemaphoreCount = 1;
         return submitInfo;
@@ -440,7 +440,7 @@ namespace vkh {
         submitInfo.pWaitSemaphores = wait;
         submitInfo.pWaitDstStageMask = waitStages;
         submitInfo.pCommandBuffers = commandBuffers;
-        submitInfo.commandBufferCount = commandBufferCount;
+        submitInfo.commandBufferCount = static_cast<uint32_t>(commandBufferCount);
         submitInfo.pSignalSemaphores = signal;
         submitInfo.signalSemaphoreCount = static_cast<uint32_t>(signalSemaphoreCount);
         return submitInfo;
@@ -690,8 +690,6 @@ namespace vkh {
         switch (textureType) {
         case BASE:
             return VK_FORMAT_R8G8B8A8_SRGB;
-        case DEPTH:
-            return VK_FORMAT_D32_SFLOAT;
         case NORMAL:
             return VK_FORMAT_R8G8B8A8_UNORM;
         case METALLIC:
@@ -700,6 +698,8 @@ namespace vkh {
             return VK_FORMAT_R8G8B8A8_SRGB;
         case OCCLUSION:
             return VK_FORMAT_R8G8B8A8_UNORM;
+        case DEPTH:
+            return VK_FORMAT_D32_SFLOAT;
         case CUBEMAP:
             return VK_FORMAT_R32G32B32A32_SFLOAT;
         case ALPHA:
@@ -871,32 +871,27 @@ namespace vkh {
     }
 
     // ------------------ DESCRIPTOR SETS ------------------ //
-    void createDSLayout(VkhDescriptorSetLayout& layout, uint32_t bindingIndex, VkDescriptorType type, uint32_t descriptorCount, VkShaderStageFlags stageFlags, bool pushDescriptors = false) {
+    void createDSLayout(VkhDescriptorSetLayout& layout, const VkDescriptorSetLayoutBinding* bindings, size_t bindingCount, bool variableDescriptorCount, bool pushDescriptors) {
         if (layout.valid()) layout.reset();
 
-        VkDescriptorSetLayoutBinding binding{};
-        binding.binding = bindingIndex;
-        binding.descriptorType = type;
-        binding.descriptorCount = descriptorCount;
-        binding.stageFlags = stageFlags;
+        uint32_t count = static_cast<uint32_t>(bindingCount);
 
-        // if descriptorCount is over 1, set the binding flag to indicate a variable descriptor count
-        // this is used when the number of things sent to the shader isnt known when the pipeline is created
-        VkDescriptorBindingFlagsEXT bindingFlags = 0;
-        if (descriptorCount > 1) {
-            bindingFlags |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT_EXT;
+        std::vector<VkDescriptorBindingFlags> bindingFlags(count);
+        if (variableDescriptorCount) {
+            // set the last elem to be variable desc count
+            bindingFlags.back() |= VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT;
         }
 
-        VkDescriptorSetLayoutBindingFlagsCreateInfoEXT bindingFlagsInfo{};
-        bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO_EXT;
-        bindingFlagsInfo.bindingCount = 1;
-        bindingFlagsInfo.pBindingFlags = &bindingFlags;
+        VkDescriptorSetLayoutBindingFlagsCreateInfo bindingFlagsInfo{};
+        bindingFlagsInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO;
+        bindingFlagsInfo.pBindingFlags = bindingFlags.data();
+        bindingFlagsInfo.bindingCount = count;
 
         VkDescriptorSetLayoutCreateInfo layoutInfo{};
         layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layoutInfo.pBindings = bindings;
+        layoutInfo.bindingCount = count;
         layoutInfo.pNext = &bindingFlagsInfo;
-        layoutInfo.bindingCount = 1;
-        layoutInfo.pBindings = &binding;
         if (pushDescriptors) layoutInfo.flags = VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR;
 
         if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, layout.p()) != VK_SUCCESS) {
@@ -904,18 +899,16 @@ namespace vkh {
         }
     }
 
-    void createDSPool(VkhDescriptorPool& pool, VkDescriptorType type, uint32_t descriptorCount) {
+    void createDSPool(VkhDescriptorPool& pool, const VkDescriptorPoolSize* poolSizes, size_t poolSizeCount) {
         if (pool.valid()) pool.reset();
 
-        VkDescriptorPoolSize poolSize{};
-        poolSize.type = type;
-        poolSize.descriptorCount = descriptorCount;
+        uint32_t count = static_cast<uint32_t>(poolSizeCount);
 
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         poolInfo.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
-        poolInfo.poolSizeCount = 1;
-        poolInfo.pPoolSizes = &poolSize;
+        poolInfo.pPoolSizes = poolSizes;
+        poolInfo.poolSizeCount = count;
         poolInfo.maxSets = 1;
 
         if (vkCreateDescriptorPool(device, &poolInfo, nullptr, pool.p()) != VK_SUCCESS) {
@@ -923,8 +916,32 @@ namespace vkh {
         }
     }
 
+    VkhDescriptorSet allocDS(VkhDescriptorSetLayout& layout, const VkhDescriptorPool& pool, uint32_t variableCount = 0) {
+        VkDescriptorSetAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocInfo.descriptorSetCount = 1;
+        allocInfo.descriptorPool = pool.v();
+        allocInfo.pSetLayouts = layout.p();
+
+        VkDescriptorSetVariableDescriptorCountAllocateInfo varCountInfo{};
+        if (variableCount) {
+            varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO;
+            varCountInfo.descriptorSetCount = 1;
+            varCountInfo.pDescriptorCounts = &variableCount;
+            allocInfo.pNext = &varCountInfo;
+        }
+
+        VkhDescriptorSet set(pool.v());
+        VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate descriptor set!");
+        }
+
+        return set;
+    }
+
     template<typename InfoType>
-    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, uint32_t binding, uint32_t arrayElem, VkDescriptorType type, const InfoType* infos, size_t count) {
+    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, uint32_t binding, VkDescriptorType type, const InfoType* infos, size_t count) {
         // static assert if an invalid type is passed in
         static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
             || std::is_same_v<InfoType, VkDescriptorBufferInfo>
@@ -935,7 +952,6 @@ namespace vkh {
         d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         d.dstSet = set.v();
         d.dstBinding = binding;
-        d.dstArrayElement = arrayElem;
         d.descriptorType = type;
         d.descriptorCount = static_cast<uint32_t>(count);
 
@@ -953,7 +969,7 @@ namespace vkh {
     }
 
     template<typename InfoType>
-    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, uint32_t binding, uint32_t arrayElem, VkDescriptorType type, InfoType info) {
+    VkWriteDescriptorSet createDSWrite(const VkhDescriptorSet& set, uint32_t binding, VkDescriptorType type, InfoType info) {
         // static assert if an invalid type is passed in
         static_assert(std::is_same_v<InfoType, VkDescriptorImageInfo>
             || std::is_same_v<InfoType, VkDescriptorBufferInfo>
@@ -964,7 +980,6 @@ namespace vkh {
         d.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
         d.dstSet = set.v();
         d.dstBinding = binding;
-        d.dstArrayElement = arrayElem;
         d.descriptorType = type;
         d.descriptorCount = 1;
 
@@ -981,29 +996,6 @@ namespace vkh {
         return d;
     }
 
-    VkhDescriptorSet allocDS(VkhDescriptorSetLayout& layout, const VkhDescriptorPool& pool, const uint32_t* descriptorCounts) {
-        VkDescriptorSetVariableDescriptorCountAllocateInfoEXT varCountInfo{};
-        varCountInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO_EXT;
-        varCountInfo.descriptorSetCount = 1;
-        varCountInfo.pDescriptorCounts = descriptorCounts;
-
-        VkDescriptorSetAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocInfo.descriptorSetCount = 1;
-        allocInfo.pNext = &varCountInfo;
-
-        allocInfo.descriptorPool = pool.v();
-        allocInfo.pSetLayouts = layout.p();
-
-        VkhDescriptorSet set(pool.v());
-        VkResult result = vkAllocateDescriptorSets(device, &allocInfo, set.p());
-        if (result != VK_SUCCESS) {
-            throw std::runtime_error("Failed to allocate descriptor set!");
-        }
-
-        return set;
-    }
-
     VkDescriptorImageInfo createDSImageInfo(const VkhImageView& imageView, const VkhSampler& sampler) {
         VkDescriptorImageInfo info{};
         info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
@@ -1011,6 +1003,24 @@ namespace vkh {
         info.sampler = sampler.v();
 
         return info;
+    }
+
+    VkDescriptorSetLayoutBinding createDSLayoutBinding(uint32_t binding, size_t count, VkDescriptorType type, VkShaderStageFlags stageFlags) {
+        VkDescriptorSetLayoutBinding layoutBinding{};
+        layoutBinding.binding = binding;
+        layoutBinding.descriptorCount = static_cast<uint32_t>(count);
+        layoutBinding.descriptorType = type;
+        layoutBinding.stageFlags = stageFlags;
+
+        return layoutBinding;
+    }
+
+    VkDescriptorPoolSize createDSPoolSize(size_t count, VkDescriptorType type) {
+        VkDescriptorPoolSize poolSize{};
+        poolSize.descriptorCount = static_cast<uint32_t>(count);
+        poolSize.type = type;
+
+        return poolSize;
     }
 
     // ------------------ PIPELINES ------------------ //

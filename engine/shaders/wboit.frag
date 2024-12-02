@@ -42,6 +42,7 @@ layout(location = 0) out vec4 outColor;
 layout(push_constant, std430) uniform pc {
     int frame;
     int lightCount;
+    int frameCount;
     int bitfield;
     int texInd;
 };

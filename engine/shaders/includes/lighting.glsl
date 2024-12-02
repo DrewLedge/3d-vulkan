@@ -8,9 +8,7 @@ float shadowPCF(int frame, int lightIndex, vec4 fragPosLightspace, int kernelSiz
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
     // calculate texel size based on shadow map dimensions
-
-    // 2 is temp
-    int shadowTexIndex = (lightIndex * 2) + frame;
+    int shadowTexIndex = (lightIndex * frameCount) + frame;
     vec2 texelSize = 1.0 / textureSize(shadowMapSamplers[shadowTexIndex], 0);
 
     // loop through the PCF kernel
