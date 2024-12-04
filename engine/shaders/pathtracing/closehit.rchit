@@ -9,7 +9,7 @@
 
 layout(set = 0, binding = 0) uniform sampler2D texSamplers[];
 
-layout(push_constant) uniform pc {
+layout(push_constant, std430) uniform pc {
     layout(offset = 4) int frame;
     int lightSize;
 };

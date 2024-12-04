@@ -5,7 +5,7 @@
 layout(location = 0) in vec3 inPos;
 layout(location = 0) out vec4 outPos;
 
-layout(push_constant) uniform PC {
+layout(push_constant, std430) uniform PC {
     int frame;
 };
 

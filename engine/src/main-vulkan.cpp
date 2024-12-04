@@ -942,19 +942,19 @@ private:
 
     void createSemaphores() {
         for (size_t i = 0; i < maxFrames; i++) {
-            imageAvailableSemaphores.emplace_back(vkh::createSemaphore());
-            renderFinishedSemaphores.emplace_back(vkh::createSemaphore());
+            imageAvailableSemaphores.push_back(vkh::createSemaphore());
+            renderFinishedSemaphores.push_back(vkh::createSemaphore());
 
             if (!rtEnabled) {
-                deferredSemaphores.emplace_back(vkh::createSemaphore());
-                shadowSemaphores.emplace_back(vkh::createSemaphore());
-                wboitSemaphores.emplace_back(vkh::createSemaphore());
+                deferredSemaphores.push_back(vkh::createSemaphore());
+                shadowSemaphores.push_back(vkh::createSemaphore());
+                wboitSemaphores.push_back(vkh::createSemaphore());
             }
             else {
-                rtSemaphores.emplace_back(vkh::createSemaphore());
+                rtSemaphores.push_back(vkh::createSemaphore());
             }
 
-            compSemaphores.emplace_back(vkh::createSemaphore());
+            compSemaphores.push_back(vkh::createSemaphore());
         }
     }
 
@@ -1691,8 +1691,8 @@ private:
     }
 
     void initDescriptorInfo(DSObject& obj, VkDescriptorType type, VkShaderStageFlags stageFlags, uint32_t binding, size_t descriptorCount) {
-        obj.bindings.emplace_back(vkh::createDSLayoutBinding(binding, descriptorCount, type, stageFlags));
-        obj.poolSizes.emplace_back(vkh::createDSPoolSize(descriptorCount, type));
+        obj.bindings.push_back(vkh::createDSLayoutBinding(binding, descriptorCount, type, stageFlags));
+        obj.poolSizes.push_back(vkh::createDSPoolSize(descriptorCount, type));
     }
 
     void initDSInfo() {
@@ -1736,7 +1736,7 @@ private:
         imageInfos.reserve(totalTextureCount);
 
         for (size_t i = 0; i < totalTextureCount; i++) {
-            imageInfos.emplace_back(vkh::createDSImageInfo(allTextures[i].imageView, allTextures[i].sampler));
+            imageInfos.push_back(vkh::createDSImageInfo(allTextures[i].imageView, allTextures[i].sampler));
         }
 
         std::vector<VkDescriptorBufferInfo> lightBufferInfos{};
@@ -1793,7 +1793,7 @@ private:
             for (size_t i = 0; i < lights.size(); i++) {
                 for (size_t j = 0; j < maxFrames; j++) {
                     dvl::Texture& tex = lights[i]->shadowMapData[j];
-                    shadowInfos.emplace_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
+                    shadowInfos.push_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
                 }
             }
 
@@ -1802,32 +1802,32 @@ private:
                     size_t k = (i * 4) + j;
 
                     dvl::Texture& tex = deferredData.textures[k];
-                    deferredImageInfo.emplace_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
+                    deferredImageInfo.push_back(vkh::createDSImageInfo(tex.imageView, tex.sampler));
                 }
 
-                depthInfo.emplace_back(vkh::createDSImageInfo(deferredData.depth[i].imageView, deferredData.depth[i].sampler));
-                compositionPassImageInfo.emplace_back(vkh::createDSImageInfo(lightingData.color[i].imageView, lightingData.color[i].sampler));
-                compositionPassImageInfo.emplace_back(vkh::createDSImageInfo(wboit.weightedColor[i].imageView, wboit.weightedColor[i].sampler));
+                depthInfo.push_back(vkh::createDSImageInfo(deferredData.depth[i].imageView, deferredData.depth[i].sampler));
+                compositionPassImageInfo.push_back(vkh::createDSImageInfo(lightingData.color[i].imageView, lightingData.color[i].sampler));
+                compositionPassImageInfo.push_back(vkh::createDSImageInfo(wboit.weightedColor[i].imageView, wboit.weightedColor[i].sampler));
             }
         }
 
         std::vector<VkWriteDescriptorSet> descriptorWrites{};
         if (rtEnabled) {
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.rt.set, 0, descs.rt.bindings[0].descriptorType, tlasInfo));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.rt.set, 1, descs.rt.bindings[1].descriptorType, rtPresentTexture));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.texIndices.set, 0, descs.texIndices.bindings[0].descriptorType, texIndexInfo));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, 0, descs.rt.bindings[0].descriptorType, tlasInfo));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, 1, descs.rt.bindings[1].descriptorType, rtPresentTexture));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.texIndices.set, 0, descs.texIndices.bindings[0].descriptorType, texIndexInfo));
         }
         else {
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.deferred.set, 0, descs.deferred.bindings[0].descriptorType, deferredImageInfo.data(), deferredImageInfo.size()));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.shadowmaps.set, 0, descs.shadowmaps.bindings[0].descriptorType, shadowInfos.data(), shadowInfos.size()));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.camDepth.set, 0, descs.camDepth.bindings[0].descriptorType, depthInfo.data(), depthInfo.size()));
-            descriptorWrites.emplace_back(vkh::createDSWrite(descs.compTextures.set, 0, descs.compTextures.bindings[0].descriptorType, compositionPassImageInfo.data(), compositionPassImageInfo.size()));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.deferred.set, 0, descs.deferred.bindings[0].descriptorType, deferredImageInfo.data(), deferredImageInfo.size()));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.shadowmaps.set, 0, descs.shadowmaps.bindings[0].descriptorType, shadowInfos.data(), shadowInfos.size()));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.camDepth.set, 0, descs.camDepth.bindings[0].descriptorType, depthInfo.data(), depthInfo.size()));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.compTextures.set, 0, descs.compTextures.bindings[0].descriptorType, compositionPassImageInfo.data(), compositionPassImageInfo.size()));
         }
 
-        descriptorWrites.emplace_back(vkh::createDSWrite(descs.materialTextures.set, 0, descs.materialTextures.bindings[0].descriptorType, imageInfos.data(), imageInfos.size()));
-        descriptorWrites.emplace_back(vkh::createDSWrite(descs.camData.set, 0, descs.camData.bindings[0].descriptorType, camBufferInfos.data(), camBufferInfos.size()));
-        descriptorWrites.emplace_back(vkh::createDSWrite(descs.lights.set, 0, descs.lights.bindings[0].descriptorType, lightBufferInfos.data(), lightBufferInfos.size()));
-        descriptorWrites.emplace_back(vkh::createDSWrite(descs.known.set, 0, descs.known.bindings[0].descriptorType, skyboxInfo));
+        descriptorWrites.push_back(vkh::createDSWrite(descs.materialTextures.set, 0, descs.materialTextures.bindings[0].descriptorType, imageInfos.data(), imageInfos.size()));
+        descriptorWrites.push_back(vkh::createDSWrite(descs.camData.set, 0, descs.camData.bindings[0].descriptorType, camBufferInfos.data(), camBufferInfos.size()));
+        descriptorWrites.push_back(vkh::createDSWrite(descs.lights.set, 0, descs.lights.bindings[0].descriptorType, lightBufferInfos.data(), lightBufferInfos.size()));
+        descriptorWrites.push_back(vkh::createDSWrite(descs.known.set, 0, descs.known.bindings[0].descriptorType, skyboxInfo));
 
         vkUpdateDescriptorSets(device, static_cast<uint32_t>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -2236,7 +2236,7 @@ private:
         pushConstantRange.offset = 0;
         pushConstantRange.size = sizeof(FramePushConst);
 
-        std::array<VkDescriptorSetLayout, 5> layouts = { descs.deferred.layout.v(), descs.lights.layout.v(), descs.shadowmaps.layout.v(), descs.camData.layout.v(), descs.camDepth.layout.v() };
+        const std::array<VkDescriptorSetLayout, 5> layouts = { descs.deferred.layout.v(), descs.lights.layout.v(), descs.shadowmaps.layout.v(), descs.camData.layout.v(), descs.camDepth.layout.v() };
 
         // pipeline layout setup: defines the connection between shader stages and resources
         // this data includes: descriptorsets and push constants
@@ -3006,8 +3006,8 @@ private:
         std::vector<VkhShaderModule> shaderModules;
         std::vector<VkPipelineShaderStageCreateInfo> shaderStages{};
         for (uint8_t i = 0; i < numShaders; i++) {
-            shaderModules.emplace_back(createShaderMod(shaderNames[i]));
-            shaderStages.emplace_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
+            shaderModules.push_back(createShaderMod(shaderNames[i]));
+            shaderStages.push_back(vkh::createShaderStage(shaderStageFlagBits[i], shaderModules[i]));
         }
 
         std::array<VkRayTracingShaderGroupCreateInfoKHR, numShaders> shaderGroups{};
@@ -3760,7 +3760,7 @@ private:
                 shadowMapCommandBuffers.secondary.pools.push_back(p2);
                 shadowMapCommandBuffers.secondary.buffers.push_back(c2);
 
-                shadowInfos.emplace_back(vkh::createDSImageInfo(s.imageView, s.sampler));
+                shadowInfos.push_back(vkh::createDSImageInfo(s.imageView, s.sampler));
 
                 index += lights.size();
             }
@@ -3814,16 +3814,16 @@ private:
         cmdBuffers.primary.reserveClear(primaryCount);
 
         for (size_t i = 0; i < primaryCount; i++) {
-            cmdBuffers.primary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
-            cmdBuffers.primary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
+            cmdBuffers.primary.pools.push_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+            cmdBuffers.primary.buffers.push_back(vkh::allocateCommandBuffers(cmdBuffers.primary.pools[i]));
         }
 
         if (secondaryCount) {
             cmdBuffers.secondary.reserveClear(secondaryCount);
 
             for (size_t i = 0; i < secondaryCount; i++) {
-                cmdBuffers.secondary.pools.emplace_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
-                cmdBuffers.secondary.buffers.emplace_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
+                cmdBuffers.secondary.pools.push_back(vkh::createCommandPool(queueFamilyIndices.graphicsFamily.value(), VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT));
+                cmdBuffers.secondary.buffers.push_back(vkh::allocateCommandBuffers(cmdBuffers.secondary.pools[i], VK_COMMAND_BUFFER_LEVEL_SECONDARY));
             }
         }
     }
@@ -4336,15 +4336,15 @@ private:
                 shadowCmds.push_back(shadowMapCommandBuffers.primary.buffers[index].v());
             }
 
-            submitInfos.emplace_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], deferredSemaphores[currentFrame]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(shadowCmds.data(), shadowCmds.size(), &waitStage, deferredSemaphores[currentFrame], shadowSemaphores[currentFrame]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[currentFrame].p(), 1, &waitStage, shadowSemaphores[currentFrame], wboitSemaphores[currentFrame]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[currentFrame].p(), 1, &waitStage, wboitSemaphores[currentFrame], compSemaphores[currentFrame]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, compSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(deferredCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], deferredSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(shadowCmds.data(), shadowCmds.size(), &waitStage, deferredSemaphores[currentFrame], shadowSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(lightingPassCommandBuffers.primary[currentFrame].p(), 1, &waitStage, shadowSemaphores[currentFrame], wboitSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(wboitCommandBuffers.primary[currentFrame].p(), 1, &waitStage, wboitSemaphores[currentFrame], compSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, compSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
         }
         else {
-            submitInfos.emplace_back(vkh::createSubmitInfo(rtCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], rtSemaphores[currentFrame]));
-            submitInfos.emplace_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, rtSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(rtCommandBuffers.primary[currentFrame].p(), 1, &waitStage, imageAvailableSemaphores[currentFrame], rtSemaphores[currentFrame]));
+            submitInfos.push_back(vkh::createSubmitInfo(compCommandBuffers.primary[currentFrame].p(), 1, &waitStage, rtSemaphores[currentFrame], renderFinishedSemaphores[currentFrame]));
         }
 
         // submit all command buffers in a single call

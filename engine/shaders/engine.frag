@@ -31,7 +31,7 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
 
 layout(set = 4, binding = 0) uniform sampler2D depthSampler[];
 
-layout(push_constant) uniform PC {
+layout(push_constant, std430) uniform PC {
     int frame;
 };
 

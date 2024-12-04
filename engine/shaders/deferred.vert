@@ -19,7 +19,7 @@ layout(location = 0) out vec2 outTexCoord;
 layout(location = 1) out mat3 outTBN; // uses locations 1, 2 and 3
 layout(location = 4) flat out uint outRender;
 
-layout(push_constant) uniform pc {
+layout(push_constant, std430) uniform pc {
     int frame;
 };
 

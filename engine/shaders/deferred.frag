@@ -12,7 +12,7 @@ layout(location = 1) out vec4 outMetallicRoughness;
 layout(location = 2) out vec4 outNormal;
 layout(location = 3) out vec4 outEmissiveAO;
 
-layout(push_constant) uniform pc {
+layout(push_constant, std430) uniform pc {
     layout(offset = 4) int bitfield;
     int texInd;
 };
