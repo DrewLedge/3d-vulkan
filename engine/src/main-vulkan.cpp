@@ -415,7 +415,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = true; // a bool if raytracing has been enabled
+    bool rtEnabled = false; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -461,6 +461,8 @@ private:
     VkhBuffer indBuffer{};
     VkhDeviceMemory vertBufferMem{};
     VkhDeviceMemory indBufferMem{};
+    VkDeviceSize vertBufferSize = 0;
+    VkDeviceSize indBufferSize = 0;
 
     std::vector<VkhBuffer> lightBuffers{};
     std::vector<VkhDeviceMemory> lightBufferMems{};
@@ -1659,14 +1661,12 @@ private:
                 dml::mat4 s = dml::scale(objects[i]->scale);
                 dml::mat4 model = (t * r * s) * objects[i]->modelMatrix;
 
-                int render = 1;
                 objInstanceData.object[i].model = model;
-                objInstanceData.object[i].render = render;
+                objInstanceData.object[i].render = 1;
             }
             else {
-                int render = 0;
                 objInstanceData.object[i].model = objects[i]->modelMatrix;
-                objInstanceData.object[i].render = render;
+                objInstanceData.object[i].render = 0;
             }
         }
 
@@ -3613,31 +3613,30 @@ private:
         return 0;
     }
 
-    void createModelBuffers(bool recreate) {
+    void getModelIndices(bool getSize) {
         std::sort(objects.begin(), objects.end(), [](const auto& a, const auto& b) { return a->meshHash < b->meshHash; });
 
-        if (!recreate) bufferData.resize(getUniqueModels());
         uniqueModelIndex.clear();
         modelHashToBufferIndex.clear();
 
-        VkDeviceSize totalVertexBufferSize = 0;
-        VkDeviceSize totalIndexBufferSize = 0;
-
-        // get the total size of the vertex and index buffers
-        uint32_t ind = 0;
+        uint32_t index = 0;
         for (size_t i = 0; i < objects.size(); i++) {
             auto& obj = objects[i];
             if (uniqueModelIndex.find(obj->meshHash) == uniqueModelIndex.end()) {
-                if (!recreate) {
-                    totalVertexBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
-                    totalIndexBufferSize += sizeof(uint32_t) * obj->indices.size();
+                if (getSize) {
+                    vertBufferSize += sizeof(dvl::Vertex) * obj->vertices.size();
+                    indBufferSize += sizeof(uint32_t) * obj->indices.size();
                 }
-                uniqueModelIndex[obj->meshHash] = i; //store the index of the object
-                modelHashToBufferIndex[obj->meshHash] = ind++;
+
+                uniqueModelIndex[obj->meshHash] = i;
+                modelHashToBufferIndex[obj->meshHash] = index++;
             }
         }
+    }
 
-        if (recreate) return;
+    void createModelBuffers(bool recreate) {
+        if (!recreate) bufferData.resize(getUniqueModels());
+        getModelIndices(true);
 
         VkhBuffer stagingVertBuffer;
         VkhDeviceMemory stagingVertBufferMem;
@@ -3648,15 +3647,15 @@ private:
         const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
         // create and map the vertex buffer
-        vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, totalVertexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+        vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, vertBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
         char* vertexData;
-        vkMapMemory(device, stagingVertBufferMem.v(), 0, totalVertexBufferSize, 0, reinterpret_cast<void**>(&vertexData));
+        vkMapMemory(device, stagingVertBufferMem.v(), 0, vertBufferSize, 0, reinterpret_cast<void**>(&vertexData));
         VkDeviceSize currentVertexOffset = 0;
 
         // create and map the index buffer
-        vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, totalIndexBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+        vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, indBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
         char* indexData;
-        vkMapMemory(device, stagingIndexBufferMem.v(), 0, totalIndexBufferSize, 0, reinterpret_cast<void**>(&indexData));
+        vkMapMemory(device, stagingIndexBufferMem.v(), 0, indBufferSize, 0, reinterpret_cast<void**>(&indexData));
         VkDeviceSize currentIndexOffset = 0;
 
         for (size_t i = 0; i < objects.size(); i++) {
@@ -3687,14 +3686,14 @@ private:
         VkMemoryAllocateFlags vertM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
         VkMemoryAllocateFlags indexM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 
-        vkh::createBuffer(vertBuffer, vertBufferMem, totalVertexBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
-        vkh::createBuffer(indBuffer, indBufferMem, totalIndexBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
+        vkh::createBuffer(vertBuffer, vertBufferMem, vertBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
+        vkh::createBuffer(indBuffer, indBufferMem, indBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
         // copy the vert staging buffer into the dst vert buffer
-        vkh::copyBuffer(stagingVertBuffer, vertBuffer, commandPool, graphicsQueue, totalVertexBufferSize);
+        vkh::copyBuffer(stagingVertBuffer, vertBuffer, commandPool, graphicsQueue, vertBufferSize);
 
         // copy the index staging buffer into the dst index buffer
-        vkh::copyBuffer(stagingIndexBuffer, indBuffer, commandPool, graphicsQueue, totalIndexBufferSize);
+        vkh::copyBuffer(stagingIndexBuffer, indBuffer, commandPool, graphicsQueue, indBufferSize);
     }
 
     void cloneObject(dml::vec3 pos, const std::string& name, dml::vec3 scale, dml::vec4 rotation) {
@@ -3714,14 +3713,13 @@ private:
     }
 
     void summonModel() {
-        vkWaitForFences(device, 1, inFlightFences[currentFrame].p(), VK_TRUE, UINT64_MAX);
         if (objects.size() + 2 >= cfg::MAX_MODELS) return;
-        dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
 
+        dml::vec3 pos = dml::getCamWorldPos(cam.viewMatrix);
         cloneObject(pos, "Soi_SimpleArmor.001_Armour_Cloth_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
         cloneObject(pos, "Soi_SimpleArmor.001_Armour_Metal_Worn_0", { 0.4f, 0.4f, 0.4f }, { 0.0f, 0.0f, 0.0f, 1.0f });
 
-        createModelBuffers(true);
+        getModelIndices(false);
 
         if (rtEnabled) {
             updateTLAS(true);
@@ -3779,19 +3777,20 @@ private:
         // remove all non player following lights
         lights.erase(std::remove_if(lights.begin(), lights.end(), [](const std::unique_ptr<Light>& l) { return l && !l->followPlayer; }), lights.end());
 
-        allocateCommandBuffers(shadowMapCommandBuffers, lights.size() * maxFrames, lights.size() * maxFrames);
+        if (!rtEnabled) {
+            allocateCommandBuffers(shadowMapCommandBuffers, lights.size() * maxFrames, lights.size() * maxFrames);
 
-        shadowInfos.clear();
+            shadowInfos.clear();
+            for (size_t i = 0; i < maxFrames; i++) {
+                VkDescriptorImageInfo shadowInfo{};
+                shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                shadowInfo.imageView = lights.back()->shadowMapData[i].imageView.v();
+                shadowInfo.sampler = lights.back()->shadowMapData[i].sampler.v();
+                shadowInfos.push_back(shadowInfo);
+            }
 
-        for (size_t i = 0; i < maxFrames; i++) {
-            VkDescriptorImageInfo shadowInfo{};
-            shadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            shadowInfo.imageView = lights.back()->shadowMapData[i].imageView.v();
-            shadowInfo.sampler = lights.back()->shadowMapData[i].sampler.v();
-            shadowInfos.push_back(shadowInfo);
+            updateLightDS();
         }
-
-        updateLightDS();
 
         objects.clear();
         objects.reserve(originalObjects.size());
@@ -3799,7 +3798,7 @@ private:
             objects.push_back(std::make_unique<dvl::Mesh>(*m));
         }
 
-        createModelBuffers(true);
+        getModelIndices(false);
 
         if (rtEnabled) {
             updateTLAS(true);
@@ -3888,15 +3887,9 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-    void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, bool startCommand, bool endCommand, uint32_t pushConstOffset) {
+    void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, uint32_t pushConstOffset) {
         const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffers[currentFrame].v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
-
-        if (startCommand) {
-            if (vkBeginCommandBuffer(secondary.v(), &beginInfo) != VK_SUCCESS) {
-                throw std::runtime_error("failed to begin recording lighting secondary command buffer!");
-            }
-        }
 
         vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
         vkCmdBindDescriptorSets(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.layout.v(), 0, static_cast<uint32_t>(descriptorCount), descriptorsets, 0, nullptr);
@@ -3930,12 +3923,6 @@ private:
                 p++;
             }
         }
-
-        if (endCommand) {
-            if (vkEndCommandBuffer(secondary.v()) != VK_SUCCESS) {
-                throw std::runtime_error("failed to record lighting secondary command buffer!");
-            }
-        }
     }
 
     void recordDeferredCommandBuffers() {
@@ -3967,7 +3954,7 @@ private:
         vkCmdBeginRenderPass(deferredCommandBuffer.v(), &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
         vkCmdPushConstants(deferredCommandBuffer.v(), deferredPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(FramePushConst), &framePushConst);
-        recordObjectCommandBuffers(deferredCommandBuffer, deferredPipeline, beginInfo, deferredDS.data(), deferredDS.size(), false, false, sizeof(FramePushConst));
+        recordObjectCommandBuffers(deferredCommandBuffer, deferredPipeline, beginInfo, deferredDS.data(), deferredDS.size(), sizeof(FramePushConst));
 
         vkCmdEndRenderPass(deferredCommandBuffer.v());
         if (vkEndCommandBuffer(deferredCommandBuffer.v()) != VK_SUCCESS) {
@@ -4171,7 +4158,7 @@ private:
         lightPushConst.frameCount = static_cast<int>(maxFrames);
 
         vkCmdPushConstants(wboitCommandBuffer.v(), wboitPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, sizeof(FramePushConst), sizeof(LightPushConst), &lightPushConst);
-        recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), false, false, sizeof(FramePushConst) + sizeof(LightPushConst));
+        recordObjectCommandBuffers(wboitCommandBuffer, wboitPipeline, beginInfo, wboitDS.data(), wboitDS.size(), sizeof(FramePushConst) + sizeof(LightPushConst));
 
         vkCmdEndRenderPass(wboitCommandBuffer.v());
 
@@ -4394,8 +4381,8 @@ private:
         while (!glfwWindowShouldClose(window)) {
             calcFps();
             glfwPollEvents();
-            handleKeyboardInput();
             updateUBO();
+            handleKeyboardInput();
             if (rtEnabled) updateTLAS();
             drawFrame();
         }
