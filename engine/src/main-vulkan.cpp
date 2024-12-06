@@ -155,6 +155,7 @@ private:
     struct ModelInstanceData {
         ModelInstance object[cfg::MAX_MODELS];
     };
+
     struct CamUBO {
         dml::mat4 view{};
         dml::mat4 proj{};
@@ -4312,6 +4313,12 @@ private:
         initializeMouseInput(true);
     }
 
+    inline void updateData() {
+        updateUBO();
+        if (rtEnabled) updateTLAS();
+        recordAllCommandBuffers();
+    }
+
     void drawFrame() {
         currentFrame = (currentFrame + 1) % maxFrames;
         framePushConst.frame = currentFrame;
@@ -4330,7 +4337,7 @@ private:
             throw std::runtime_error("failed to acquire swap chain image!");
         }
 
-        recordAllCommandBuffers();
+        updateData();
 
         VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         std::vector<VkSubmitInfo> submitInfos;
@@ -4402,8 +4409,6 @@ private:
             calcFps();
             glfwPollEvents();
             handleKeyboardInput();
-            updateUBO();
-            if (rtEnabled) updateTLAS();
             drawFrame();
         }
 
