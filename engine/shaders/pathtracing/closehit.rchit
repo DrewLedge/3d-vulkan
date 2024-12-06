@@ -34,7 +34,7 @@ layout(set = 1, binding = 0) readonly buffer LightBuffer {
     LightData lights[];
 } lssbo[];
 
-layout(set = 4, binding = 0) uniform accelerationStructureEXT TLAS;
+layout(set = 5, binding = 0) uniform accelerationStructureEXT TLAS[];
 
 struct TexIndexData {
     uint albedo;
@@ -44,7 +44,7 @@ struct TexIndexData {
     uint64_t indexAddress;
 };
 
-layout(set = 5, binding = 0) readonly buffer TexIndexBuffer {
+layout(set = 6, binding = 0) readonly buffer TexIndexBuffer {
     TexIndexData texIndices[];
 };
 
@@ -156,7 +156,7 @@ void main() {
 
     // trace reflection rays
     traceRayEXT(
-        TLAS,
+        TLAS[frame],
         gl_RayFlagsOpaqueEXT,
         0xFF,                 // cull mask
         0,                    // sbt offset
@@ -214,7 +214,7 @@ void main() {
 
         // trace the shadow rays
         traceRayEXT(
-            TLAS,
+            TLAS[frame],
             gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
             0xFF,                 // cull mask
             1,                    // sbt offset

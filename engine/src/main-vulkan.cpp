@@ -222,10 +222,11 @@ private:
     };
 
     struct DesciptorSetsObj {
-        DSObject rt{};
+        DSObject tlas{};
+        DSObject rtTex{};
+        DSObject texIndices{};
 
         DSObject materialTextures{};
-        DSObject texIndices{};
         DSObject deferred{};
         DSObject shadowmaps{};
         DSObject camDepth{};
@@ -415,7 +416,7 @@ private:
     const ShadowMapDim shadowProps{};
 
     bool rtSupported = false; // a bool if raytracing is supported on the device
-    bool rtEnabled = false; // a bool if raytracing has been enabled
+    bool rtEnabled = true; // a bool if raytracing has been enabled
 
     CamData cam{};
 
@@ -503,9 +504,9 @@ private:
     // path tracing
     VkPhysicalDeviceRayTracingPipelinePropertiesKHR rtProperties{};
     std::vector<BlasData> BLAS;
-    TlasData tlas{};
+    std::vector<TlasData> tlas{};
     PipelineData rtPipeline{};
-    dvl::Texture rtTex{};
+    std::vector<dvl::Texture> rtTextures{};
     SBT sbt{};
     TexIndexSSBO texIndices{};
     VkhBuffer texIndicesBuffer{};
@@ -1317,8 +1318,11 @@ private:
 
         if (rtEnabled) {
             // rt image
-            createTexture(rtTex, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
-            vkh::transitionImageLayout(commandPool, rtTex.image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1, 0);
+            rtTextures.resize(maxFrames);
+            for (size_t i = 0; i < maxFrames; i++) {
+                createTexture(rtTextures[i], VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT, swap.extent.width, swap.extent.height);
+                vkh::transitionImageLayout(commandPool, rtTextures[i].image, VK_FORMAT_R16G16B16A16_SFLOAT, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_GENERAL, 1, 1, 0);
+            }
         }
         else {
             lightingData.color.resize(maxFrames);
@@ -1714,11 +1718,11 @@ private:
             camSS = VK_SHADER_STAGE_VERTEX_BIT;
         }
 
-        initDescriptorInfo(descs.rt, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, 1);
-        initDescriptorInfo(descs.rt, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT, 1, 1);
+        initDescriptorInfo(descs.rtTex, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_FRAGMENT_BIT, 0, maxFrames);
+        initDescriptorInfo(descs.tlas, VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, maxFrames);
+        initDescriptorInfo(descs.texIndices, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, totalTextureCount);
 
         initDescriptorInfo(descs.materialTextures, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, textursSS, 0, totalTextureCount);
-        initDescriptorInfo(descs.texIndices, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, totalTextureCount);
         initDescriptorInfo(descs.camData, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, camSS, 0, maxFrames);
         initDescriptorInfo(descs.lights, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, lightDataSS, 0, maxFrames);
         initDescriptorInfo(descs.deferred, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, deferredData.colorCount);
@@ -1768,17 +1772,23 @@ private:
 
         // raytracing
         VkWriteDescriptorSetAccelerationStructureKHR tlasInfo{};
-        VkDescriptorImageInfo rtPresentTexture{};
+        std::vector<VkAccelerationStructureKHR> tlasList{};
+
+        std::vector<VkDescriptorImageInfo> rtPresentTextures{};
         VkDescriptorBufferInfo texIndexInfo{};
 
         if (rtEnabled) {
-            tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
-            tlasInfo.pAccelerationStructures = tlas.as.p();
-            tlasInfo.accelerationStructureCount = 1;
+            tlasList.reserve(maxFrames);
+            rtPresentTextures.reserve(maxFrames);
 
-            rtPresentTexture.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
-            rtPresentTexture.imageView = rtTex.imageView.v();
-            rtPresentTexture.sampler = rtTex.sampler.v();
+            for (size_t i = 0; i < maxFrames; i++) {
+                tlasList.push_back(tlas[i].as.v());
+                rtPresentTextures.push_back(vkh::createDSImageInfo(rtTextures[i].imageView, rtTextures[i].sampler, VK_IMAGE_LAYOUT_GENERAL));
+            }
+
+            tlasInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+            tlasInfo.pAccelerationStructures = tlasList.data();
+            tlasInfo.accelerationStructureCount = maxFrames;
 
             texIndexInfo.buffer = texIndicesBuffer.v();
             texIndexInfo.offset = 0;
@@ -1813,8 +1823,8 @@ private:
 
         std::vector<VkWriteDescriptorSet> descriptorWrites{};
         if (rtEnabled) {
-            descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, 0, descs.rt.bindings[0].descriptorType, tlasInfo));
-            descriptorWrites.push_back(vkh::createDSWrite(descs.rt.set, 1, descs.rt.bindings[1].descriptorType, rtPresentTexture));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.rtTex.set, 0, descs.rtTex.bindings[0].descriptorType, rtPresentTextures.data(), rtPresentTextures.size()));
+            descriptorWrites.push_back(vkh::createDSWrite(descs.tlas.set, 0, descs.tlas.bindings[0].descriptorType, &tlasInfo, maxFrames));
             descriptorWrites.push_back(vkh::createDSWrite(descs.texIndices.set, 0, descs.texIndices.bindings[0].descriptorType, texIndexInfo));
         }
         else {
@@ -1836,7 +1846,8 @@ private:
         initDSInfo();
 
         if (rtEnabled) {
-            initDescriptorSet(descs.rt, false);
+            initDescriptorSet(descs.rtTex, true);
+            initDescriptorSet(descs.tlas, true);
             initDescriptorSet(descs.texIndices, true);
         }
         else {
@@ -2943,22 +2954,17 @@ private:
             throw std::runtime_error("failed to create render pass!");
         }
 
+        VkPushConstantRange pcRange{};
+        pcRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        pcRange.size = sizeof(FramePushConst);
+        pcRange.offset = 0;
+
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
         pipelineLayoutInf.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
         pipelineLayoutInf.setLayoutCount = 1;
-        if (rtEnabled) {
-            pipelineLayoutInf.pSetLayouts = descs.rt.layout.p();
-        }
-        else {
-            VkPushConstantRange pushConstantRange{};
-            pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
-            pushConstantRange.offset = 0;
-            pushConstantRange.size = sizeof(FramePushConst);
-
-            pipelineLayoutInf.pSetLayouts = descs.compTextures.layout.p();
-            pipelineLayoutInf.pPushConstantRanges = &pushConstantRange;
-            pipelineLayoutInf.pushConstantRangeCount = 1;
-        }
+        pipelineLayoutInf.pSetLayouts = rtEnabled ? descs.rtTex.layout.p() : descs.compTextures.layout.p();
+        pipelineLayoutInf.pPushConstantRanges = &pcRange;
+        pipelineLayoutInf.pushConstantRangeCount = 1;
 
         VkResult result = vkCreatePipelineLayout(device, &pipelineLayoutInf, nullptr, compPipeline.layout.p());
         if (result != VK_SUCCESS) {
@@ -3053,7 +3059,7 @@ private:
         chPCRange.size = sizeof(LightPushConst);
 
         // create the pipeline layoyut
-        const std::array<VkDescriptorSetLayout, 6> layouts = { descs.materialTextures.layout.v(), descs.lights.layout.v(), descs.known.layout.v(), descs.camData.layout.v(), descs.rt.layout.v(), descs.texIndices.layout.v() };
+        const std::array<VkDescriptorSetLayout, 7> layouts = { descs.materialTextures.layout.v(), descs.lights.layout.v(), descs.known.layout.v(), descs.camData.layout.v(), descs.rtTex.layout.v(), descs.tlas.layout.v(), descs.texIndices.layout.v() };
         const std::array< VkPushConstantRange, 2> ranges = { genPCRange, chPCRange };
 
         VkPipelineLayoutCreateInfo pipelineLayoutInf{};
@@ -3423,60 +3429,60 @@ private:
         vkh::endSingleTimeCommands(commandBufferC, commandPool, graphicsQueue);
     }
 
-    void createTLAS() {
-        if (tlas.as.valid()) tlas.as.reset();
+    void createTLAS(TlasData& t) {
+        if (t.as.valid()) t.as.reset();
 
         // create a buffer to hold all of the instances
         VkDeviceSize iSize = cfg::MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
         VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-        vkh::createAndWriteHostBuffer(tlas.instanceBuffer, tlas.instanceBufferMem, meshInstances.data(), iSize, iUsage, iMemFlags);
+        vkh::createAndWriteHostBuffer(t.instanceBuffer, t.instanceBufferMem, meshInstances.data(), iSize, iUsage, iMemFlags);
 
         uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
         uint32_t primitiveCountMax = cfg::MAX_MODELS;
 
         // acceleration structure geometry
-        VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
-        tlas.geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
-        tlas.geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
-        tlas.geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
-        tlas.geometry.geometry.instances.data.deviceAddress = instanceAddress;
-        tlas.geometry.geometry.instances.arrayOfPointers = VK_FALSE;
+        VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(t.instanceBuffer);
+        t.geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+        t.geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+        t.geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+        t.geometry.geometry.instances.data.deviceAddress = instanceAddress;
+        t.geometry.geometry.instances.arrayOfPointers = VK_FALSE;
 
         VkBuildAccelerationStructureFlagsKHR accelerationFlags = 0;
         accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR; // optimizes the tlas for faster path tracing
         accelerationFlags |= VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR; // allows the tlas to be updated, without having to fully recreate it
 
         // TLAS build info - specifies the acceleration structure type, the flags, and the geometry
-        tlas.buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
-        tlas.buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        tlas.buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
-        tlas.buildInfo.flags = accelerationFlags;
-        tlas.buildInfo.geometryCount = 1;
-        tlas.buildInfo.pGeometries = &tlas.geometry;
+        t.buildInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+        t.buildInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
+        t.buildInfo.mode = VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+        t.buildInfo.flags = accelerationFlags;
+        t.buildInfo.geometryCount = 1;
+        t.buildInfo.pGeometries = &t.geometry;
 
         // size requirements for the TLAS - the total size of the acceleration structure, taking into account the amount of primitives, etc
         VkAccelerationStructureBuildSizesInfoKHR sizeInfo{};
         sizeInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
-        vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &tlas.buildInfo, &primitiveCountMax, &sizeInfo);
+        vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &t.buildInfo, &primitiveCountMax, &sizeInfo);
 
         VkDeviceSize asSize = sizeInfo.accelerationStructureSize;
 
         // create a buffer for the TLAS - the buffer used in the creation of the tlas
         VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(tlas.buffer, tlas.mem, asSize, tlasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(t.buffer, t.mem, asSize, tlasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the TLAS
         VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        createInfo.buffer = tlas.buffer.v();
+        createInfo.buffer = t.buffer.v();
         createInfo.size = asSize;
-        vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, tlas.as.p());
+        vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, t.as.p());
 
         // scratch buffer - used to create space for intermediate data thats used when building the TLAS
         VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(tlas.scratchBuffer, tlas.scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(t.scratchBuffer, t.scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // build range info - specifies the primitive count and offsets for the tlas
         VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
@@ -3487,12 +3493,12 @@ private:
         const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
 
         // set the dst of the build info to be the tlas and add the scratch buffer address
-        tlas.buildInfo.dstAccelerationStructure = tlas.as.v();
-        tlas.buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(tlas.scratchBuffer);
+        t.buildInfo.dstAccelerationStructure = t.as.v();
+        t.buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(t.scratchBuffer);
 
         // build and populate the TLAS
         VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
-        vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &tlas.buildInfo, &pBuildRangeInfo);
+        vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &t.buildInfo, &pBuildRangeInfo);
         vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
     }
 
@@ -3526,6 +3532,34 @@ private:
         meshInstances.push_back(meshInstance);
     }
 
+    void updateTLAS(size_t index, bool rebuild) {
+        // copy the new data into the instance buffer
+        TlasData& t = tlas[index];
+        vkh::writeBuffer(t.instanceBufferMem, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
+
+        // update the instance buffer device address
+        t.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(t.instanceBuffer);
+
+        // update the build info
+        t.buildInfo.pGeometries = &t.geometry;
+        t.buildInfo.mode = rebuild ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
+        t.buildInfo.srcAccelerationStructure = rebuild ? VK_NULL_HANDLE : t.as.v();
+        t.buildInfo.dstAccelerationStructure = t.as.v();
+
+        // update the buildRangeInfo
+        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
+        buildRangeInfo.primitiveCount = static_cast<uint32_t>(meshInstances.size());
+        buildRangeInfo.primitiveOffset = 0;
+        buildRangeInfo.transformOffset = 0;
+        buildRangeInfo.firstVertex = 0;
+        const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
+
+        // rebuild and populate the TLAS
+        VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
+        vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &t.buildInfo, &pBuildRangeInfo);
+        vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
+    }
+
     void updateTLAS(bool changed = false) {
         if (changed) meshInstances.clear();
         for (size_t i = 0; i < objects.size(); i++) {
@@ -3538,30 +3572,14 @@ private:
             }
         }
 
-        // copy the new data into the instance buffer
-        vkh::writeBuffer(tlas.instanceBufferMem, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
-
-        // update the instance buffer device address
-        tlas.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(tlas.instanceBuffer);
-        tlas.buildInfo.pGeometries = &tlas.geometry;
-
-        // if the amount of objects has changed, do a full rebuild, otherwise just update it
-        tlas.buildInfo.mode = changed ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR : VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR;
-        tlas.buildInfo.srcAccelerationStructure = changed ? VK_NULL_HANDLE : tlas.as.v();
-        tlas.buildInfo.dstAccelerationStructure = tlas.as.v();
-
-        // update the buildRangeInfo
-        VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
-        buildRangeInfo.primitiveCount = static_cast<uint32_t>(meshInstances.size());
-        buildRangeInfo.primitiveOffset = 0;
-        buildRangeInfo.transformOffset = 0;
-        buildRangeInfo.firstVertex = 0;
-        const VkAccelerationStructureBuildRangeInfoKHR* pBuildRangeInfo = &buildRangeInfo;
-
-        // rebuild and populate the TLAS
-        VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
-        vkhfp::vkCmdBuildAccelerationStructuresKHR(commandBufferB.v(), 1, &tlas.buildInfo, &pBuildRangeInfo);
-        vkh::endSingleTimeCommands(commandBufferB, commandPool, graphicsQueue);
+        if (changed) {
+            for (size_t i = 0; i < maxFrames; i++) {
+                updateTLAS(i, true);
+            }
+        }
+        else {
+            updateTLAS(currentFrame, false);
+        }
     }
 
     void setupAccelerationStructures() {
@@ -3578,7 +3596,11 @@ private:
         for (size_t i = 0; i < objects.size(); i++) {
             createMeshInstace(i);
         }
-        createTLAS();
+
+        tlas.resize(maxFrames);
+        for (size_t i = 0; i < maxFrames; i++) {
+            createTLAS(tlas[i]);
+        }
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -4175,7 +4197,7 @@ private:
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT | VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT;
         beginInfo.pInheritanceInfo = nullptr;
 
-        VkDescriptorSet* set = (rtEnabled) ? descs.rt.set.p() : descs.compTextures.set.p();
+        VkDescriptorSet* set = (rtEnabled) ? descs.rtTex.set.p() : descs.compTextures.set.p();
 
         VkhCommandBuffer& compCommandBuffer = compCommandBuffers.primary.buffers[currentFrame];
         if (vkBeginCommandBuffer(compCommandBuffer.v(), &beginInfo) != VK_SUCCESS) {
@@ -4196,9 +4218,7 @@ private:
         vkCmdBindPipeline(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.pipeline.v());
         vkCmdBindDescriptorSets(compCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, compPipeline.layout.v(), 0, 1, set, 0, nullptr);
 
-        if (!rtEnabled) {
-            vkCmdPushConstants(compCommandBuffer.v(), compPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
-        }
+        vkCmdPushConstants(compCommandBuffer.v(), compPipeline.layout.v(), VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(FramePushConst), &framePushConst);
 
         vkCmdDraw(compCommandBuffer.v(), 6, 1, 0, 0);
 
@@ -4211,7 +4231,7 @@ private:
     }
 
     void recordRTCommandBuffers() {
-        const std::array<VkDescriptorSet, 6> ds = { descs.materialTextures.set.v(), descs.lights.set.v(), descs.known.set.v(), descs.camData.set.v(), descs.rt.set.v(), descs.texIndices.set.v() };
+        const std::array<VkDescriptorSet, 7> ds = { descs.materialTextures.set.v(), descs.lights.set.v(), descs.known.set.v(), descs.camData.set.v(), descs.rtTex.set.v(), descs.tlas.set.v(), descs.texIndices.set.v() };
 
         VkCommandBufferInheritanceInfo inheritInfo{};
         inheritInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO;
@@ -4381,8 +4401,8 @@ private:
         while (!glfwWindowShouldClose(window)) {
             calcFps();
             glfwPollEvents();
-            updateUBO();
             handleKeyboardInput();
+            updateUBO();
             if (rtEnabled) updateTLAS();
             drawFrame();
         }

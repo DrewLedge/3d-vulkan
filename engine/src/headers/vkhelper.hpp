@@ -996,9 +996,9 @@ namespace vkh {
         return d;
     }
 
-    VkDescriptorImageInfo createDSImageInfo(const VkhImageView& imageView, const VkhSampler& sampler) {
+    VkDescriptorImageInfo createDSImageInfo(const VkhImageView& imageView, const VkhSampler& sampler, VkImageLayout layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
         VkDescriptorImageInfo info{};
-        info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        info.imageLayout = layout;
         info.imageView = imageView.v();
         info.sampler = sampler.v();
 
