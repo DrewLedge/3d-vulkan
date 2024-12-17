@@ -23,7 +23,7 @@ void main() {
     float weightedAlpha = weightedColor.a;
 
     // if there is no weighted color, early out
-    if (weightedColor == vec4(0.0, 0.0, 0.0, 1.0)) {
+    if (weightedColor == vec4(0.0f, 0.0f, 0.0f, 1.0f)) {
         outColor = mainColor;
         return;
     }
@@ -31,6 +31,6 @@ void main() {
     weightedColor.rgb /= max(weightedAlpha, 1e-5);
 
     // blend the main color with the weighted color based on the weighted alpha
-    outColor = vec4(mix(mainColor.rgb, weightedColor.rgb, weightedAlpha), 1.0);
-    outColor.rgb *= pow(weightedAlpha, 0.4);
+    outColor = vec4(mix(mainColor.rgb, weightedColor.rgb, weightedAlpha), 1.0f);
+    outColor.rgb *= pow(weightedAlpha, 0.4f);
 }

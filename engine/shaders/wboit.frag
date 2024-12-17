@@ -52,7 +52,7 @@ layout(push_constant, std430) uniform pc {
 
 float getWeight(float z, float a) {
     float weight = a * exp(-z);
-    return 1.0 - weight;
+    return 1.0f - weight;
 }
 
 void main() {

@@ -27,10 +27,10 @@ layout(location = 0) rayPayloadEXT Payload payload;
 
 vec3 getDir(vec2 uv) {
     // convert the uv to a -1 to 1 range (ndc)
-    vec2 ndc = uv * 2.0 - 1.0;
+    vec2 ndc = uv * 2.0f - 1.0f;
 
     // reconstruct the clip space pos from the ndc cords
-    vec4 clip = vec4(ndc, 1.0, 1.0);
+    vec4 clip = vec4(ndc, 1.0f, 1.0f);
 
     // transform to view space by multiplying by the inv proj
     vec4 view = CamUBO[frame].iproj * clip;
@@ -39,15 +39,15 @@ vec3 getDir(vec2 uv) {
     vec3 viewDir = normalize(view.xyz / view.w);
 
     // multiply the dir by the inverse view matrix to get dir in world space
-    return (CamUBO[frame].iview * vec4(viewDir, 0.0)).xyz;
+    return (CamUBO[frame].iview * vec4(viewDir, 0.0f)).xyz;
 }
 
 void main() {
-    vec2 uv = (0.5 + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
+    vec2 uv = (0.5f + vec2(gl_LaunchIDEXT.xy)) / vec2(gl_LaunchSizeEXT.xy);
     vec3 pos = CamUBO[frame].iview[3].xyz;
     vec3 dir = getDir(uv);
 
-    payload.col = vec3(0.0);
+    payload.col = vec3(0.0f);
     payload.rec = 0;
 
     traceRayEXT(
@@ -58,11 +58,11 @@ void main() {
         0,                    // sbt stride
         0,                    // miss index
         pos,                  // pos
-        0.0,                  // min-range
+        0.0f,                 // min-range
         dir,                  // dir
-        100.0,                // max-range
+        100.0f,               // max-range
         0                     // payload
     );
 
-    imageStore(rtTextures[frame], ivec2(gl_LaunchIDEXT.xy), vec4(payload.col, 1.0));
+    imageStore(rtTextures[frame], ivec2(gl_LaunchIDEXT.xy), vec4(payload.col, 1.0f));
 }

@@ -54,7 +54,7 @@ void main() {
     outTBN = getTBN(inTangent, model, inNormal);
 
     outTexCoord = inTexCoord;
-    outFragPos = vec3(model * vec4(inPosition, 1.0)); // position in world space
+    outFragPos = vec3(model * vec4(inPosition, 1.0f)); // position in world space
     outViewDir = viewDir;
 
     outFarPlane = getFarPlane(proj);

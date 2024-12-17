@@ -1,10 +1,10 @@
 vec4 getPos(mat4 proj, mat4 view, mat4 model, vec3 pos) {
-    return proj * view * model * vec4(pos, 1.0);
+    return proj * view * model * vec4(pos, 1.0f);
 }
 
 vec3 getViewDir(mat4 iview, mat4 model, vec3 pos) {
     vec3 worldCamPos = vec3(iview[3]);
-    vec3 fragPos = vec3(model * vec4(pos, 1.0));
+    vec3 fragPos = vec3(model * vec4(pos, 1.0f));
     return normalize(worldCamPos - fragPos);
 }
 
@@ -24,9 +24,9 @@ mat3 getTBN(vec4 tangent, mat4 model, vec3 normal) {
 }
 
 float getNearPlane(mat4 proj) {
-    return -proj[3][2] / (proj[2][2] + 1.0);
+    return -proj[3][2] / (proj[2][2] + 1.0f);
 }
 
 float getFarPlane(mat4 proj) {
-    return -proj[3][2] / (proj[2][2] - 1.0);
+    return -proj[3][2] / (proj[2][2] - 1.0f);
 }

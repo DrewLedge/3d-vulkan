@@ -20,8 +20,8 @@ void main() {
     mat4 view = CamUBO[frame].view;
     mat4 projection = CamUBO[frame].proj;
     mat4 rotationOnlyView = view;
-    rotationOnlyView[3] = vec4(0.0, 0.0, 0.0, 1.0);
+    rotationOnlyView[3] = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 
     outPos = vec4(inPos, 1);
-    gl_Position = projection * rotationOnlyView * vec4(inPos, 1.0);
+    gl_Position = projection * rotationOnlyView * vec4(inPos, 1.0f);
 }

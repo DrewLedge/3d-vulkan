@@ -1,6 +1,6 @@
 #version 460
 
-#define PI 3.141592653589793238
+#define PI 3.141592653589793238f
 
 #extension GL_EXT_ray_tracing : require
 #extension GL_EXT_nonuniform_qualifier : require
@@ -75,7 +75,7 @@ hitAttributeEXT vec2 hit;
 
 // barycentric interpolation for vec2 - vec4
 #define BARYCENTRIC(type) type barycentric##type(type b1, type b2, type b3, float u, float v) { \
-    float w = 1.0 - u - v; \
+    float w = 1.0f - u - v; \
     return (b1 * w) + (b2 * u) + (b3 * v); \
 }
 
@@ -163,9 +163,9 @@ void main() {
         0,                    // sbt stride
         0,                    // miss index
         hitPos,               // pos
-        0.01,                 // min-range
+        0.01f,                // min-range
         reflectDir,           // dir
-        100.0,                // max-range
+        100.0f,               // max-range
         0                     // payload
     );
 
@@ -173,15 +173,15 @@ void main() {
 
     // fresnel term
     vec3 H = normalize(viewDir + reflectDir);
-    float VdotH = max(dot(viewDir, H), 0.0);
+    float VdotH = max(dot(viewDir, H), 0.0f);
     vec3 F = fresnelTerm(albedo.rgb, metallic, VdotH);
 
     // get the reflection color
-    vec3 refl = payload.col * F * (1.0 - roughness);
+    vec3 refl = payload.col * F * (1.0f - roughness);
 
-    vec3 accumulated = vec3(0.0);
+    vec3 accumulated = vec3(0.0f);
     for (int i = 0; i < lightSize; i++) {
-        if (lssbo[frame].lights[i].intensity < 0.01) continue;
+        if (lssbo[frame].lights[i].intensity < 0.01f) continue;
 
         float inner = lssbo[frame].lights[i].innerConeAngle;
         float outer = lssbo[frame].lights[i].outerConeAngle;
@@ -202,14 +202,14 @@ void main() {
 
         // attenuation
         float lightDistance = distance(lightPos, hitPos);
-        float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
-        if (attenuation < 0.01) continue;
+        float attenuation = 1.0f / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
+        if (attenuation < 0.01f) continue;
 
         // get the contribution
         float contribution = lssbo[frame].lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
-        if (contribution < 0.01) continue;
+        if (contribution < 0.01f) continue;
 
-        float min = 0.001;
+        float min = 0.001f;
         float max = lightDistance - min;
 
         // trace the shadow rays
@@ -237,6 +237,6 @@ void main() {
     }
 
     // final color calculation
-    vec3 o = albedo.rgb * occlusion * 0.005;
+    vec3 o = albedo.rgb * occlusion * 0.005f;
     payload.col = accumulated + emissive + o;
 }
