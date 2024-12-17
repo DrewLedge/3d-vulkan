@@ -38,6 +38,9 @@ layout(location = 7) in float inFarPlane;
 layout(location = 8) in float inNearPlane;
 layout(location = 9) flat in int inFrame;
 
+#include "includes/fragformulas.glsl"
+#include "includes/lighting.glsl"
+
 layout(location = 0) out vec4 outColor;
 
 layout(push_constant, std430) uniform pc {
@@ -46,15 +49,6 @@ layout(push_constant, std430) uniform pc {
     int bitfield;
     int texInd;
 };
-
-vec4 albedo = vec4(1.0f);
-vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
-vec3 normal = vec3(0.0f);
-vec3 emissive = vec3(0.0f);
-float occlusion = 1.0f;
-
-#include "includes/fragformulas.glsl"
-#include "includes/lighting.glsl"
 
 float getWeight(float z, float a) {
     float weight = a * exp(-z);
@@ -66,9 +60,15 @@ void main() {
         discard;
     }
 
-    getTextures(bitfield, texInd, inTexCoord, inTBN);
+    vec4 albedo;
+    vec4 metallicRoughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 
-    vec4 color = calcLighting(inFrame, lightCount, false, true);
+    getTextures(bitfield, texInd, inTexCoord, inTBN, albedo, metallicRoughness, normal, emissive, occlusion);
+
+    vec4 color = calcLighting(albedo, metallicRoughness, normal, emissive, occlusion, inFragPos, inViewDir, inFrame, frameCount, lightCount, false, true);
 
     // get the depth from the opaque texture
     vec2 cords = getTexCords(depthSamplers[inFrame], gl_FragCoord.xy);

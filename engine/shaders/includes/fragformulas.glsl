@@ -66,12 +66,19 @@ vec3 cookTorrance(vec3 N, vec3 L, vec3 V, vec4 albedo, float metallic, float rou
     return (diffuse + spec) * NdotL;
 }
 
-void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn) {
+void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn, out vec4 albedo, out vec4 metallicRoughness, out vec3 normal, out vec3 emissive, out float occlusion) {
     bool albedoExists = (bitfield & 1) != 0;
     bool metallicRoughnessExists = (bitfield & 2) != 0;
     bool normalExists = (bitfield & 4) != 0;
     bool emissiveExists = (bitfield & 8) != 0;
     bool occlusionExists = (bitfield & 16) != 0;
+
+    // default values
+    albedo = vec4(1.0f);
+    metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
+    normal = vec3(0.0f);
+    emissive = vec3(0.0f);
+    occlusion = 1.0f;
 
     uint nextTexture = texIndex;
     albedo = texture(texSamplers[nextTexture], uv);
@@ -108,4 +115,24 @@ vec2 getTexCords(sampler2D tex, vec2 fragCoord) {
 float calcFallofff(float outer, float inner, float theta) {
     float f = smoothstep(cos(outer), cos(inner), theta);
     return f * f;
+}
+
+vec3 getFragPos(vec2 uv, float depth, mat4 iproj, mat4 iview) {
+    // convert uv to -1 to 1 range
+    vec2 ndc = uv * 2.0f - 1.0f;
+
+    // get the clip space pos
+    vec4 clip = vec4(ndc, depth, 1.0f);
+
+    // get the view pos from the clip pos
+    vec4 view = iproj * clip;
+    view /= view.w; // perspective divide
+
+    // multiply by the inverse view mat to get the pos in world space
+    return (iview * view).xyz;
+}
+
+vec3 getViewDir(vec3 fragWorldPos, mat4 iview) {
+    vec3 camPos = vec3(iview[3]);
+    return normalize(camPos - fragWorldPos);
 }

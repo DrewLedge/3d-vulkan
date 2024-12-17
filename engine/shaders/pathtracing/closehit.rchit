@@ -83,12 +83,6 @@ BARYCENTRIC(vec2)
 BARYCENTRIC(vec3)
 BARYCENTRIC(vec4)
 
-vec4 albedo = vec4(1.0f);
-vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
-vec3 normal = vec3(0.0f);
-vec3 emissive = vec3(0.0f);
-float occlusion = 1.0f;
-
 void getVertData(uint index, out vec2 uv, out vec3 normal, out vec4 tangent) {
     uint64_t vertAddr = texIndices[gl_InstanceCustomIndexEXT].vertexAddress;
     uint64_t indexAddr = texIndices[gl_InstanceCustomIndexEXT].indexAddress;
@@ -143,7 +137,13 @@ void main() {
     mat3 tbn = getTBN(tangent, mat3(gl_ObjectToWorldEXT), norm);
 
     // load the texture data
-    getTextures(bitfield, texindex, uv, tbn);
+    vec4 albedo = vec4(1.0f);
+    vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
+    vec3 normal = vec3(0.0f);
+    vec3 emissive = vec3(0.0f);
+    float occlusion = 1.0f;
+
+    getTextures(bitfield, texindex, uv, tbn, albedo, metallicRoughness, normal, emissive, occlusion);
 
     vec3 hitPos = gl_WorldRayOriginEXT + (gl_WorldRayDirectionEXT * gl_HitTEXT);
     vec3 viewDir = -gl_WorldRayDirectionEXT;

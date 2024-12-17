@@ -17,12 +17,6 @@ layout(push_constant, std430) uniform pc {
     int texInd;
 };
 
-vec4 albedo = vec4(1.0f);
-vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
-vec3 normal = vec3(0.0f);
-vec3 emissive = vec3(0.0f);
-float occlusion = 1.0f;
-
 #include "includes/fragformulas.glsl"
 
 void main() {
@@ -30,7 +24,16 @@ void main() {
         discard;
     }
 
-    getTextures(bitfield, texInd, inTexCoord, inTBN);
+    vec4 albedo;
+    vec4 metallicRoughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
+
+    getTextures(bitfield, texInd, inTexCoord, inTBN, albedo, metallicRoughness, normal, emissive, occlusion);
+
+    // convert to 0 to 1 range
+    normal = normal * 0.5f + 0.5f;
 
     if (albedo.a < 0.95f) {
         discard;

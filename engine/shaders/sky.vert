@@ -12,6 +12,8 @@ layout(push_constant, std430) uniform PC {
 layout(set = 1, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
+    mat4 iview;
+    mat4 iproj;
 } CamUBO[];
 
 void main() {

@@ -33,6 +33,8 @@ layout(push_constant, std430) uniform pc {
 layout(set = 3, binding = 0) uniform CamBufferObject {
     mat4 view;
     mat4 proj;
+    mat4 iview;
+    mat4 iproj;
 } CamUBO[];
 
 void main() {
@@ -42,9 +44,12 @@ void main() {
 
     mat4 proj = CamUBO[frame].proj;
     mat4 view = CamUBO[frame].view;
+    mat4 iproj = CamUBO[frame].iproj;
+    mat4 iview = CamUBO[frame].iview;
+
     mat4 model = mat4(inModel1, inModel2, inModel3, inModel4);
 
-    vec3 viewDir = getViewDir(view, model, inPosition);
+    vec3 viewDir = getViewDir(iview, model, inPosition);
     gl_Position = getPos(proj, view, model, inPosition);
     outTBN = getTBN(inTangent, model, inNormal);
 

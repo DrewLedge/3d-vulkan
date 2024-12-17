@@ -2,8 +2,8 @@ vec4 getPos(mat4 proj, mat4 view, mat4 model, vec3 pos) {
     return proj * view * model * vec4(pos, 1.0);
 }
 
-vec3 getViewDir(mat4 view, mat4 model, vec3 pos) {
-    vec3 worldCamPos = vec3(inverse(view)[3]);
+vec3 getViewDir(mat4 iview, mat4 model, vec3 pos) {
+    vec3 worldCamPos = vec3(iview[3]);
     vec3 fragPos = vec3(model * vec4(pos, 1.0));
     return normalize(worldCamPos - fragPos);
 }

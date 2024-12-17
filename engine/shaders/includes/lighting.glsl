@@ -1,7 +1,7 @@
 #define PI 3.141592653589793238
 
 // get the PCF shadow factor (used for softer shadows)
-float shadowPCF(int frame, int lightIndex, vec4 fragPosLightspace, int kernelSize, vec3 norm, vec3 lightDir) {
+float shadowPCF(int frame, int frameCount, int lightIndex, vec4 fragPosLightspace, int kernelSize, vec3 norm, vec3 lightDir) {
     int halfSize = kernelSize / 2;
     float shadow = 0.0;
     vec3 projCoords = fragPosLightspace.xyz / fragPosLightspace.w;
@@ -26,8 +26,7 @@ float shadowPCF(int frame, int lightIndex, vec4 fragPosLightspace, int kernelSiz
     return shadow;
 }
 
-
-vec4 calcLighting(int frame, int lightCount, bool discardTranslucent, bool discardOpaque) {
+vec4 calcLighting(vec4 albedo, vec4 metallicRoughness, vec3 normal, vec3 emissive, float occlusion, vec3 fragPos, vec3 viewDir, int frame, int frameCount, int lightCount, bool discardTranslucent, bool discardOpaque) {
     if (discardTranslucent && albedo.a < 0.95) discard;
     if (discardOpaque && albedo.a >= 0.95) discard;
 
@@ -50,19 +49,19 @@ vec4 calcLighting(int frame, int lightCount, bool discardTranslucent, bool disca
         vec3 lightColor = lssbo[frame].lights[i].color.xyz;
 
         vec3 spotDir = normalize(lightPos - target);
-        vec3 fragToLightDir = normalize(lightPos - inFragPos);
+        vec3 fragToLightDir = normalize(lightPos - fragPos);
         float theta = dot(spotDir, fragToLightDir);
 
         // if the fragment is outside the cone, early out
         if (theta <= cos(outer)) continue;
 
         // shadow factor
-        vec4 fragPosLightspace = lssbo[frame].lights[i].proj * lssbo[frame].lights[i].view * vec4(inFragPos, 1.0);
-        float shadowFactor = shadowPCF(frame, i, fragPosLightspace, 4, normal, fragToLightDir);
+        vec4 fragPosLightspace = lssbo[frame].lights[i].proj * lssbo[frame].lights[i].view * vec4(fragPos, 1.0);
+        float shadowFactor = shadowPCF(frame, frameCount, i, fragPosLightspace, 2, normal, fragToLightDir);
         if (shadowFactor < 0.01) continue;
 
         // attenuation
-        float lightDistance = distance(lightPos, inFragPos);
+        float lightDistance = distance(lightPos, fragPos);
         float attenuation = 1.0 / (constAttenuation + linAttenuation * lightDistance + quadAttenuation * (lightDistance * lightDistance));
         if (attenuation < 0.01) continue;
 
@@ -70,7 +69,7 @@ vec4 calcLighting(int frame, int lightCount, bool discardTranslucent, bool disca
         float contribution = lssbo[frame].lights[i].intensity * attenuation * calcFallofff(outer, inner, theta);
         if (contribution < 0.01) continue;
 
-        vec3 brdf = cookTorrance(normal, fragToLightDir, inViewDir, albedo, metallic, roughness);
+        vec3 brdf = cookTorrance(normal, fragToLightDir, viewDir, albedo, metallic, roughness);
         accumulated += (brdf * lightColor * contribution * shadowFactor);
     }
 
