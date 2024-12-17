@@ -100,8 +100,7 @@ private:
         dml::mat4 viewMatrix{};
 
         // buffers for the camera matrix ubo
-        std::vector<VkhBuffer> buffers{};
-        std::vector<VkhDeviceMemory> bufferMems{};
+        std::vector<vkh::BufferObj> buffers{};
 
         float fov = 60.0f;
         float nearP = 0.01f;
@@ -175,10 +174,9 @@ private:
         VkhPipeline pipeline{};
 
         vkh::BufData bufferData{};
-        VkhBuffer vertBuffer{};
-        VkhDeviceMemory vertBufferMem{};
-        VkhBuffer indBuffer{};
-        VkhDeviceMemory indBufferMem{};
+
+        vkh::BufferObj vertBuffer{};
+        vkh::BufferObj indBuffer{};
 
         float* imgData{ nullptr };
 
@@ -346,8 +344,7 @@ private:
 
     struct BlasData {
         VkhAccelerationStructure blas{};
-        VkhBuffer compBuffer{};
-        VkhDeviceMemory compMem{};
+        vkh::BufferObj compBuffer{};
     };
 
     struct TlasData {
@@ -355,19 +352,13 @@ private:
         VkAccelerationStructureBuildGeometryInfoKHR buildInfo{};
         VkAccelerationStructureGeometryKHR geometry{};
 
-        VkhBuffer buffer{};
-        VkhDeviceMemory mem{};
-
-        VkhBuffer instanceBuffer{};
-        VkhDeviceMemory instanceBufferMem{};
-
-        VkhBuffer scratchBuffer{};
-        VkhDeviceMemory scratchMem{};
+        vkh::BufferObj buffer{};
+        vkh::BufferObj instanceBuffer{};
+        vkh::BufferObj scratchBuffer{};
     };
 
     struct SBT {
-        VkhBuffer buffer{};
-        VkhDeviceMemory mem{};
+        vkh::BufferObj buffer{};
 
         VkDeviceSize size{};
         VkDeviceSize entryS{};
@@ -461,21 +452,16 @@ private:
     CommandBufferSet compCommandBuffers{};
     CommandBufferSet rtCommandBuffers{};
 
-    VkhBuffer vertBuffer{};
-    VkhBuffer indBuffer{};
-    VkhDeviceMemory vertBufferMem{};
-    VkhDeviceMemory indBufferMem{};
+    vkh::BufferObj vertBuffer{};
+    vkh::BufferObj indBuffer{};
     VkDeviceSize vertBufferSize = 0;
     VkDeviceSize indBufferSize = 0;
 
-    std::vector<VkhBuffer> lightBuffers{};
-    std::vector<VkhDeviceMemory> lightBufferMems{};
+    vkh::BufferObj sceneIndexBuffer{};
+    vkh::BufferObj texIndicesBuffer{};
 
-    std::vector<VkhBuffer> objInstanceBuffers{};
-    std::vector<VkhDeviceMemory> objInstanceBufferMems{};
-
-    VkhBuffer sceneIndexBuffer{};
-    VkhDeviceMemory sceneIndexBufferMem{};
+    std::vector<vkh::BufferObj> lightBuffers{};
+    std::vector<vkh::BufferObj> objInstanceBuffers{};
 
     // synchronization primitives
     std::vector<VkhFence> inFlightFences;
@@ -515,8 +501,6 @@ private:
     std::vector<dvl::Texture> rtTextures{};
     SBT sbt{};
     TexIndexSSBO texIndices{};
-    VkhBuffer texIndicesBuffer{};
-    VkhDeviceMemory texIndicesBufferMem{};
 
     std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
@@ -1124,15 +1108,15 @@ private:
         VkDeviceSize imageSize = static_cast<VkDeviceSize>(tex.width) * tex.height * bpp;
 
         if (cubeMap) {
-            vkh::createAndWriteHostBuffer(tex.stagingBuffer, tex.stagingBufferMem, skybox.imgData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            vkh::createAndWriteHostBuffer(tex.stagingBuffer, skybox.imgData, imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         }
         else {
-            vkh::createAndWriteHostBuffer(tex.stagingBuffer, tex.stagingBufferMem, tex.rawData.get(), imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+            vkh::createAndWriteHostBuffer(tex.stagingBuffer, tex.rawData.get(), imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
         }
     }
 
     void createTexturedImage(dvl::Texture& tex, bool doMipmap, vkh::TextureType type = vkh::BASE) {
-        if (tex.stagingBuffer.valid()) return;
+        if (tex.stagingBuffer.buf.valid()) return;
         createImageStagingBuffer(tex, false);
 
         tex.mipLevels = doMipmap ? static_cast<uint32_t>(std::floor(std::log2(std::max(tex.width, tex.height)))) + 1 : 1;
@@ -1164,7 +1148,7 @@ private:
         VkhCommandBuffer tempBuffer = vkh::beginSingleTimeCommands(commandPool);
 
         vkh::transitionImageLayout(tempBuffer, tex.image, imgFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, tex.mipLevels, 0);
-        vkCmdCopyBufferToImage(tempBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
+        vkCmdCopyBufferToImage(tempBuffer.v(), tex.stagingBuffer.buf.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region); //copy the data from the staging buffer to the image
 
         int mipWidth = tex.width;
         int mipHeight = tex.height;
@@ -1271,7 +1255,7 @@ private:
             region.imageOffset = { 0, 0, 0 };
             region.imageExtent = { faceWidth, faceHeight, 1 };
 
-            vkCmdCopyBufferToImage(copyCmdBuffer.v(), tex.stagingBuffer.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+            vkCmdCopyBufferToImage(copyCmdBuffer.v(), tex.stagingBuffer.buf.v(), tex.image.v(), VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
         }
         vkh::endSingleTimeCommands(copyCmdBuffer, commandPool, graphicsQueue);
 
@@ -1399,16 +1383,15 @@ private:
 
                 size_t bufferInd = modelHashToBufferIndex[objects[i]->meshHash];
 
-                obj.vertAddr = vkh::bufferDeviceAddress(vertBuffer) + (bufferData[bufferInd].vertexOffset * sizeof(dvl::Vertex));
-                obj.indAddr = vkh::bufferDeviceAddress(indBuffer) + (bufferData[bufferInd].indexOffset * sizeof(uint32_t));
+                obj.vertAddr = vkh::bufferDeviceAddress(vertBuffer.buf) + (bufferData[bufferInd].vertexOffset * sizeof(dvl::Vertex));
+                obj.indAddr = vkh::bufferDeviceAddress(indBuffer.buf) + (bufferData[bufferInd].indexOffset * sizeof(uint32_t));
                 p++;
             }
         }
 
-        VkhBuffer stagingBuffer;
-        VkhDeviceMemory stagingBufferMem;
-        vkh::createAndWriteHostBuffer(stagingBuffer, stagingBufferMem, &texIndices, sizeof(TexIndexSSBO), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
-        vkh::copyBuffer(stagingBuffer, texIndicesBuffer, commandPool, graphicsQueue, sizeof(TexIndexSSBO));
+        vkh::BufferObj stagingBuffer{};
+        vkh::createAndWriteHostBuffer(stagingBuffer, &texIndices, sizeof(TexIndexSSBO), VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
+        vkh::copyBuffer(stagingBuffer.buf, texIndicesBuffer.buf, commandPool, graphicsQueue, sizeof(TexIndexSSBO));
     }
 
     void getAllTextures() {
@@ -1590,26 +1573,21 @@ private:
 
     void setupBuffers() {
         lightBuffers.resize(maxFrames);
-        lightBufferMems.resize(maxFrames);
-
         objInstanceBuffers.resize(maxFrames);
-        objInstanceBufferMems.resize(maxFrames);
-
         cam.buffers.resize(maxFrames);
-        cam.bufferMems.resize(maxFrames);
 
         for (size_t i = 0; i < maxFrames; i++) {
-            vkh::createHostVisibleBuffer(lightBuffers[i], lightBufferMems[i], sizeof(LightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
-            vkh::createHostVisibleBuffer(objInstanceBuffers[i], objInstanceBufferMems[i], sizeof(ModelInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-            vkh::createHostVisibleBuffer(cam.buffers[i], cam.bufferMems[i], sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+            vkh::createHostVisibleBuffer(lightBuffers[i], sizeof(LightDataSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+            vkh::createHostVisibleBuffer(objInstanceBuffers[i], sizeof(ModelInstanceData), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+            vkh::createHostVisibleBuffer(cam.buffers[i], sizeof(CamUBO), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
         }
 
         // skybox buffer data
-        vkh::createAndWriteLocalBuffer(skybox.vertBuffer, skybox.vertBufferMem, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, commandPool, graphicsQueue, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
-        vkh::createAndWriteLocalBuffer(skybox.indBuffer, skybox.indBufferMem, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, commandPool, graphicsQueue, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+        vkh::createAndWriteLocalBuffer(skybox.vertBuffer, skybox.vertices.data(), sizeof(dml::vec3) * skybox.bufferData.vertexCount, commandPool, graphicsQueue, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+        vkh::createAndWriteLocalBuffer(skybox.indBuffer, skybox.indices.data(), sizeof(uint32_t) * skybox.bufferData.indexCount, commandPool, graphicsQueue, VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
 
         if (rtEnabled) {
-            vkh::createDeviceLocalBuffer(texIndicesBuffer, texIndicesBufferMem, sizeof(TexIndexSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+            vkh::createDeviceLocalBuffer(texIndicesBuffer, sizeof(TexIndexSSBO), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         }
     }
 
@@ -1647,7 +1625,7 @@ private:
             lightData.lightCords[i] = l.data;
         }
 
-        vkh::writeBuffer(lightBufferMems[currentFrame], &lightData.lightCords, sizeof(LightDataObject) * lights.size());
+        vkh::writeBuffer(lightBuffers[currentFrame].mem, &lightData.lightCords, sizeof(LightDataObject) * lights.size());
 
         // calc matricies for camera
         calcCameraMats();
@@ -1656,7 +1634,7 @@ private:
         camMatData.iview = dml::inverseMatrix(cam.viewMatrix);
         camMatData.iproj = dml::inverseMatrix(cam.projectionMatrix);
 
-        vkh::writeBuffer(cam.bufferMems[currentFrame], &camMatData, sizeof(camMatData));
+        vkh::writeBuffer(cam.buffers[currentFrame].mem, &camMatData, sizeof(camMatData));
 
         // calc matricies for objects
         for (size_t i = 0; i < objects.size(); i++) {
@@ -1675,7 +1653,7 @@ private:
             }
         }
 
-        vkh::writeBuffer(objInstanceBufferMems[currentFrame], &objInstanceData, sizeof(objInstanceData));
+        vkh::writeBuffer(objInstanceBuffers[currentFrame].mem, &objInstanceData, sizeof(objInstanceData));
     }
 
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -1747,7 +1725,7 @@ private:
             lightBufferInfos.reserve(maxFrames);
             for (size_t i = 0; i < maxFrames; i++) {
                 VkDescriptorBufferInfo linfo{};
-                linfo.buffer = lightBuffers[i].v();
+                linfo.buffer = lightBuffers[i].buf.v();
                 linfo.offset = 0;
                 linfo.range = sizeof(LightDataSSBO);
                 lightBufferInfos.push_back(linfo);
@@ -1759,7 +1737,7 @@ private:
 
         for (size_t i = 0; i < maxFrames; i++) {
             VkDescriptorBufferInfo cinfo{};
-            cinfo.buffer = cam.buffers[i].v();
+            cinfo.buffer = cam.buffers[i].buf.v();
             cinfo.offset = 0;
             cinfo.range = sizeof(CamUBO);
             camBufferInfos.push_back(cinfo);
@@ -1792,7 +1770,7 @@ private:
             tlasInfo.pAccelerationStructures = tlasList.data();
             tlasInfo.accelerationStructureCount = maxFrames;
 
-            texIndexInfo.buffer = texIndicesBuffer.v();
+            texIndexInfo.buffer = texIndicesBuffer.buf.v();
             texIndexInfo.offset = 0;
             texIndexInfo.range = sizeof(TexIndexSSBO);
         }
@@ -3274,14 +3252,14 @@ private:
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         VkMemoryAllocateFlags memAllocF = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-        vkh::createBuffer(sbt.buffer, sbt.mem, sbt.size, usage, memFlags, memAllocF);
+        vkh::createBuffer(sbt.buffer, sbt.size, usage, memFlags, memAllocF);
 
         // get the shader handles
         std::vector<uint8_t> shaderHandles(handleSize * shaderGroupCount);
         vkhfp::vkGetRayTracingShaderGroupHandlesKHR(device, rtPipeline.pipeline.v(), 0, shaderGroupCount, shaderHandles.size(), shaderHandles.data());
 
         void* data;
-        vkMapMemory(device, sbt.mem.v(), 0, sbt.size, 0, &data);
+        vkMapMemory(device, sbt.buffer.mem.v(), 0, sbt.size, 0, &data);
         uint8_t* d = reinterpret_cast<uint8_t*>(data);
 
         uint32_t dataOffset = 0;
@@ -3293,9 +3271,9 @@ private:
             handleOffset += handleSize;
         }
 
-        vkUnmapMemory(device, sbt.mem.v());
+        vkUnmapMemory(device, sbt.buffer.mem.v());
 
-        VkDeviceAddress sbtAddr = vkh::bufferDeviceAddress(sbt.buffer);
+        VkDeviceAddress sbtAddr = vkh::bufferDeviceAddress(sbt.buffer.buf);
 
         // ray gen region
         sbt.raygenR.deviceAddress = sbtAddr;
@@ -3324,8 +3302,8 @@ private:
         // get the device addresses (location of the data on the device) of the vertex and index buffers
         // the stride and offset are used to go to the starting point of the mesh
         // this allows the data within the gpu to be accessed very efficiently
-        VkDeviceAddress vertexAddress = vkh::bufferDeviceAddress(vertBuffer) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
-        VkDeviceAddress indexAddress = vkh::bufferDeviceAddress(indBuffer) + (bufferData.indexOffset * sizeof(uint32_t));
+        VkDeviceAddress vertexAddress = vkh::bufferDeviceAddress(vertBuffer.buf) + (bufferData.vertexOffset * sizeof(dvl::Vertex));
+        VkDeviceAddress indexAddress = vkh::bufferDeviceAddress(indBuffer.buf) + (bufferData.indexOffset * sizeof(uint32_t));
 
         // acceleration structure geometry - specifies the device addresses and data inside of the vertex and index buffers
         VkAccelerationStructureGeometryKHR geometry{};
@@ -3359,24 +3337,22 @@ private:
         vkhfp::vkGetAccelerationStructureBuildSizesKHR(device, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR, &buildInfo, &primitiveCount, &sizeInfo);
 
         // create a buffer for the BLAS - the buffer used in the creation of the blas
-        VkhBuffer blasBuffer;
-        VkhDeviceMemory blasMem;
+        vkh::BufferObj blasBuffer{};
         VkBufferUsageFlags blasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(blasBuffer, blasMem, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(blasBuffer, sizeInfo.accelerationStructureSize, blasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the BLAS
         VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        createInfo.buffer = blasBuffer.v();
+        createInfo.buffer = blasBuffer.buf.v();
         createInfo.size = sizeInfo.accelerationStructureSize;
         vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, blas.p());
 
         // scratch buffer - used to create space for intermediate data thats used when building the BLAS
-        VkhBuffer blasScratchBuffer;
-        VkhDeviceMemory blasScratchMem;
+        vkh::BufferObj blasScratchBuffer{};
         VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(blasScratchBuffer, blasScratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(blasScratchBuffer, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // build range info - specifies the primitive count and offsets for the blas
         VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
@@ -3388,7 +3364,7 @@ private:
 
         // set the dst of the build info to be the blas and add the scratch buffer address
         buildInfo.dstAccelerationStructure = blas.v();
-        buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer);
+        buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(blasScratchBuffer.buf);
 
         // build and populate the BLAS with the geometry data
         VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
@@ -3416,13 +3392,13 @@ private:
 
         // create a buffer for the compacted BLAS
         VkBufferUsageFlags compUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(BLAS[index].compBuffer, BLAS[index].compMem, compactedSize, compUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(BLAS[index].compBuffer, compactedSize, compUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the compacted BLAS
         VkAccelerationStructureCreateInfoKHR compactedCreateInfo{};
         compactedCreateInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         compactedCreateInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR;
-        compactedCreateInfo.buffer = BLAS[index].compBuffer.v();
+        compactedCreateInfo.buffer = BLAS[index].compBuffer.buf.v();
         compactedCreateInfo.size = compactedSize;
         vkhfp::vkCreateAccelerationStructureKHR(device, &compactedCreateInfo, nullptr, BLAS[index].blas.p());
 
@@ -3446,13 +3422,13 @@ private:
         VkDeviceSize iSize = cfg::MAX_MODELS * sizeof(VkAccelerationStructureInstanceKHR);
         VkBufferUsageFlags iUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         VkMemoryAllocateFlags iMemFlags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
-        vkh::createAndWriteHostBuffer(t.instanceBuffer, t.instanceBufferMem, meshInstances.data(), iSize, iUsage, iMemFlags);
+        vkh::createAndWriteHostBuffer(t.instanceBuffer, meshInstances.data(), iSize, iUsage, iMemFlags);
 
         uint32_t primitiveCount = static_cast<uint32_t>(meshInstances.size());
         uint32_t primitiveCountMax = cfg::MAX_MODELS;
 
         // acceleration structure geometry
-        VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(t.instanceBuffer);
+        VkDeviceAddress instanceAddress = vkh::bufferDeviceAddress(t.instanceBuffer.buf);
         t.geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
         t.geometry.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
         t.geometry.geometry.instances.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
@@ -3480,19 +3456,19 @@ private:
 
         // create a buffer for the TLAS - the buffer used in the creation of the tlas
         VkBufferUsageFlags tlasUsage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(t.buffer, t.mem, asSize, tlasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(t.buffer, asSize, tlasUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // create the TLAS
         VkAccelerationStructureCreateInfoKHR createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR;
         createInfo.type = VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR;
-        createInfo.buffer = t.buffer.v();
+        createInfo.buffer = t.buffer.buf.v();
         createInfo.size = asSize;
         vkhfp::vkCreateAccelerationStructureKHR(device, &createInfo, nullptr, t.as.p());
 
         // scratch buffer - used to create space for intermediate data thats used when building the TLAS
         VkBufferUsageFlags scratchUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        vkh::createDeviceLocalBuffer(t.scratchBuffer, t.scratchMem, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
+        vkh::createDeviceLocalBuffer(t.scratchBuffer, sizeInfo.buildScratchSize, scratchUsage, VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT);
 
         // build range info - specifies the primitive count and offsets for the tlas
         VkAccelerationStructureBuildRangeInfoKHR buildRangeInfo{};
@@ -3504,7 +3480,7 @@ private:
 
         // set the dst of the build info to be the tlas and add the scratch buffer address
         t.buildInfo.dstAccelerationStructure = t.as.v();
-        t.buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(t.scratchBuffer);
+        t.buildInfo.scratchData.deviceAddress = vkh::bufferDeviceAddress(t.scratchBuffer.buf);
 
         // build and populate the TLAS
         VkhCommandBuffer commandBufferB = vkh::beginSingleTimeCommands(commandPool);
@@ -3545,10 +3521,10 @@ private:
     void updateTLAS(size_t index, bool rebuild) {
         // copy the new data into the instance buffer
         TlasData& t = tlas[index];
-        vkh::writeBuffer(t.instanceBufferMem, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
+        vkh::writeBuffer(t.instanceBuffer.mem, meshInstances.data(), meshInstances.size() * sizeof(VkAccelerationStructureInstanceKHR));
 
         // update the instance buffer device address
-        t.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(t.instanceBuffer);
+        t.geometry.geometry.instances.data.deviceAddress = vkh::bufferDeviceAddress(t.instanceBuffer.buf);
 
         // update the build info
         t.buildInfo.pGeometries = &t.geometry;
@@ -3670,24 +3646,21 @@ private:
         if (!recreate) bufferData.resize(getUniqueModels());
         getModelIndices(true);
 
-        VkhBuffer stagingVertBuffer;
-        VkhDeviceMemory stagingVertBufferMem;
-
-        VkhBuffer stagingIndexBuffer;
-        VkhDeviceMemory stagingIndexBufferMem;
+        vkh::BufferObj stagingVertBuffer{};
+        vkh::BufferObj stagingIndexBuffer{};
 
         const VkMemoryPropertyFlags stagingMemFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 
         // create and map the vertex buffer
-        vkh::createBuffer(stagingVertBuffer, stagingVertBufferMem, vertBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+        vkh::createBuffer(stagingVertBuffer, vertBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
         char* vertexData;
-        vkMapMemory(device, stagingVertBufferMem.v(), 0, vertBufferSize, 0, reinterpret_cast<void**>(&vertexData));
+        vkMapMemory(device, stagingVertBuffer.mem.v(), 0, vertBufferSize, 0, reinterpret_cast<void**>(&vertexData));
         VkDeviceSize currentVertexOffset = 0;
 
         // create and map the index buffer
-        vkh::createBuffer(stagingIndexBuffer, stagingIndexBufferMem, indBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
+        vkh::createBuffer(stagingIndexBuffer, indBufferSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, stagingMemFlags, 0);
         char* indexData;
-        vkMapMemory(device, stagingIndexBufferMem.v(), 0, indBufferSize, 0, reinterpret_cast<void**>(&indexData));
+        vkMapMemory(device, stagingIndexBuffer.mem.v(), 0, indBufferSize, 0, reinterpret_cast<void**>(&indexData));
         VkDeviceSize currentIndexOffset = 0;
 
         for (size_t i = 0; i < objects.size(); i++) {
@@ -3709,8 +3682,8 @@ private:
             indexData += bufferData[bufferInd].indexCount * sizeof(uint32_t);
             currentIndexOffset += bufferData[bufferInd].indexCount;
         }
-        vkUnmapMemory(device, stagingVertBufferMem.v());
-        vkUnmapMemory(device, stagingIndexBufferMem.v());
+        vkUnmapMemory(device, stagingVertBuffer.mem.v());
+        vkUnmapMemory(device, stagingIndexBuffer.mem.v());
 
         VkBufferUsageFlags vertU = (rtEnabled) ? (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
         VkBufferUsageFlags indexU = (rtEnabled) ? (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR) : (VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
@@ -3718,14 +3691,14 @@ private:
         VkMemoryAllocateFlags vertM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
         VkMemoryAllocateFlags indexM = (rtEnabled) ? VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT : 0;
 
-        vkh::createBuffer(vertBuffer, vertBufferMem, vertBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
-        vkh::createBuffer(indBuffer, indBufferMem, indBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
+        vkh::createBuffer(vertBuffer, vertBufferSize, vertU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, vertM);
+        vkh::createBuffer(indBuffer, indBufferSize, indexU, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, indexM);
 
         // copy the vert staging buffer into the dst vert buffer
-        vkh::copyBuffer(stagingVertBuffer, vertBuffer, commandPool, graphicsQueue, vertBufferSize);
+        vkh::copyBuffer(stagingVertBuffer.buf, vertBuffer.buf, commandPool, graphicsQueue, vertBufferSize);
 
         // copy the index staging buffer into the dst index buffer
-        vkh::copyBuffer(stagingIndexBuffer, indBuffer, commandPool, graphicsQueue, indBufferSize);
+        vkh::copyBuffer(stagingIndexBuffer.buf, indBuffer.buf, commandPool, graphicsQueue, indBufferSize);
     }
 
     void cloneObject(dml::vec3 pos, const std::string& name, dml::vec3 scale, dml::vec4 rotation) {
@@ -3917,7 +3890,7 @@ private:
     //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
     void recordObjectCommandBuffers(VkhCommandBuffer& secondary, const PipelineData& pipe, const VkCommandBufferBeginInfo& beginInfo, const VkDescriptorSet* descriptorsets, size_t descriptorCount, uint32_t pushConstOffset) {
-        const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffers[currentFrame].v() };
+        const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.buf.v(), objInstanceBuffers[currentFrame].buf.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
         vkCmdBindPipeline(secondary.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, pipe.pipeline.v());
@@ -3925,7 +3898,7 @@ private:
 
         // bind the vertex and instance buffers
         vkCmdBindVertexBuffers(secondary.v(), 0, 2, vertexBuffersArray.data(), offsets.data());
-        vkCmdBindIndexBuffer(secondary.v(), indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindIndexBuffer(secondary.v(), indBuffer.buf.v(), 0, VK_INDEX_TYPE_UINT32);
 
         uint32_t p = 0;
         for (size_t j = 0; j < objects.size(); j++) {
@@ -4003,7 +3976,7 @@ private:
         shadowBeginInfo.flags = VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT | VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
         shadowBeginInfo.pInheritanceInfo = &shadowInheritInfo;
 
-        const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.v(), objInstanceBuffers[currentFrame].v() };
+        const std::array<VkBuffer, 2> vertexBuffersArray = { vertBuffer.buf.v(), objInstanceBuffers[currentFrame].buf.v() };
         const std::array<VkDeviceSize, 2> offsets = { 0, 0 };
 
         for (size_t i = 0; i < lights.size(); i++) {
@@ -4023,7 +3996,7 @@ private:
             vkCmdPushConstants(secondary, shadowPipeline.layout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(ShadowPushConst), &shadowPushConst);
 
             vkCmdBindVertexBuffers(secondary, 0, 2, vertexBuffersArray.data(), offsets.data());
-            vkCmdBindIndexBuffer(secondary, indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindIndexBuffer(secondary, indBuffer.buf.v(), 0, VK_INDEX_TYPE_UINT32);
         }
 
         // iterate through all objects that cast shadows
@@ -4135,8 +4108,8 @@ private:
         // skybox
         vkCmdBindPipeline(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipeline.v());
         vkCmdBindDescriptorSets(lightingCommandBuffer.v(), VK_PIPELINE_BIND_POINT_GRAPHICS, skybox.pipelineLayout.v(), 0, static_cast<uint32_t>(skyboxDS.size()), skyboxDS.data(), 0, nullptr);
-        vkCmdBindVertexBuffers(lightingCommandBuffer.v(), 0, 1, skybox.vertBuffer.p(), &skyboxOffset);
-        vkCmdBindIndexBuffer(lightingCommandBuffer.v(), skybox.indBuffer.v(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdBindVertexBuffers(lightingCommandBuffer.v(), 0, 1, skybox.vertBuffer.buf.p(), &skyboxOffset);
+        vkCmdBindIndexBuffer(lightingCommandBuffer.v(), skybox.indBuffer.buf.v(), 0, VK_INDEX_TYPE_UINT32);
 
         vkCmdPushConstants(lightingCommandBuffer.v(), skybox.pipelineLayout.v(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(FramePushConst), &framePushConst);
         vkCmdDrawIndexed(lightingCommandBuffer.v(), skybox.bufferData.indexCount, 1, skybox.bufferData.indexOffset, skybox.bufferData.vertexOffset, 0);

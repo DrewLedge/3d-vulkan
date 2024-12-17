@@ -192,6 +192,16 @@ namespace vkh {
         ALPHA
     } TextureType;
 
+    struct BufferObj {
+        VkhBuffer buf{};
+        VkhDeviceMemory mem{};
+
+        void reset() {
+            if (buf.valid()) buf.reset();
+            if (mem.valid()) mem.reset();
+        }
+    };
+
     struct BufData {
         uint32_t vertexOffset = 0;
         uint32_t vertexCount = 0;
@@ -500,9 +510,8 @@ namespace vkh {
         endSingleTimeCommands(commandBuffer, commandPool, queue);
     }
 
-    void createBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memFlags, VkMemoryAllocateFlags memAllocFlags = 0) {
-        if (buffer.valid()) buffer.reset();
-        if (bufferMem.valid()) bufferMem.reset();
+    void createBuffer(BufferObj& buffer, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryPropertyFlags memFlags, VkMemoryAllocateFlags memAllocFlags = 0) {
+        buffer.reset();
 
         VkBufferCreateInfo bufferCreateInfo{};
         bufferCreateInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -511,13 +520,13 @@ namespace vkh {
         bufferCreateInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         // create the buffer
-        if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer.p()) != VK_SUCCESS) {
+        if (vkCreateBuffer(device, &bufferCreateInfo, nullptr, buffer.buf.p()) != VK_SUCCESS) {
             throw std::runtime_error("Failed to create buffer!");
         }
 
         // get the memory requirements for the buffer
         VkMemoryRequirements memoryRequirements;
-        vkGetBufferMemoryRequirements(device, buffer.v(), &memoryRequirements);
+        vkGetBufferMemoryRequirements(device, buffer.buf.v(), &memoryRequirements);
 
         // mem allocation flags
         VkMemoryAllocateFlagsInfo allocFlagsInfo{};
@@ -536,44 +545,43 @@ namespace vkh {
             allocateInfo.pNext = &allocFlagsInfo;
         }
 
-        if (vkAllocateMemory(device, &allocateInfo, nullptr, bufferMem.p()) != VK_SUCCESS) {
+        if (vkAllocateMemory(device, &allocateInfo, nullptr, buffer.mem.p()) != VK_SUCCESS) {
             throw std::runtime_error("Failed to allocate memory for the buffer!");
         }
 
-        if (vkBindBufferMemory(device, buffer.v(), bufferMem.v(), 0) != VK_SUCCESS) {
+        if (vkBindBufferMemory(device, buffer.buf.v(), buffer.mem.v(), 0) != VK_SUCCESS) {
             throw std::runtime_error("Failed to bind memory to buffer!");
         }
     }
 
-    void createHostVisibleBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
+    void createHostVisibleBuffer(BufferObj& buffer, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
+        createBuffer(buffer, size, usage, memFlags, memAllocFlags);
     }
 
-    void createDeviceLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
+    void createDeviceLocalBuffer(BufferObj& buffer, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
         VkMemoryPropertyFlags memFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        createBuffer(buffer, bufferMem, size, usage, memFlags, memAllocFlags);
+        createBuffer(buffer, size, usage, memFlags, memAllocFlags);
     }
 
     template<typename ObjectT>
-    void createAndWriteLocalBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, VkDeviceSize size, const VkhCommandPool& commandPool, VkQueue queue, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
-        createDeviceLocalBuffer(buffer, bufferMem, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memAllocFlags);
+    void createAndWriteLocalBuffer(BufferObj& buffer, const ObjectT* data, VkDeviceSize size, const VkhCommandPool& commandPool, VkQueue queue, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
+        createDeviceLocalBuffer(buffer, size, usage | VK_BUFFER_USAGE_TRANSFER_DST_BIT, memAllocFlags);
 
-        VkhBuffer stagingBuffer;
-        VkhDeviceMemory stagingBufferMem;
-        createHostVisibleBuffer(stagingBuffer, stagingBufferMem, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memAllocFlags);
+        BufferObj stagingBuffer;
+        createHostVisibleBuffer(stagingBuffer, size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, memAllocFlags);
 
         // write the data to the staging buffer
-        writeBuffer(stagingBufferMem, data, size);
+        writeBuffer(stagingBuffer.mem, data, size);
 
         // copy the staging buffer to the device local buffer
-        copyBuffer(stagingBuffer, buffer, commandPool, queue, size);
+        copyBuffer(stagingBuffer.buf, buffer.buf, commandPool, queue, size);
     }
 
     template<typename ObjectT>
-    void createAndWriteHostBuffer(VkhBuffer& buffer, VkhDeviceMemory& bufferMem, const ObjectT* data, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
-        createHostVisibleBuffer(buffer, bufferMem, size, usage, memAllocFlags);
-        writeBuffer(bufferMem, data, size);
+    void createAndWriteHostBuffer(BufferObj& buffer, const ObjectT* data, VkDeviceSize size, VkBufferUsageFlags usage, VkMemoryAllocateFlags memAllocFlags = 0) {
+        createHostVisibleBuffer(buffer, size, usage, memAllocFlags);
+        writeBuffer(buffer.mem, data, size);
     }
 
     // ------------------ IMAGES ------------------ //

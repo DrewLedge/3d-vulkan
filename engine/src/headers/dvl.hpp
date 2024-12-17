@@ -58,8 +58,7 @@ namespace dvl {
         VkhImageView imageView;
         std::string path;
         uint32_t mipLevels;
-        VkhBuffer stagingBuffer;
-        VkhDeviceMemory stagingBufferMem;
+        vkh::BufferObj stagingBuffer;
         std::shared_ptr<tinygltf::Image> gltfImage;
         bool found;
         uint16_t width;
@@ -76,14 +75,14 @@ namespace dvl {
             path(""),
             mipLevels(1),
             stagingBuffer(),
-            stagingBufferMem(),
             gltfImage(),
             found(false),
             width(1024),
             height(1024),
             sampleCount(s),
             rawData(nullptr)
-        {}
+        {
+        }
 
         bool operator==(const Texture& other) const {
             return sampler == other.sampler
@@ -92,8 +91,8 @@ namespace dvl {
                 && imageView == other.imageView
                 && path == other.path
                 && mipLevels == other.mipLevels
-                && stagingBuffer == other.stagingBuffer
-                && stagingBufferMem == other.stagingBufferMem
+                && stagingBuffer.buf == other.stagingBuffer.buf
+                && stagingBuffer.mem == other.stagingBuffer.mem
                 && width == other.width
                 && height == other.height
                 && sampleCount == other.sampleCount;
@@ -109,8 +108,8 @@ namespace dvl {
             seed ^= std::hash<VkhImageView>{}(tex.imageView) + hashConst + (seed << 6) + (seed >> 2);
             seed ^= std::hash<std::string>{}(tex.path) + hashConst + (seed << 6) + (seed >> 2);
             seed ^= std::hash<uint32_t>{}(tex.mipLevels) + hashConst + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer) + hashConst + (seed << 6) + (seed >> 2);
-            seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBufferMem) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhBuffer>{}(tex.stagingBuffer.buf) + hashConst + (seed << 6) + (seed >> 2);
+            seed ^= std::hash<VkhDeviceMemory>{}(tex.stagingBuffer.mem) + hashConst + (seed << 6) + (seed >> 2);
             seed ^= std::hash<uint16_t>{}(tex.width) + hashConst + (seed << 6) + (seed >> 2);
             seed ^= std::hash<uint16_t>{}(tex.height) + hashConst + (seed << 6) + (seed >> 2);
 
@@ -156,7 +155,8 @@ namespace dvl {
             player(false),
             meshHash(),
             name("")
-        {}
+        {
+        }
 
         // copy constructor
         Mesh(const Mesh& other)
