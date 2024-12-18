@@ -103,8 +103,10 @@ void getTextures(uint bitfield, uint texIndex, vec2 uv, mat3 tbn, out vec4 albed
 }
 
 float linDepth(float depth, float near, float far) {
-    float z = depth * 2.0f - 1.0f; // to ndc
-    return (2.0f * near * far) / (far + near - z * (far - near));
+    float n = far * near;
+    float d = far + depth * (near - far);
+
+    return n / d;
 }
 
 vec2 getTexCords(sampler2D tex, vec2 fragCoord) {

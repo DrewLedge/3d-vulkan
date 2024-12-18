@@ -103,8 +103,8 @@ private:
         std::vector<vkh::BufferObj> buffers{};
 
         float fov = 60.0f;
-        float nearP = 0.01f;
-        float farP = 100.0f;
+        float nearP = 0.1f;
+        float farP = 10.0f;
 
         dml::mat4 getViewMatrix(MouseData& m) const {
             return dml::viewMatrix(pos, dml::radians(m.upAngle), dml::radians(m.rightAngle));
@@ -1603,7 +1603,7 @@ private:
         }
         // spotlight shadow mapping math code
         float aspectRatio = static_cast<float>(shadowProps.width) / static_cast<float>(shadowProps.height);
-        float nearPlane = 0.01f, farPlane = 100.0f;
+        float nearPlane = 0.1f, farPlane = 10.0f;
 
         dml::vec3 up = dml::vec3(0.0f, 1.0f, 0.0f);
         if (l.data.pos == l.data.target) {
@@ -2191,9 +2191,8 @@ private:
         //depth and stencil testing setup: allows for fragments to be discarded based on depth and stencil values
         VkPipelineDepthStencilStateCreateInfo dStencil{};
         dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        dStencil.depthTestEnable = VK_TRUE; //enable depth testing
-        dStencil.depthWriteEnable = VK_TRUE; //enable writing to the depth buffer
-        dStencil.depthCompareOp = VK_COMPARE_OP_LESS; //fragments with smaller depth values pass the depth test
+        dStencil.depthTestEnable = VK_FALSE; //enable depth testing
+        dStencil.depthWriteEnable = VK_FALSE; //enable writing to the depth buffer
         dStencil.depthBoundsTestEnable = VK_FALSE; //if true, discards fragments whose depth values fall outside the min and max bounds
         dStencil.minDepthBounds = 0.0f; //min depth bound
         dStencil.maxDepthBounds = 1.0f; //max depth bound
@@ -2546,9 +2545,8 @@ private:
 
         VkPipelineDepthStencilStateCreateInfo dStencil{};
         dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        dStencil.depthTestEnable = VK_TRUE; //enable depth test
-        dStencil.depthWriteEnable = VK_FALSE; // dont write to the depth buffer
-        dStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+        dStencil.depthTestEnable = VK_FALSE;
+        dStencil.depthWriteEnable = VK_FALSE;
         dStencil.depthBoundsTestEnable = VK_FALSE;
         dStencil.minDepthBounds = 0.0f;
         dStencil.maxDepthBounds = 1.0f;
@@ -4131,7 +4129,7 @@ private:
 
     void recordWBOITCommandBuffers() {
         const std::array<VkDescriptorSet, 5> wboitDS = { descs.materialTextures.set.v(),  descs.lights.set.v(), descs.shadowmaps.set.v(), descs.camData.set.v(), descs.camDepth.set.v() };
-        const std::array<VkClearValue, 3> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f}, VkClearValue{1.0f, 0} };
+        const std::array<VkClearValue, 2> clearValues = { VkClearValue{0.0f, 0.0f, 0.0f, 1.0f}, VkClearValue{1.0f, 0} };
 
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;

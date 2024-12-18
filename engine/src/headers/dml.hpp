@@ -706,14 +706,14 @@ namespace dml {
 
     mat4 projection(float fov, float aspect, float nearPlane, float farPlane) {
         mat4 result(0);
-        float fovRad = radians(fov);
-        float tanHalf = tan(fovRad * 0.5f);
 
-        result.m[0][0] = 1.0f / (aspect * tanHalf);
-        result.m[1][1] = -1.0f / tanHalf;
+        float f = 1.0f / tan(radians(fov) * 0.5f);
+
+        result.m[0][0] = f / aspect;
+        result.m[1][1] = -f;
         result.m[2][2] = farPlane / (nearPlane - farPlane);
-        result.m[3][2] = (farPlane * nearPlane) / (nearPlane - farPlane);
         result.m[2][3] = -1.0f;
+        result.m[3][2] = nearPlane * result.m[2][2];
 
         return result;
     }
