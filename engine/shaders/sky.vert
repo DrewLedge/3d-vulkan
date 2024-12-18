@@ -19,6 +19,7 @@ layout(set = 1, binding = 0) uniform CamBufferObject {
 void main() {
     mat4 view = CamUBO[frame].view;
     mat4 projection = CamUBO[frame].proj;
+
     mat4 rotationOnlyView = view;
     rotationOnlyView[3] = vec4(0.0f, 0.0f, 0.0f, 1.0f);
 

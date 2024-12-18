@@ -137,11 +137,11 @@ void main() {
     mat3 tbn = getTBN(tangent, mat3(gl_ObjectToWorldEXT), norm);
 
     // load the texture data
-    vec4 albedo = vec4(1.0f);
-    vec4 metallicRoughness = vec4(0.0f, 0.5f, 0.0f, 1.0f);
-    vec3 normal = vec3(0.0f);
-    vec3 emissive = vec3(0.0f);
-    float occlusion = 1.0f;
+    vec4 albedo;
+    vec4 metallicRoughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 
     getTextures(bitfield, texindex, uv, tbn, albedo, metallicRoughness, normal, emissive, occlusion);
 

@@ -126,7 +126,7 @@ vec3 getFragPos(vec2 uv, float depth, mat4 iproj, mat4 iview) {
     // get the clip space pos
     vec4 clip = vec4(ndc, depth, 1.0f);
 
-    // get the view pos from the clip pos
+    // multiply by the inverse proj mat to get the pos in view space
     vec4 view = iproj * clip;
     view /= view.w; // perspective divide
 
