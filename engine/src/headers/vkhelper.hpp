@@ -1055,4 +1055,23 @@ namespace vkh {
         s.pName = "main";
         return s;
     }
+
+    VkVertexInputBindingDescription vertInputBindDesc(uint32_t binding, uint32_t stride, VkVertexInputRate inputRate) {
+        VkVertexInputBindingDescription b{};
+        b.binding = binding;
+        b.stride = stride;
+        b.inputRate = inputRate;
+
+        return b;
+    }
+
+    VkVertexInputAttributeDescription vertInputAttrDesc(VkFormat format, uint32_t binding, uint32_t location, size_t offset) {
+        VkVertexInputAttributeDescription a{};
+        a.format = format;
+        a.binding = binding;
+        a.location = location;
+        a.offset = static_cast<uint32_t>(offset);
+
+        return a;
+    }
 };

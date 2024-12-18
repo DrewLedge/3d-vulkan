@@ -438,6 +438,7 @@ private:
     PipelineData shadowPipeline{};
     PipelineData compPipeline{};
     PipelineData wboitPipeline{};
+    std::array<VkVertexInputAttributeDescription, 9> objectInputAttrDesc{};
 
     LightingData lightingData{};
     WBOITData wboit{};
@@ -501,7 +502,6 @@ private:
     std::vector<dvl::Texture> rtTextures{};
     SBT sbt{};
     TexIndexSSBO texIndices{};
-
     std::vector<VkAccelerationStructureInstanceKHR> meshInstances;
 
     uint32_t modelIndex = 0; // index of where vertecies are loaded to
@@ -1882,64 +1882,45 @@ private:
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
-        VkVertexInputBindingDescription vertBindDesc{};
-        vertBindDesc.binding = 0;
-        vertBindDesc.stride = sizeof(dvl::Vertex);
-        vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputBindingDescription instanceBindDesc{};
-        instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelInstance);
-        instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
+        VkVertexInputBindingDescription vertBindDesc = vkh::vertInputBindDesc(0, sizeof(dvl::Vertex), VK_VERTEX_INPUT_RATE_VERTEX);
+        VkVertexInputBindingDescription instanceBindDesc = vkh::vertInputBindDesc(1, sizeof(ModelInstance), VK_VERTEX_INPUT_RATE_INSTANCE);
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
-        std::array<VkVertexInputAttributeDescription, 9> attrDesc{};
-        attrDesc[0].binding = 0;
-        attrDesc[0].location = 0;
-        attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attrDesc[0].offset = offsetof(dvl::Vertex, pos);
+        const std::array<VkFormat, 4> formats = {
+            VK_FORMAT_R32G32B32_SFLOAT,
+            VK_FORMAT_R32G32_SFLOAT,
+            VK_FORMAT_R32G32B32_SFLOAT,
+            VK_FORMAT_R32G32B32A32_SFLOAT
+        };
 
-        // texture coordinates
-        attrDesc[1].binding = 0;
-        attrDesc[1].location = 1;
-        attrDesc[1].format = VK_FORMAT_R32G32_SFLOAT;
-        attrDesc[1].offset = offsetof(dvl::Vertex, tex);
+        const std::array<size_t, 4> offsets = {
+            offsetof(dvl::Vertex, pos),
+            offsetof(dvl::Vertex, tex),
+            offsetof(dvl::Vertex, normal),
+            offsetof(dvl::Vertex, tangent)
+        };
 
-        // normal
-        attrDesc[2].binding = 0;
-        attrDesc[2].location = 2;
-        attrDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT;
-        attrDesc[2].offset = offsetof(dvl::Vertex, normal);
-
-        // tangents
-        attrDesc[3].binding = 0;
-        attrDesc[3].location = 3;
-        attrDesc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-        attrDesc[3].offset = offsetof(dvl::Vertex, tangent);
+        for (uint32_t i = 0; i < formats.size(); i++) {
+            objectInputAttrDesc[i] = vkh::vertInputAttrDesc(formats[i], 0, i, offsets[i]);
+        }
 
         // pass the model matrix as a per-instance data
         // seperate the matrix into 4 vec4's so it can be quickly passed and processed
         for (uint32_t i = 0; i < 4; i++) {
             uint32_t index = 4 + i;
-            attrDesc[index].binding = 1;
-            attrDesc[index].location = index;
-            attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
+            size_t offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
+
+            objectInputAttrDesc[index] = vkh::vertInputAttrDesc(VK_FORMAT_R32G32B32A32_SFLOAT, 1, index, offset);
         }
 
-        // render flag
-        attrDesc[8].binding = 1;
-        attrDesc[8].location = 8;
-        attrDesc[8].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[8].offset = offsetof(ModelInstance, render);
+        objectInputAttrDesc[8] = vkh::vertInputAttrDesc(VK_FORMAT_R32_UINT, 1, 8, offsetof(ModelInstance, render));
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
         vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.pVertexAttributeDescriptions = objectInputAttrDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(objectInputAttrDesc.size());
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
@@ -2191,8 +2172,8 @@ private:
         //depth and stencil testing setup: allows for fragments to be discarded based on depth and stencil values
         VkPipelineDepthStencilStateCreateInfo dStencil{};
         dStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-        dStencil.depthTestEnable = VK_FALSE; //enable depth testing
-        dStencil.depthWriteEnable = VK_FALSE; //enable writing to the depth buffer
+        dStencil.depthTestEnable = VK_FALSE; //disable depth testing
+        dStencil.depthWriteEnable = VK_FALSE; //disable writing to the depth buffer
         dStencil.depthBoundsTestEnable = VK_FALSE; //if true, discards fragments whose depth values fall outside the min and max bounds
         dStencil.minDepthBounds = 0.0f; //min depth bound
         dStencil.maxDepthBounds = 1.0f; //max depth bound
@@ -2315,33 +2296,20 @@ private:
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
-        VkVertexInputBindingDescription vertBindDesc{};
-        vertBindDesc.binding = 0;
-        vertBindDesc.stride = sizeof(dvl::Vertex);
-        vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputBindingDescription instanceBindDesc{};
-        instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelInstance);
-        instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
+        VkVertexInputBindingDescription vertBindDesc = vkh::vertInputBindDesc(0, sizeof(dvl::Vertex), VK_VERTEX_INPUT_RATE_VERTEX);
+        VkVertexInputBindingDescription instanceBindDesc = vkh::vertInputBindDesc(1, sizeof(ModelInstance), VK_VERTEX_INPUT_RATE_INSTANCE);
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
 
         std::array<VkVertexInputAttributeDescription, 5> attrDesc{};
-        // vertex position attribute
-        attrDesc[0].binding = 0;
-        attrDesc[0].location = 0;
-        attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
-        attrDesc[0].offset = offsetof(dvl::Vertex, pos);
+        attrDesc[0] = vkh::vertInputAttrDesc(VK_FORMAT_R32G32B32_SFLOAT, 0, 0, offsetof(dvl::Vertex, pos));
 
         // pass the model matrix as a per-instance data
         // seperate the matrix into 4 vec4's so it can be quickly passed and processed
         for (uint32_t i = 0; i < 4; i++) {
             uint32_t index = i + 1;
-            attrDesc[index].binding = 1;
-            attrDesc[index].location = index;
-            attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
+            size_t offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
+
+            attrDesc[index] = vkh::vertInputAttrDesc(VK_FORMAT_R32G32B32A32_SFLOAT, 1, index, offset);
         }
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
@@ -2488,16 +2456,9 @@ private:
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
-        VkVertexInputBindingDescription bindDesc{};
-        bindDesc.binding = 0;
-        bindDesc.stride = sizeof(dml::vec3); // the stride is the size of vec3
-        bindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+        VkVertexInputBindingDescription bindDesc = vkh::vertInputBindDesc(0, sizeof(dml::vec3), VK_VERTEX_INPUT_RATE_VERTEX);
 
-        VkVertexInputAttributeDescription attrDesc{};
-        attrDesc.binding = 0;
-        attrDesc.location = 0;
-        attrDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
-        attrDesc.offset = 0;
+        VkVertexInputAttributeDescription attrDesc = vkh::vertInputAttrDesc(VK_FORMAT_R32G32B32_SFLOAT, 0, 0, 0);
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
@@ -2608,62 +2569,16 @@ private:
         VkPipelineShaderStageCreateInfo fragStage = vkh::createShaderStage(VK_SHADER_STAGE_FRAGMENT_BIT, fragShaderModule);
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = { vertStage, fragStage };
 
-        VkVertexInputBindingDescription vertBindDesc{};
-        vertBindDesc.binding = 0;
-        vertBindDesc.stride = sizeof(dvl::Vertex);
-        vertBindDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
-
-        VkVertexInputBindingDescription instanceBindDesc{};
-        instanceBindDesc.binding = 1;
-        instanceBindDesc.stride = sizeof(ModelInstance);
-        instanceBindDesc.inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
-
+        VkVertexInputBindingDescription vertBindDesc = vkh::vertInputBindDesc(0, sizeof(dvl::Vertex), VK_VERTEX_INPUT_RATE_VERTEX);
+        VkVertexInputBindingDescription instanceBindDesc = vkh::vertInputBindDesc(1, sizeof(ModelInstance), VK_VERTEX_INPUT_RATE_INSTANCE);
         std::array<VkVertexInputBindingDescription, 2> bindDesc = { vertBindDesc, instanceBindDesc };
-        std::array<VkVertexInputAttributeDescription, 9> attrDesc{};
-
-        attrDesc[0].binding = 0;
-        attrDesc[0].location = 0;
-        attrDesc[0].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for position
-        attrDesc[0].offset = offsetof(dvl::Vertex, pos);
-
-        // texture coordinates
-        attrDesc[1].binding = 0;
-        attrDesc[1].location = 1;
-        attrDesc[1].format = VK_FORMAT_R32G32_SFLOAT; // 2 floats for texture coordinates
-        attrDesc[1].offset = offsetof(dvl::Vertex, tex);
-
-        // normal
-        attrDesc[2].binding = 0;
-        attrDesc[2].location = 2;
-        attrDesc[2].format = VK_FORMAT_R32G32B32_SFLOAT; // 3 floats for normal
-        attrDesc[2].offset = offsetof(dvl::Vertex, normal);
-
-        // tangents
-        attrDesc[3].binding = 0;
-        attrDesc[3].location = 3;
-        attrDesc[3].format = VK_FORMAT_R32G32B32A32_SFLOAT; // 4 floats for tangent
-        attrDesc[3].offset = offsetof(dvl::Vertex, tangent);
-
-        // pass the model matrix as a per-instance data
-        for (uint32_t i = 0; i < 4; i++) {
-            uint32_t index = 4 + i;
-            attrDesc[index].binding = 1;
-            attrDesc[index].location = index;
-            attrDesc[index].format = VK_FORMAT_R32G32B32A32_SFLOAT;
-            attrDesc[index].offset = offsetof(ModelInstance, model) + sizeof(float) * 4 * i;
-        }
-
-        attrDesc[8].binding = 1;
-        attrDesc[8].location = 8;
-        attrDesc[8].format = VK_FORMAT_R32_UINT; // 1 uint32_t
-        attrDesc[8].offset = offsetof(ModelInstance, render);
 
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         vertexInputInfo.pVertexBindingDescriptions = bindDesc.data();
         vertexInputInfo.vertexBindingDescriptionCount = static_cast<uint32_t>(bindDesc.size());
-        vertexInputInfo.pVertexAttributeDescriptions = attrDesc.data();
-        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrDesc.size());
+        vertexInputInfo.pVertexAttributeDescriptions = objectInputAttrDesc.data();
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(objectInputAttrDesc.size());
 
         VkPipelineInputAssemblyStateCreateInfo inputAssem{};
         inputAssem.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
