@@ -1,22 +1,27 @@
-# Vulkan Graphics Engine
-
-### ⚠️ NO LONGER IN DEVELOPMENT ⚠️
+# 🖥️ Vulkan Graphics Engine
 
 This project is a personal learning experience to deepen my understanding of the low-level intricacies of GPUs and graphics programming. 
-It utilizes the Vulkan Graphics API and is written in C++.
 
-## Notable features
+## 📝 About
+- Written in C++ and GLSL, utilizing Vulkan
+- Around 7000 lines of code in total
+- Designed solely for use on Windows
+
+## 🚀 Notable features
 - Realtime raytracing (Opaque objects only)
 - Realtime lighting and object manipulation
 - Cook-Torrance BRDF lighting model
 - Skyboxes
 - WBOIT
 
-## Dependencies
+## 🌋 Dependencies
 - Vulkan SDK - 1.3.296.0
 
-## 3rd Party Libraries used (libraries are in source code)
+## 📖 3rd Party Libraries used (libraries are in source code)
 - [GLFW](https://github.com/glfw/glfw)
 - [ImGui](https://github.com/ocornut/imgui)
 - [TinyGLTF](https://github.com/syoyo/tinygltf)
 - [STB Image](https://github.com/nothings/stb)
+
+## ⚠️ Disclaimer
+This project is no longer in development. Currently, I am working on a newer, cross-platform, faster and cleaner graphics engine which will be made public soon.
