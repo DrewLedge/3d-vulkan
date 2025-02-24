@@ -1,18 +1,7 @@
 # 🖥️ Vulkan Graphics Engine
-
-This project is a personal learning experience to deepen my understanding of the low-level intricacies of GPUs and graphics programming. 
-
-## 📝 About
-- Written in C++ and GLSL, utilizing Vulkan
-- Around 7000 lines of code in total
-- Designed solely for use on Windows
-
-## 🚀 Notable features
-- Realtime raytracing (Opaque objects only)
-- Realtime lighting and object manipulation
-- Cook-Torrance BRDF lighting model
-- Skyboxes
-- WBOIT
+- This project is a personal learning experience to deepen my understanding of the low-level intricacies of GPUs and graphics programming
+- It is written in C++ and utilizes Vulkan
+- It features basic glb model loading, semi-realistic realtime lighting, realtime object and light manipulation, and basic raytracing
 
 ## 🌋 Dependencies
 - Vulkan SDK - 1.3.296.0
@@ -24,4 +13,4 @@ This project is a personal learning experience to deepen my understanding of the
 - [STB Image](https://github.com/nothings/stb)
 
 ## ⚠️ Disclaimer
-This project is no longer in development. Currently, I am working on a newer, cross-platform, faster and cleaner graphics engine which will be made public soon.
+- This project is no longer in development
